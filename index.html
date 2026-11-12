@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Workout Builder - Cloud</title>
+  <!-- Script html2pdf per scaricare il PDF direttamente dal browser -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <!-- Libreria ufficiale Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --bg: #000000;
+      --card-bg: #0d0d0d;
+      --input-bg: #161616;
+      --border: #262626;
+      --text: #ffffff;
+      --text-muted: #8e8e93;
+      --primary: #38bdf8;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); padding: 14px; min-height: 100vh; }
+    .container { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+
+    header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 6px; }
+    .header-brand { display: flex; align-items: center; gap: 10px; }
+    .site-logo { height: 38px; width: auto; max-width: 110px; object-fit: contain; border-radius: 6px; }
+    h1 { font-size: 1.15rem; font-weight: 700; color: var(--primary); }
+
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+    .section-title { font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; color: var(--primary); display: flex; justify-content: space-between; align-items: center; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .grid-3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 6px; }
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    label { font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; }
+    input, select, textarea { background: var(--input-bg); border: 1px solid var(--border); color: #fff; padding: 10px; border-radius: 8px; font-size: 0.9rem; outline: none; width: 100%; }
+    input:focus, select:focus, textarea:focus { border-color: var(--primary); }
+    textarea { resize: vertical; min-height: 70px; font-size: 0.85rem; line-height: 1.4; }
+
+    /* Barra filtri e ricerca */
+    .filter-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .filter-row select { max-width: 125px; }
+    .filter-row input { flex: 1; }
+
+    /* Box anteprima con supporto foto singola o doppia */
+    .preview-box { display: flex; gap: 14px; align-items: center; margin: 8px 0; background: #141414; border: 1px solid var(--border); padding: 8px; border-radius: 8px; }
+    .preview-photos { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
+    .preview-photo-wrap { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .preview-thumb { width: 62px; height: 62px; border-radius: 6px; object-fit: cover; background: #000; border: 1px solid var(--border); transition: width 0.2s ease; }
+    .photo-tag { font-size: 9px; color: var(--text-muted); text-transform: uppercase; font-weight: 700; }
+    .preview-info { font-size: 0.85rem; line-height: 1.3; }
+
+    .btn { border: none; border-radius: 8px; padding: 12px 14px; font-weight: 700; font-size: 0.95rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; }
+    .btn:active { transform: scale(0.98); }
+    .btn-add { background: var(--primary); color: #000; margin-top: 10px; }
+    .btn-pdf { background: var(--success); color: #fff; font-size: 1.05rem; padding: 15px; margin-top: 12px; }
+
+    /* Raggruppamento per sedute nella UI */
+    .exercise-list { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; max-height: 440px; overflow-y: auto; }
+    .day-group { display: flex; flex-direction: column; gap: 6px; }
+    .day-badge { background: #1a2736; border: 1px solid #0284c7; color: var(--primary); font-size: 0.8rem; font-weight: 700; padding: 6px 10px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .exercise-item { background: #141414; border: 1px solid var(--border); border-radius: 8px; padding: 10px; display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; }
+    .item-photos { display: flex; gap: 6px; flex-shrink: 0; align-items: center; }
+    .item-img { width: 44px; height: 44px; border-radius: 5px; object-fit: cover; border: 1px solid var(--border); background: #000; }
+    .item-details { flex: 1; font-size: 0.85rem; margin-left: 4px; }
+    .item-details strong { font-size: 0.9rem; display: block; margin-bottom: 2px; }
+    .item-sub { color: var(--text-muted); font-size: 0.75rem; margin-top: 2px; }
+    .item-notes { color: var(--primary); font-size: 0.75rem; white-space: pre-wrap; margin-top: 4px; line-height: 1.35; }
+    .btn-del { background: transparent; border: none; color: var(--danger); font-size: 1.2rem; cursor: pointer; padding: 4px 6px; }
+
+    /* LAYOUT DEL DOCUMENTO PDF GENERATO */
+    #pdfPreviewWrapper {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #ffffff;
+      z-index: 99999;
+      overflow-y: auto;
+    }
+    
+    .pdf-sheet {
+      background: #ffffff;
+      color: #1e293b;
+      padding: 18px 22px;
+      width: 720px;
+      margin: 0 auto;
+      box-sizing: border-box;
+      font-size: 11px;
+    }
+
+    .pdf-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #111827; padding-bottom: 8px; margin-bottom: 10px; }
+    .pdf-header-left { display: flex; align-items: center; gap: 12px; }
+    .pdf-logo { height: 50px; width: auto; max-width: 120px; object-fit: contain; }
+    .pdf-header h2 { font-size: 18px; color: #111827; line-height: 1.1; margin-bottom: 2px; font-weight: 800; letter-spacing: 0.5px; }
+    .pdf-coach-tag { font-size: 10.5px; font-weight: 800; color: #111827; text-transform: uppercase; letter-spacing: 0.5px; }
+    
+    .pdf-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: #f1f5f9; padding: 7px 10px; border-radius: 6px; margin-bottom: 8px; font-size: 10.5px; }
+    
+    .pdf-general-notes { 
+      background: #fffbeb; 
+      border-left: 3px solid #f59e0b; 
+      padding: 8px 10px; 
+      font-size: 10.5px; 
+      color: #78350f; 
+      margin-bottom: 10px; 
+      border-radius: 4px; 
+      display: none; 
+      line-height: 1.4; 
+    }
+    .pdf-general-notes-title { display: block; font-weight: 800; margin-bottom: 3px; letter-spacing: 0.3px; }
+    .pdf-general-notes-body { display: block; white-space: pre-wrap; }
+    
+    .pdf-day-banner {
+      background: #000000;
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 6px 10px;
+      border-radius: 4px;
+      margin-top: 12px;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      page-break-after: avoid;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .pdf-day-count { font-size: 10px; font-weight: 600; color: #d1d5db; text-transform: none; letter-spacing: 0; }
+
+    .pdf-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+    .pdf-table th { background: #e2e8f0; color: #334155; text-align: left; padding: 5px 6px; font-size: 9.5px; text-transform: uppercase; }
+    .pdf-table td { padding: 6px; border-bottom: 1px solid #cbd5e1; vertical-align: top; }
+    .pdf-table tr { page-break-inside: avoid; }
+    .pdf-table tr:nth-child(even) { background: #f8fafc; }
+    
+    .pdf-photos-wrap { display: flex; gap: 4px; align-items: center; justify-content: center; }
+    .pdf-img { width: 44px; height: 44px; border-radius: 4px; object-fit: cover; border: 1px solid #94a3b8; }
+    .pdf-notes-cell { font-size: 9.5px; color: #334155; white-space: pre-wrap; line-height: 1.25; }
+    .pdf-footer { display: flex; justify-content: space-between; margin-top: 14px; padding-top: 8px; border-top: 1px solid #cbd5e1; font-size: 9.5px; color: #64748b; page-break-inside: avoid; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <div class="header-brand">
+        <img src="logo_carlo.png" alt="Logo" class="site-logo">
+        <h1>Workout Builder - Carlo Ratto</h1>
+      </div>
+      <span style="font-size: 0.8rem; color: var(--primary);" id="dbCount">Connessione al cloud...</span>
+    </header>
+
+    <!-- 1. Dati Scheda -->
+    <div class="card">
+      <div class="section-title">1. Informazioni Scheda</div>
+      <div class="grid-2">
+        <div class="field">
+          <label>Nome Atleta</label>
+          <input type="text" id="athleteName" placeholder="es. Mario Rossi">
+        </div>
+        <div class="field">
+          <label>Durata</label>
+          <input type="text" id="duration" placeholder="es. 6 settimane">
+        </div>
+      </div>
+      <div class="field" style="margin-top: 8px;">
+        <label>Note Generali Scheda</label>
+        <textarea id="generalNotes" placeholder="es. Riscaldamento: 5 min cyclette + mobilità.&#10;Rispettare i recuperi indicati."></textarea>
+      </div>
+    </div>
+
+    <!-- 2. Scelta e Parametri Esercizio -->
+    <div class="card">
+      <div class="section-title">2. Aggiungi Esercizio</div>
+
+      <div class="field" style="margin-bottom: 8px;">
+        <label>Giorno / Seduta</label>
+        <select id="exerciseDay">
+          <option value="Giorno 1">Giorno 1</option>
+          <option value="Giorno 2">Giorno 2</option>
+          <option value="Giorno 3">Giorno 3</option>
+          <option value="Giorno 4">Giorno 4</option>
+          <option value="Giorno 5">Giorno 5</option>
+          <option value="Giorno 6">Giorno 6</option>
+          <option value="Giorno 7">Giorno 7</option>
+        </select>
+      </div>
+      
+      <div class="filter-row">
+        <select id="muscleFilter">
+          <option value="ALL">Tutti</option>
+          <option value="Petto">Petto</option>
+          <option value="Dorso">Dorso</option>
+          <option value="Gambe">Gambe</option>
+          <option value="Spalle">Spalle</option>
+          <option value="Braccia">Braccia</option>
+          <option value="Addome">Addome</option>
+          <option value="Skill">Skill</option>
+          <option value="Cardio">Cardio</option>
+          <option value="Funzionali">Funzionali</option>
+          <option value="TRX">TRX</option>
+          <option value="Mobilità">Mobilità</option>
+        </select>
+        <input type="text" id="exerciseSearch" list="exerciseSuggestions" placeholder="🔍 Cerca nome esercizio...">
+        <datalist id="exerciseSuggestions"></datalist>
+      </div>
+
+      <select id="exerciseSelect" style="margin-bottom: 8px;">
+        <option value="">Caricamento esercizi dal database...</option>
+      </select>
+
+      <div class="preview-box">
+        <div class="preview-photos">
+          <div class="preview-photo-wrap" id="wrapImgStart">
+            <img id="previewImgStart" class="preview-thumb" src="" alt="Partenza">
+            <span class="photo-tag" id="tagImgStart">Partenza</span>
+          </div>
+          <div class="preview-photo-wrap" id="wrapImgEnd">
+            <img id="previewImgEnd" class="preview-thumb" src="" alt="Arrivo">
+            <span class="photo-tag" id="tagImgEnd">Arrivo</span>
+          </div>
+        </div>
+        <div class="preview-info">
+          <strong id="previewName">-</strong><br>
+          <span style="color: var(--primary);" id="previewMuscle">-</span>
+        </div>
+      </div>
+
+      <div class="grid-3">
+        <div class="field">
+          <label>Serie e Reps</label>
+          <input type="text" id="inSetsReps" placeholder="es. 4x8-10">
+        </div>
+        <div class="field">
+          <label>Rest</label>
+          <input type="text" id="inRest" placeholder="es. 90'' o 2'">
+        </div>
+        <div class="field">
+          <label>RIR / @</label>
+          <input type="text" id="inRir" placeholder="es. RIR 1 o @8">
+        </div>
+      </div>
+
+      <div class="field" style="margin-top: 8px;">
+        <label>Note Esercizio</label>
+        <textarea id="inNotes" style="min-height: 85px;" placeholder="es. Esecuzione: discesa 3s controllata.&#10;Fermo 1s al petto.&#10;Ultima serie a cedimento."></textarea>
+      </div>
+
+      <button class="btn btn-add" id="btnAddEx">➕ Inserisci nella Scheda</button>
+    </div>
+
+    <!-- 3. Riepilogo ed esportazione PDF -->
+    <div class="card">
+      <div class="section-title">
+        <span>3. Esercizi della Scheda</span>
+        <span id="counterLabel" style="color: var(--text-muted); font-size: 0.85rem;">0 inseriti</span>
+      </div>
+
+      <div class="exercise-list" id="exerciseList">
+        <div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Nessun esercizio aggiunto</div>
+      </div>
+
+      <button class="btn btn-pdf" id="btnPdf">📄 Scarica PDF Stampabile</button>
+    </div>
+  </div>
+
+  <!-- Area di Rendering PDF -->
+  <div id="pdfPreviewWrapper">
+    <div id="pdfSheet" class="pdf-sheet">
+      <div class="pdf-header">
+        <div class="pdf-header-left">
+          <img src="logo_carlo.png" alt="Logo" class="pdf-logo">
+          <div>
+            <h2>SCHEDA DI ALLENAMENTO</h2>
+            <div class="pdf-coach-tag">COACH: CARLO RATTO</div>
+          </div>
+        </div>
+        <div style="text-align: right; font-size: 11px; color: #64748b; white-space: nowrap;">
+          Data: <span id="pdfDate"></span>
+        </div>
+      </div>
+
+      <div class="pdf-meta">
+        <div><strong>Atleta:</strong> <span id="pdfAthlete">-</span></div>
+        <div><strong>Durata:</strong> <span id="pdfDuration">-</span></div>
+        <div><strong>Totale Esercizi:</strong> <span id="pdfCount">0</span></div>
+      </div>
+
+      <div class="pdf-general-notes" id="pdfGeneralNotesBox">
+        <span class="pdf-general-notes-title">NOTE GENERALI:</span>
+        <span class="pdf-general-notes-body" id="pdfGeneralNotesText"></span>
+      </div>
+
+      <div id="pdfTablesContainer"></div>
+
+      <div class="pdf-footer">
+        <span>Coach Carlo Ratto • Workout Builder</span>
+        <span>Scheda personalizzata per l'atleta</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Inizializzazione Connessione Supabase
+    const SUPABASE_URL = "https://rcpegoxebgpjziwctmaz.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_7jyLjdruc3-Jio7dyVE3ag_ekcppthX";
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let EXERCISE_DB = [];
+    let currentWorkout = [];
+
+    const muscleFilter = document.getElementById("muscleFilter");
+    const exerciseSearch = document.getElementById("exerciseSearch");
+    const exerciseSelect = document.getElementById("exerciseSelect");
+    const exerciseSuggestions = document.getElementById("exerciseSuggestions");
+    const previewImgStart = document.getElementById("previewImgStart");
+    const previewImgEnd = document.getElementById("previewImgEnd");
+    const wrapImgStart = document.getElementById("wrapImgStart");
+    const wrapImgEnd = document.getElementById("wrapImgEnd");
+    const tagImgStart = document.getElementById("tagImgStart");
+    const tagImgEnd = document.getElementById("tagImgEnd");
+    const previewName = document.getElementById("previewName");
+    const previewMuscle = document.getElementById("previewMuscle");
+    const exerciseDay = document.getElementById("exerciseDay");
+
+    // Scarica tutti gli esercizi dal database Supabase all'avvio
+    async function loadExercisesFromCloud() {
+      const { data, error } = await supabaseClient
+        .from('exercises')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (error) {
+        console.error("Errore caricamento esercizi:", error);
+        document.getElementById("dbCount").textContent = "Errore connessione DB";
+        document.getElementById("dbCount").style.color = "var(--danger)";
+        return;
+      }
+
+      // Adatta i nomi delle colonne del DB (img_start, img_end) al formato dell'app
+      EXERCISE_DB = data.map(row => ({
+        id: row.id,
+        name: row.name,
+        muscle: row.muscle,
+        imgStart: row.img_start,
+        imgEnd: row.img_end
+      }));
+
+      document.getElementById("dbCount").textContent = `☁️ ${EXERCISE_DB.length} Esercizi Cloud`;
+      updateSuggestions();
+      updateDropdown();
+    }
+
+    function updateSuggestions() {
+      const selectedMuscle = muscleFilter.value;
+      const pool = selectedMuscle === "ALL" 
+        ? EXERCISE_DB 
+        : EXERCISE_DB.filter(ex => ex.muscle === selectedMuscle);
+      
+      let html = "";
+      for (let i = 0; i < pool.length; i++) {
+        html += `<option value="${pool[i].name}"></option>`;
+      }
+      exerciseSuggestions.innerHTML = html;
+    }
+
+    function updateDropdown() {
+      const selectedMuscle = muscleFilter.value;
+      const term = exerciseSearch.value.trim().toLowerCase();
+
+      let matches = [];
+      for (let i = 0; i < EXERCISE_DB.length; i++) {
+        const ex = EXERCISE_DB[i];
+        const matchMuscle = (selectedMuscle === "ALL" || ex.muscle === selectedMuscle);
+        if (matchMuscle && (term === "" || ex.name.toLowerCase().includes(term))) {
+          matches.push(ex);
+          if (matches.length >= 60) break;
+        }
+      }
+
+      if (matches.length === 0) {
+        exerciseSelect.innerHTML = `<option value="">Nessun esercizio trovato</option>`;
+        previewImgStart.src = "";
+        previewImgEnd.src = "";
+        previewName.textContent = "Nessun esercizio";
+        previewMuscle.textContent = "-";
+        return;
+      }
+
+      let optionsHtml = "";
+      for (let i = 0; i < matches.length; i++) {
+        optionsHtml += `<option value="${matches[i].id}">[${matches[i].muscle}] ${matches[i].name}</option>`;
+      }
+      exerciseSelect.innerHTML = optionsHtml;
+
+      updatePreview();
+    }
+
+    function updatePreview() {
+      const selectedId = exerciseSelect.value;
+      if (!selectedId) return;
+      const selected = EXERCISE_DB.find(e => e.id === selectedId);
+      if (selected) {
+        const start = selected.imgStart || "";
+        const end = selected.imgEnd || selected.imgStart || "";
+        
+        previewImgStart.src = start;
+        previewImgEnd.src = end;
+        previewName.textContent = selected.name;
+        previewMuscle.textContent = selected.muscle;
+
+        if (start === end) {
+          wrapImgEnd.style.display = "none";
+          previewImgStart.style.width = "110px";
+          previewImgStart.style.objectFit = "contain";
+          tagImgStart.textContent = "Movimento";
+        } else {
+          wrapImgEnd.style.display = "flex";
+          previewImgStart.style.width = "62px";
+          previewImgStart.style.objectFit = "cover";
+          tagImgStart.textContent = "Partenza";
+          tagImgEnd.textContent = "Arrivo";
+        }
+      }
+    }
+
+    let typingTimer;
+    exerciseSearch.addEventListener("input", () => {
+      clearTimeout(typingTimer);
+      typingTimer = setTimeout(updateDropdown, 120);
+    });
+
+    muscleFilter.addEventListener("change", () => {
+      updateSuggestions();
+      updateDropdown();
+    });
+
+    exerciseSelect.addEventListener("change", updatePreview);
+
+    // Avvia il caricamento da Supabase
+    loadExercisesFromCloud();
+
+    function escapeHtml(str) {
+      return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    document.getElementById("btnAddEx").addEventListener("click", () => {
+      const selectedId = exerciseSelect.value;
+      const selected = EXERCISE_DB.find(e => e.id === selectedId);
+      if (!selected) {
+        alert("Seleziona un esercizio valido.");
+        return;
+      }
+
+      const day = exerciseDay.value;
+      const setsReps = document.getElementById("inSetsReps").value.trim() || "-";
+      const rest = document.getElementById("inRest").value.trim() || "-";
+      const rir = document.getElementById("inRir").value.trim() || "-";
+      const notes = document.getElementById("inNotes").value.trim() || "-";
+
+      currentWorkout.push({
+        uid: Date.now(),
+        day: day,
+        name: selected.name,
+        muscle: selected.muscle,
+        imgStart: selected.imgStart || "",
+        imgEnd: selected.imgEnd || selected.imgStart || "",
+        setsReps, rest, rir, notes
+      });
+
+      document.getElementById("inNotes").value = "";
+      renderList();
+    });
+
+    function getGroupedExercises() {
+      const grouped = {};
+      currentWorkout.forEach(ex => {
+        const d = ex.day || "Giorno 1";
+        if (!grouped[d]) grouped[d] = [];
+        grouped[d].push(ex);
+      });
+      return grouped;
+    }
+
+    function renderList() {
+      const list = document.getElementById("exerciseList");
+      list.innerHTML = "";
+      document.getElementById("counterLabel").textContent = `${currentWorkout.length} inseriti`;
+
+      if (currentWorkout.length === 0) {
+        list.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Nessun esercizio aggiunto</div>`;
+        return;
+      }
+
+      const grouped = getGroupedExercises();
+      const sortedDays = Object.keys(grouped).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+      sortedDays.forEach(dayName => {
+        const exercises = grouped[dayName];
+        const groupEl = document.createElement("div");
+        groupEl.className = "day-group";
+
+        const badge = document.createElement("div");
+        badge.className = "day-badge";
+        badge.textContent = `📅 ${dayName} (${exercises.length} esercizi)`;
+        groupEl.appendChild(badge);
+
+        exercises.forEach((ex, idx) => {
+          const item = document.createElement("div");
+          item.className = "exercise-item";
+          item.innerHTML = `
+            <div class="item-photos">
+              ${ex.imgStart === ex.imgEnd ? `
+                <img src="${ex.imgStart}" class="item-img" style="width: 82px; object-fit: contain;" alt="Movimento" title="Movimento">
+              ` : `
+                <img src="${ex.imgStart}" class="item-img" alt="Start" title="Partenza">
+                <img src="${ex.imgEnd}" class="item-img" alt="End" title="Arrivo">
+              `}
+            </div>
+            <div class="item-details">
+              <strong>${idx + 1}. ${escapeHtml(ex.name)}</strong>
+              <div class="item-sub"><strong>${escapeHtml(ex.setsReps)}</strong> | Rest: ${escapeHtml(ex.rest)} | RIR/@: ${escapeHtml(ex.rir)}</div>
+              ${ex.notes !== '-' ? `<div class="item-notes">Note:&#10;${escapeHtml(ex.notes)}</div>` : ''}
+            </div>
+            <button class="btn-del" onclick="deleteEx(${ex.uid})">✖</button>
+          `;
+          groupEl.appendChild(item);
+        });
+
+        list.appendChild(groupEl);
+      });
+    }
+
+    window.deleteEx = function(uid) {
+      currentWorkout = currentWorkout.filter(e => e.uid !== uid);
+      renderList();
+    };
+
+    document.getElementById("btnPdf").addEventListener("click", () => {
+      if (currentWorkout.length === 0) {
+        alert("Aggiungi almeno un esercizio prima di scaricare il PDF.");
+        return;
+      }
+
+      const athlete = document.getElementById("athleteName").value.trim() || "Atleta";
+      const duration = document.getElementById("duration").value.trim() || "-";
+      const generalNotes = document.getElementById("generalNotes").value.trim();
+
+      document.getElementById("pdfAthlete").textContent = athlete;
+      document.getElementById("pdfDuration").textContent = duration;
+      document.getElementById("pdfCount").textContent = currentWorkout.length;
+      document.getElementById("pdfDate").textContent = new Date().toLocaleDateString("it-IT");
+
+      const notesBox = document.getElementById("pdfGeneralNotesBox");
+      const notesText = document.getElementById("pdfGeneralNotesText");
+      if (generalNotes) {
+        notesText.textContent = generalNotes;
+        notesBox.style.display = "block";
+      } else {
+        notesBox.style.display = "none";
+      }
+
+      const container = document.getElementById("pdfTablesContainer");
+      container.innerHTML = "";
+
+      const grouped = getGroupedExercises();
+      const sortedDays = Object.keys(grouped).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+      sortedDays.forEach(dayName => {
+        const exercises = grouped[dayName];
+        const dayTitle = document.createElement("div");
+        dayTitle.className = "pdf-day-banner";
+        
+        dayTitle.innerHTML = `
+          <span>${dayName}</span>
+          <span class="pdf-day-count">${exercises.length} ${exercises.length === 1 ? 'esercizio' : 'esercizi'}</span>
+        `;
+        container.appendChild(dayTitle);
+
+        const table = document.createElement("table");
+        table.className = "pdf-table";
+        table.innerHTML = `
+          <thead>
+            <tr>
+              <th style="width: 96px; text-align: center;">Movimento</th>
+              <th>Esercizio</th>
+              <th style="width: 95px; text-align: center;">Serie e Reps</th>
+              <th style="width: 60px; text-align: center;">Rest</th>
+              <th style="width: 70px; text-align: center;">RIR / @</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${exercises.map((ex, i) => `
+              <tr>
+                <td>
+                  ${ex.imgStart === ex.imgEnd ? `
+                    <div style="display: flex; justify-content: center; align-items: center;">
+                      <img src="${ex.imgStart}" style="width: 90px; height: 50px; object-fit: contain; background: #fff; border: 1px solid #cbd5e1; border-radius: 4px;" crossorigin="anonymous">
+                    </div>
+                  ` : `
+                    <div class="pdf-photos-wrap">
+                      <img src="${ex.imgStart}" class="pdf-img" crossorigin="anonymous" title="Partenza">
+                      <img src="${ex.imgEnd}" class="pdf-img" crossorigin="anonymous" title="Arrivo">
+                    </div>
+                  `}
+                </td>
+                <td><strong>${i + 1}. ${escapeHtml(ex.name)}</strong></td>
+                <td style="text-align: center; font-weight: bold;">${escapeHtml(ex.setsReps)}</td>
+                <td style="text-align: center;">${escapeHtml(ex.rest)}</td>
+                <td style="text-align: center; font-weight: 600;">${escapeHtml(ex.rir)}</td>
+                <td class="pdf-notes-cell">${escapeHtml(ex.notes)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        `;
+        container.appendChild(table);
+      });
+
+      const element = document.getElementById("pdfSheet");
+      const wrapper = document.getElementById("pdfPreviewWrapper");
+      
+      wrapper.style.display = "block";
+
+      const opt = {
+        margin:       [8, 8, 8, 8],
+        filename:     `Scheda_${athlete.replace(/\s+/g, '_')}.pdf`,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { 
+          scale: 2, 
+          useCORS: true, 
+          scrollY: 0,
+          scrollX: 0
+        },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
+      };
+
+      html2pdf().set(opt).from(element).save().then(() => {
+        wrapper.style.display = "none";
+      });
+    });
+  </script>
+</body>
+</html>
