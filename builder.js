@@ -1,3 +1,5 @@
+//Gestisce la creazione della scheda, i filtri sui 404 esercizi, il salvataggio nel cloud e la generazione del PDF.
+
 const muscleFilter = document.getElementById("muscleFilter");
 const exerciseSearch = document.getElementById("exerciseSearch");
 const exerciseSelect = document.getElementById("exerciseSelect");
