@@ -1,3 +1,5 @@
+//Gestisce l'area Allenatore: Codice Invito, lista atleti, semaforo scadenze e storico progressi.
+
 async function initTrainerArea() {
   document.getElementById("trainerInviteCode").textContent = currentProfile.id;
   await loadTrainerClients();
