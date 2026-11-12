@@ -1,3 +1,5 @@
+//Gestisce l'area Atleta: collegamento al coach, visualizzazione scheda e salvataggio carichi/RIR nel diario.
+
 async function initAthleteArea() {
   if (!currentProfile.trainer_id) {
     document.getElementById("athleteLinkCoachCard").classList.remove("hidden");
