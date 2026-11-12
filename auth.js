@@ -1,3 +1,5 @@
+//Gestisce Login, Registrazione, Logout e il riconoscimento del ruolo (Coach o Atleta).
+
 let isRegisterMode = false;
 
 const tabLogin = document.getElementById("tabLogin");
