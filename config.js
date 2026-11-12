@@ -1,3 +1,5 @@
+//Contiene le chiavi di Supabase, lo stato globale e le funzioni di utilità (es. pulizia testi HTML).
+
 const SUPABASE_URL = "https://rcpegoxebgpjziwctmaz.supabase.co";
 const SUPABASE_KEY = "sb_publishable_7jyLjdruc3-Jio7dyVE3ag_ekcppthX";
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
