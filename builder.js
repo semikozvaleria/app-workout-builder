@@ -1,9 +1,89 @@
 const muscleFilter = document.getElementById("muscleFilter");
 const exerciseSearch = document.getElementById("exerciseSearch");
-const exerciseSelect = document.getElementById("exerciseSelect");
 const exerciseSuggestions = document.getElementById("exerciseSuggestions");
+const exerciseSelect = document.getElementById("exerciseSelect");
+const exerciseDaySelect = document.getElementById("exerciseDay");
+const chkCircuitStart = document.getElementById("chkCircuitStart");
+const chkCircuitEnd = document.getElementById("chkCircuitEnd");
+const circuitLabelWrap = document.getElementById("circuitLabelWrap");
+const inCircuitLabel = document.getElementById("inCircuitLabel");
 
-let editingBuilderUid = null;
+// Verifica se nel giorno selezionato c'è attualmente un circuito aperto (iniziato ma non ancora chiuso)
+function hasOpenCircuitInDay(dayName) {
+  const dayItems = currentWorkout.filter(item => item.day === dayName);
+  let open = false;
+  dayItems.forEach(item => {
+    if (item.circuitRole === "start") open = true;
+    else if (item.circuitRole === "end" || item.circuitRole === "single") open = false;
+  });
+  return open;
+}
+
+// Aggiorna automaticamente quale spunta è consentita (solo Inizio se chiuso, solo Fine se aperto)
+function syncCircuitCheckboxes() {
+  const dayName = exerciseDaySelect.value;
+  const isOpen = hasOpenCircuitInDay(dayName);
+
+  const labelStart = chkCircuitStart.closest("label");
+  const labelEnd = chkCircuitEnd.closest("label");
+
+  if (isOpen) {
+    // C'è un circuito aperto: si può solo chiuderlo con "Fine Circuito"
+    chkCircuitStart.checked = false;
+    chkCircuitStart.disabled = true;
+    if (labelStart) {
+      labelStart.style.opacity = "0.45";
+      labelStart.style.cursor = "not-allowed";
+    }
+
+    chkCircuitEnd.disabled = false;
+    if (labelEnd) {
+      labelEnd.style.opacity = "1";
+      labelEnd.style.cursor = "pointer";
+    }
+    circuitLabelWrap.classList.add("hidden");
+  } else {
+    // Nessun circuito aperto: si può solo aprirne uno con "Inizio Circuito"
+    chkCircuitStart.disabled = false;
+    if (labelStart) {
+      labelStart.style.opacity = "1";
+      labelStart.style.cursor = "pointer";
+    }
+
+    chkCircuitEnd.checked = false;
+    chkCircuitEnd.disabled = true;
+    if (labelEnd) {
+      labelEnd.style.opacity = "0.45";
+      labelEnd.style.cursor = "not-allowed";
+    }
+
+    if (chkCircuitStart.checked) {
+      circuitLabelWrap.classList.remove("hidden");
+    } else {
+      circuitLabelWrap.classList.add("hidden");
+      inCircuitLabel.value = "";
+    }
+  }
+}
+
+exerciseDaySelect.addEventListener("change", syncCircuitCheckboxes);
+
+chkCircuitStart.addEventListener("change", () => {
+  if (chkCircuitStart.checked) {
+    chkCircuitEnd.checked = false;
+    circuitLabelWrap.classList.remove("hidden");
+  } else {
+    circuitLabelWrap.classList.add("hidden");
+    inCircuitLabel.value = "";
+  }
+});
+
+chkCircuitEnd.addEventListener("change", () => {
+  if (chkCircuitEnd.checked) {
+    chkCircuitStart.checked = false;
+    circuitLabelWrap.classList.add("hidden");
+  }
+});
 
 async function loadExercisesFromCloud() {
   const { data, error } = await supabaseClient
@@ -12,330 +92,394 @@ async function loadExercisesFromCloud() {
     .order('name', { ascending: true });
 
   if (!error && data) {
-    EXERCISE_DB = data.map(row => ({
-      id: row.id,
-      name: row.name,
-      muscle: row.muscle,
-      imgStart: row.img_start,
-      imgEnd: row.img_end
-    }));
-    document.getElementById("dbCount").textContent = `☁️ ${EXERCISE_DB.length} Esercizi`;
-    updateSuggestions();
-    updateDropdown();
+    EXERCISE_DB = data;
+    document.getElementById("dbCount").textContent = `${EXERCISE_DB.length} esercizi`;
+    populateDropdown();
   }
+  syncCircuitCheckboxes();
 }
-
-function updateSuggestions() {
-  const selectedMuscle = muscleFilter.value;
-  const pool = selectedMuscle === "ALL" ? EXERCISE_DB : EXERCISE_DB.filter(ex => ex.muscle === selectedMuscle);
-  exerciseSuggestions.innerHTML = pool.map(e => `<option value="${e.name}"></option>`).join("");
-}
-
-function updateDropdown() {
-  const selectedMuscle = muscleFilter.value;
-  const term = exerciseSearch.value.trim().toLowerCase();
-  const matches = EXERCISE_DB.filter(ex => {
-    const matchMuscle = (selectedMuscle === "ALL" || ex.muscle === selectedMuscle);
-    return matchMuscle && (term === "" || ex.name.toLowerCase().includes(term));
-  }).slice(0, 60);
-
-  if (matches.length === 0) {
-    exerciseSelect.innerHTML = `<option value="">Nessun esercizio trovato</option>`;
-    return;
-  }
-  exerciseSelect.innerHTML = matches.map(m => `<option value="${m.id}">[${m.muscle}] ${m.name}</option>`).join("");
-  updatePreview();
-}
-
-function updatePreview() {
-  const selected = EXERCISE_DB.find(e => e.id === exerciseSelect.value);
-  if (!selected) return;
-  const start = selected.imgStart || "";
-  const end = selected.imgEnd || start;
-  document.getElementById("previewImgStart").src = start;
-  document.getElementById("previewImgEnd").src = end;
-  document.getElementById("previewName").textContent = selected.name;
-  document.getElementById("previewMuscle").textContent = selected.muscle;
-
-  if (start === end) {
-    document.getElementById("wrapImgEnd").style.display = "none";
-    document.getElementById("previewImgStart").style.width = "110px";
-    document.getElementById("previewImgStart").style.objectFit = "contain";
-    document.getElementById("tagImgStart").textContent = "Movimento";
-  } else {
-    document.getElementById("wrapImgEnd").style.display = "flex";
-    document.getElementById("previewImgStart").style.width = "62px";
-    document.getElementById("previewImgStart").style.objectFit = "cover";
-    document.getElementById("tagImgStart").textContent = "Partenza";
-  }
-}
-
-exerciseSearch.addEventListener("input", updateDropdown);
-muscleFilter.addEventListener("change", () => { updateSuggestions(); updateDropdown(); });
-exerciseSelect.addEventListener("change", updatePreview);
 
 document.getElementById("builderAthleteSelect").addEventListener("change", (e) => {
-  const selected = trainerClients.find(c => c.id === e.target.value);
-  if (selected) {
-    document.getElementById("athleteName").value = selected.full_name;
-    document.getElementById("btnLoadExistingWorkout").classList.remove("hidden");
+  const athleteId = e.target.value;
+  const loadBtn = document.getElementById("btnLoadExistingWorkout");
+  if (athleteId) {
+    const found = trainerClients.find(c => c.id === athleteId);
+    if (found) document.getElementById("athleteName").value = found.full_name;
+    loadBtn.classList.remove("hidden");
   } else {
-    document.getElementById("btnLoadExistingWorkout").classList.add("hidden");
+    loadBtn.classList.add("hidden");
   }
 });
 
+// Carica nel builder la scheda attiva dell'atleta per modificarla
 document.getElementById("btnLoadExistingWorkout").addEventListener("click", async () => {
   const athleteId = document.getElementById("builderAthleteSelect").value;
   if (!athleteId) return;
 
-  const { data: workout } = await supabaseClient
+  const btn = document.getElementById("btnLoadExistingWorkout");
+  btn.disabled = true;
+  btn.textContent = "Caricamento...";
+
+  const { data: workout, error } = await supabaseClient
     .from('workouts')
-    .select('*')
+    .select('*, workout_exercises(*, exercises(*))')
+    .eq('trainer_id', currentProfile.id)
     .eq('athlete_id', athleteId)
     .eq('status', 'active')
     .order('created_at', { ascending: false })
     .limit(1)
     .single();
 
-  if (!workout) {
-    alert("Questo atleta non ha ancora una scheda attiva.");
+  btn.disabled = false;
+  btn.textContent = "📥 Carica Scheda Attuale";
+
+  if (error || !workout) {
+    alert("Nessuna scheda attiva trovata per questo atleta.");
     return;
   }
 
   document.getElementById("durationWeeks").value = workout.duration_weeks || 4;
   document.getElementById("generalNotes").value = workout.general_notes || "";
 
-  const { data: items } = await supabaseClient
-    .from('workout_exercises')
-    .select('*, exercises(*)')
-    .eq('workout_id', workout.id)
-    .order('order_index', { ascending: true });
+  const sortedItems = (workout.workout_exercises || []).sort((a, b) => a.order_index - b.order_index);
+  currentWorkout = sortedItems.map((row, idx) => ({
+    uid: Date.now() + idx,
+    id: row.exercise_id,
+    day: row.day_name,
+    name: row.exercises ? row.exercises.name : "Esercizio",
+    muscle: row.exercises ? row.exercises.muscle : "",
+    imgStart: row.exercises ? row.exercises.img_start : "",
+    imgEnd: row.exercises ? (row.exercises.img_end || row.exercises.img_start) : "",
+    setsReps: row.sets_reps,
+    rest: row.rest,
+    rir: row.rir,
+    notes: row.notes,
+    circuitRole: row.circuit_role || null,
+    circuitLabel: row.circuit_label || ""
+  }));
 
-  if (items) {
-    editingBuilderUid = null;
-    currentWorkout = items.map((row, idx) => ({
-      uid: Date.now() + idx,
-      id: row.exercise_id,
-      day: row.day_name,
-      name: row.exercises ? row.exercises.name : "Esercizio",
-      muscle: row.exercises ? row.exercises.muscle : "",
-      imgStart: row.exercises ? row.exercises.img_start : "",
-      imgEnd: row.exercises ? (row.exercises.img_end || row.exercises.img_start) : "",
-      setsReps: row.sets_reps,
-      rest: row.rest,
-      rir: row.rir,
-      notes: row.notes
-    }));
-    renderList();
-  }
+  renderList();
 });
 
-document.getElementById("btnAddEx").addEventListener("click", () => {
-  const selected = EXERCISE_DB.find(e => e.id === exerciseSelect.value);
+// Pulsante Svuota scheda nel builder
+document.getElementById("btnClearBuilder").addEventListener("click", () => {
+  if (!confirm("Vuoi rimuovere tutti gli esercizi inseriti in questa scheda?")) return;
+  currentWorkout = [];
+  renderList();
+});
+
+function populateDropdown() {
+  const filter = muscleFilter.value;
+  const search = exerciseSearch.value.trim().toLowerCase();
+
+  const byMuscle = EXERCISE_DB.filter(ex => filter === "ALL" || ex.muscle === filter);
+  exerciseSuggestions.innerHTML = byMuscle.map(ex => `<option value="${ex.name}">`).join("");
+
+  const filtered = byMuscle.filter(ex => ex.name.toLowerCase().includes(search));
+
+  exerciseSelect.innerHTML = "";
+  if (filtered.length === 0) {
+    exerciseSelect.innerHTML = `<option value="">Nessun esercizio trovato</option>`;
+    return;
+  }
+
+  filtered.forEach(ex => {
+    const opt = document.createElement("option");
+    opt.value = ex.id;
+    opt.textContent = `${ex.name} (${ex.muscle})`;
+    exerciseSelect.appendChild(opt);
+  });
+  updatePreview();
+}
+
+function updatePreview() {
+  const selected = EXERCISE_DB.find(ex => ex.id === exerciseSelect.value);
   if (!selected) return;
+
+  const startSrc = selected.img_start;
+  const endSrc = selected.img_end || selected.img_start;
+  const isSingle = startSrc === endSrc;
+
+  const imgStartEl = document.getElementById("previewImgStart");
+  const wrapEndEl = document.getElementById("wrapImgEnd");
+  const tagStartEl = document.getElementById("tagImgStart");
+
+  imgStartEl.src = startSrc;
+  document.getElementById("previewName").textContent = selected.name;
+  document.getElementById("previewMuscle").textContent = selected.muscle;
+
+  if (isSingle) {
+    wrapEndEl.style.display = "none";
+    imgStartEl.style.width = "105px";
+    imgStartEl.style.objectFit = "contain";
+    tagStartEl.textContent = "Esecuzione";
+  } else {
+    wrapEndEl.style.display = "block";
+    imgStartEl.style.width = "64px";
+    imgStartEl.style.objectFit = "cover";
+    tagStartEl.textContent = "Partenza";
+    document.getElementById("previewImgEnd").src = endSrc;
+  }
+}
+
+muscleFilter.addEventListener("change", populateDropdown);
+exerciseSearch.addEventListener("input", populateDropdown);
+exerciseSelect.addEventListener("change", updatePreview);
+
+// Aggiunta esercizio alla scheda (con gestione Circuito)
+document.getElementById("btnAddEx").addEventListener("click", () => {
+  const selected = EXERCISE_DB.find(ex => ex.id === exerciseSelect.value);
+  if (!selected) return;
+
+  const isStart = chkCircuitStart.checked && !chkCircuitStart.disabled;
+  const isEnd = chkCircuitEnd.checked && !chkCircuitEnd.disabled;
+  let circuitRole = null;
+  if (isStart) circuitRole = "start";
+  else if (isEnd) circuitRole = "end";
 
   currentWorkout.push({
     uid: Date.now(),
     id: selected.id,
-    day: document.getElementById("exerciseDay").value,
+    day: exerciseDaySelect.value,
     name: selected.name,
     muscle: selected.muscle,
-    imgStart: selected.imgStart || "",
-    imgEnd: selected.imgEnd || selected.imgStart || "",
+    imgStart: selected.img_start,
+    imgEnd: selected.img_end || selected.img_start,
     setsReps: document.getElementById("inSetsReps").value.trim() || "-",
     rest: document.getElementById("inRest").value.trim() || "-",
     rir: document.getElementById("inRir").value.trim() || "-",
-    notes: document.getElementById("inNotes").value.trim() || "-"
+    notes: document.getElementById("inNotes").value.trim() || "-",
+    circuitRole: circuitRole,
+    circuitLabel: isStart ? inCircuitLabel.value.trim() : ""
   });
 
+  // Reset campi input e flag circuito
+  document.getElementById("inSetsReps").value = "";
+  document.getElementById("inRest").value = "";
+  document.getElementById("inRir").value = "";
   document.getElementById("inNotes").value = "";
+  chkCircuitStart.checked = false;
+  chkCircuitEnd.checked = false;
+  circuitLabelWrap.classList.add("hidden");
+  inCircuitLabel.value = "";
+
   renderList();
 });
 
-// Sposta un esercizio su (-1) o giù (+1) all'interno dello stesso giorno
-window.moveBuilderEx = function(uid, direction) {
-  const currentIndex = currentWorkout.findIndex(e => e.uid === uid);
-  if (currentIndex === -1) return;
+// Costruisce il markup di una singola card esercizio nel Builder
+function buildBuilderItemHtml(item, idx, totalInDay) {
+  const isSingle = item.imgStart === item.imgEnd;
+  let roleTag = "";
+  if (item.circuitRole === "start") {
+    roleTag = `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 INIZIO CIRCUITO</span>`;
+  } else if (item.circuitRole === "end") {
+    roleTag = `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🏁 FINE CIRCUITO</span>`;
+  } else if (item.circuitRole === "single") {
+    roleTag = `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 BLOCCO CIRCUITO</span>`;
+  }
 
-  const targetDay = currentWorkout[currentIndex].day;
-  const sameDayIndices = [];
-  currentWorkout.forEach((item, idx) => {
-    if (item.day === targetDay) sameDayIndices.push(idx);
-  });
+  return `
+    <div class="exercise-item">
+      <div class="exercise-top">
+        <div class="item-photos">
+          ${isSingle ? `
+            <img src="${item.imgStart}" class="item-img" style="width: 82px; object-fit: contain;">
+          ` : `
+            <img src="${item.imgStart}" class="item-img">
+            <img src="${item.imgEnd}" class="item-img">
+          `}
+        </div>
+        <div class="item-details">
+          <strong>${idx + 1}. ${escapeHtml(item.name)}</strong> ${roleTag}
+          <div class="item-sub"><strong>${escapeHtml(item.setsReps)}</strong> | Rest: ${escapeHtml(item.rest)} | RIR/@: ${escapeHtml(item.rir)}</div>
+          ${item.notes !== '-' ? `<div class="item-notes">Note: ${escapeHtml(item.notes)}</div>` : ''}
+        </div>
+        <div class="item-actions">
+          <button class="btn-icon" title="Sposta su" onclick="moveItem(${item.uid}, -1)" ${idx === 0 ? 'disabled' : ''}>▲</button>
+          <button class="btn-icon" title="Sposta giù" onclick="moveItem(${item.uid}, 1)" ${idx === totalInDay - 1 ? 'disabled' : ''}>▼</button>
+          <button class="btn-icon" title="Modifica parametri" onclick="editItem(${item.uid})">✏️</button>
+          <button class="btn-icon" title="Rimuovi" style="color:var(--danger);" onclick="removeItem(${item.uid})">✖</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
 
-  const posInDay = sameDayIndices.indexOf(currentIndex);
-  const newPosInDay = posInDay + direction;
-  if (newPosInDay < 0 || newPosInDay >= sameDayIndices.length) return;
-
-  const swapIndex = sameDayIndices[newPosInDay];
-  const temp = currentWorkout[currentIndex];
-  currentWorkout[currentIndex] = currentWorkout[swapIndex];
-  currentWorkout[swapIndex] = temp;
-
-  renderList();
-};
-
-// Attiva la modifica rapida inline per un esercizio
-window.startEditBuilderEx = function(uid) {
-  editingBuilderUid = uid;
-  renderList();
-};
-
-window.cancelEditBuilderEx = function() {
-  editingBuilderUid = null;
-  renderList();
-};
-
-window.saveEditBuilderEx = function(uid) {
-  const ex = currentWorkout.find(e => e.uid === uid);
-  if (!ex) return;
-
-  ex.day = document.getElementById(`editDay_${uid}`).value;
-  ex.setsReps = document.getElementById(`editSets_${uid}`).value.trim() || "-";
-  ex.rest = document.getElementById(`editRest_${uid}`).value.trim() || "-";
-  ex.rir = document.getElementById(`editRir_${uid}`).value.trim() || "-";
-  ex.notes = document.getElementById(`editNotes_${uid}`).value.trim() || "-";
-
-  editingBuilderUid = null;
-  renderList();
-};
-
+// Renderizza l'elenco esercizi raggruppando visivamente i circuiti
 function renderList() {
-  const list = document.getElementById("exerciseList");
-  const btnClear = document.getElementById("btnClearBuilder");
+  const listEl = document.getElementById("exerciseList");
+  const clearBtn = document.getElementById("btnClearBuilder");
   document.getElementById("counterLabel").textContent = `${currentWorkout.length} inseriti`;
 
+  syncCircuitCheckboxes();
+
   if (currentWorkout.length === 0) {
-    if (btnClear) btnClear.classList.add("hidden");
-    list.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Nessun esercizio aggiunto</div>`;
+    listEl.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Nessun esercizio aggiunto</div>`;
+    clearBtn.classList.add("hidden");
     return;
   }
 
-  if (btnClear) btnClear.classList.remove("hidden");
+  clearBtn.classList.remove("hidden");
+  listEl.innerHTML = "";
 
   const grouped = {};
-  currentWorkout.forEach(ex => {
-    if (!grouped[ex.day]) grouped[ex.day] = [];
-    grouped[ex.day].push(ex);
+  currentWorkout.forEach(item => {
+    if (!grouped[item.day]) grouped[item.day] = [];
+    grouped[item.day].push(item);
   });
 
-  const dayOptions = ["Giorno 1", "Giorno 2", "Giorno 3", "Giorno 4", "Giorno 5", "Giorno 6", "Giorno 7"];
-
-  list.innerHTML = "";
   Object.keys(grouped).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(dayName => {
     const dayItems = grouped[dayName];
-    const groupEl = document.createElement("div");
-    groupEl.className = "day-group";
-    groupEl.innerHTML = `<div class="day-badge">📅 ${dayName} (${dayItems.length} esercizi)</div>`;
+    const groupDiv = document.createElement("div");
+    groupDiv.className = "day-group";
+    groupDiv.innerHTML = `<div class="day-badge">📅 ${escapeHtml(dayName)} (${dayItems.length} ESERCIZI)</div>`;
 
-    dayItems.forEach((ex, idx) => {
-      const item = document.createElement("div");
-      item.className = "exercise-item";
+    let inCircuit = false;
+    let circuitHtmlBuffer = "";
+    let circuitHeaderTitle = "CIRCUITO";
 
-      if (editingBuilderUid === ex.uid) {
-        item.innerHTML = `
-          <div class="builder-inline-edit">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-              <strong style="font-size: 0.88rem; color: var(--warning);">✏️ Modifica: ${escapeHtml(ex.name)}</strong>
+    dayItems.forEach((item, idx) => {
+      const itemHtml = buildBuilderItemHtml(item, idx, dayItems.length);
+
+      if (item.circuitRole === "single") {
+        if (inCircuit) {
+          groupDiv.innerHTML += `
+            <div class="circuit-group-box">
+              <div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitHeaderTitle)}</span><span>INIZIO CIRCUITO</span></div>
+              ${circuitHtmlBuffer}
+              <div class="circuit-group-footer">🏁 Fine Circuito</div>
             </div>
-            <div class="builder-edit-grid">
-              <div class="field" style="margin-bottom: 0;">
-                <label>Giorno</label>
-                <select id="editDay_${ex.uid}">
-                  ${dayOptions.map(d => `<option value="${d}" ${d === ex.day ? 'selected' : ''}>${d}</option>`).join("")}
-                </select>
-              </div>
-              <div class="field" style="margin-bottom: 0;">
-                <label>Serie e Reps</label>
-                <input type="text" id="editSets_${ex.uid}" value="${ex.setsReps !== '-' ? escapeHtml(ex.setsReps) : ''}" placeholder="es. 4x8">
-              </div>
-              <div class="field" style="margin-bottom: 0;">
-                <label>Rest</label>
-                <input type="text" id="editRest_${ex.uid}" value="${ex.rest !== '-' ? escapeHtml(ex.rest) : ''}" placeholder="es. 90''">
-              </div>
-              <div class="field" style="margin-bottom: 0;">
-                <label>RIR / @</label>
-                <input type="text" id="editRir_${ex.uid}" value="${ex.rir !== '-' ? escapeHtml(ex.rir) : ''}" placeholder="es. RIR 1">
-              </div>
-            </div>
-            <div class="field" style="margin-bottom: 0;">
-              <label>Note Esercizio</label>
-              <textarea id="editNotes_${ex.uid}" placeholder="Note esecuzione...">${ex.notes !== '-' ? escapeHtml(ex.notes) : ''}</textarea>
-            </div>
-            <div style="display: flex; gap: 6px; justify-content: flex-end;">
-              <button type="button" class="btn btn-outline btn-sm" onclick="cancelEditBuilderEx()">Annulla</button>
-              <button type="button" class="btn btn-success btn-sm" onclick="saveEditBuilderEx(${ex.uid})">💾 Salva Modifiche</button>
-            </div>
+          `;
+          inCircuit = false;
+          circuitHtmlBuffer = "";
+        }
+        const label = item.circuitLabel ? item.circuitLabel : "BLOCCO CIRCUITO";
+        groupDiv.innerHTML += `
+          <div class="circuit-group-box">
+            <div class="circuit-group-header"><span>🔄 ${escapeHtml(label)}</span><span>CIRCUITO</span></div>
+            ${itemHtml}
+            <div class="circuit-group-footer">🏁 Fine Circuito</div>
           </div>
         `;
+      } else if (item.circuitRole === "start") {
+        if (inCircuit) {
+          groupDiv.innerHTML += `
+            <div class="circuit-group-box">
+              <div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitHeaderTitle)}</span><span>INIZIO CIRCUITO</span></div>
+              ${circuitHtmlBuffer}
+              <div class="circuit-group-footer">🏁 Fine Circuito</div>
+            </div>
+          `;
+        }
+        inCircuit = true;
+        circuitHeaderTitle = item.circuitLabel ? item.circuitLabel : "CIRCUITO";
+        circuitHtmlBuffer = itemHtml;
+      } else if (item.circuitRole === "end") {
+        if (inCircuit) {
+          circuitHtmlBuffer += itemHtml;
+          groupDiv.innerHTML += `
+            <div class="circuit-group-box">
+              <div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitHeaderTitle)}</span><span>INIZIO CIRCUITO</span></div>
+              ${circuitHtmlBuffer}
+              <div class="circuit-group-footer">🏁 Fine Circuito</div>
+            </div>
+          `;
+          inCircuit = false;
+          circuitHtmlBuffer = "";
+        } else {
+          groupDiv.innerHTML += itemHtml;
+        }
       } else {
-        const isFirst = idx === 0;
-        const isLast = idx === dayItems.length - 1;
-        item.innerHTML = `
-          <div class="exercise-top">
-            <div class="item-photos">
-              ${ex.imgStart === ex.imgEnd ? `<img src="${ex.imgStart}" class="item-img" style="width: 82px; object-fit: contain;">` : `<img src="${ex.imgStart}" class="item-img"><img src="${ex.imgEnd}" class="item-img">`}
-            </div>
-            <div class="item-details">
-              <strong>${idx + 1}. ${escapeHtml(ex.name)}</strong>
-              <div class="item-sub"><strong>${escapeHtml(ex.setsReps)}</strong> | Rest: ${escapeHtml(ex.rest)} | RIR/@: ${escapeHtml(ex.rir)}</div>
-              ${ex.notes !== '-' ? `<div class="item-notes">Note: ${escapeHtml(ex.notes)}</div>` : ''}
-            </div>
-            <div class="builder-item-actions">
-              <div class="builder-btn-row">
-                <button type="button" class="btn-builder-act" title="Sposta su" onclick="moveBuilderEx(${ex.uid}, -1)" ${isFirst ? 'disabled' : ''}>⬆️</button>
-                <button type="button" class="btn-builder-act" title="Sposta giù" onclick="moveBuilderEx(${ex.uid}, 1)" ${isLast ? 'disabled' : ''}>⬇️</button>
-              </div>
-              <div class="builder-btn-row">
-                <button type="button" class="btn-builder-act" title="Modifica parametri" onclick="startEditBuilderEx(${ex.uid})">✏️</button>
-                <button type="button" class="btn-builder-act del" title="Rimuovi" onclick="deleteEx(${ex.uid})">✖</button>
-              </div>
-            </div>
-          </div>
-        `;
+        if (inCircuit) {
+          circuitHtmlBuffer += itemHtml;
+        } else {
+          groupDiv.innerHTML += itemHtml;
+        }
       }
-      groupEl.appendChild(item);
     });
-    list.appendChild(groupEl);
+
+    if (inCircuit) {
+      groupDiv.innerHTML += `
+        <div class="circuit-group-box" style="border-style: dashed;">
+          <div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitHeaderTitle)}</span><span>INIZIO CIRCUITO (in corso...)</span></div>
+          ${circuitHtmlBuffer}
+          <div class="circuit-group-footer">⏳ Aggiungi l'ultimo esercizio spuntando "Fine Circuito" per chiudere</div>
+        </div>
+      `;
+    }
+
+    listEl.appendChild(groupDiv);
   });
 }
 
-window.deleteEx = function(uid) {
-  if (editingBuilderUid === uid) editingBuilderUid = null;
-  currentWorkout = currentWorkout.filter(e => e.uid !== uid);
+// Modifica rapida di un esercizio già inserito
+window.editItem = function(uid) {
+  const index = currentWorkout.findIndex(item => item.uid === uid);
+  if (index === -1) return;
+  const item = currentWorkout[index];
+
+  const newSets = prompt(`Serie e Reps per "${item.name}":`, item.setsReps === "-" ? "" : item.setsReps);
+  if (newSets === null) return;
+  const newRest = prompt(`Recupero (Rest) per "${item.name}":`, item.rest === "-" ? "" : item.rest);
+  if (newRest === null) return;
+  const newRir = prompt(`RIR / @ per "${item.name}":`, item.rir === "-" ? "" : item.rir);
+  if (newRir === null) return;
+  const newNotes = prompt(`Note esercizio per "${item.name}":`, item.notes === "-" ? "" : item.notes);
+  if (newNotes === null) return;
+
+  item.setsReps = newSets.trim() || "-";
+  item.rest = newRest.trim() || "-";
+  item.rir = newRir.trim() || "-";
+  item.notes = newNotes.trim() || "-";
   renderList();
 };
 
-document.getElementById("btnClearBuilder").addEventListener("click", () => {
-  if (currentWorkout.length === 0) return;
-  if (!confirm("Vuoi rimuovere tutti gli esercizi inseriti e ripartire da zero?")) return;
+window.moveItem = function(uid, direction) {
+  const index = currentWorkout.findIndex(item => item.uid === uid);
+  if (index === -1) return;
+  const targetDay = currentWorkout[index].day;
+  const dayIndices = currentWorkout
+    .map((item, idx) => item.day === targetDay ? idx : -1)
+    .filter(idx => idx !== -1);
 
-  editingBuilderUid = null;
-  currentWorkout = [];
-  document.getElementById("generalNotes").value = "";
+  const posInDay = dayIndices.indexOf(index);
+  const newPosInDay = posInDay + direction;
+  if (newPosInDay < 0 || newPosInDay >= dayIndices.length) return;
+
+  const swapIndex = dayIndices[newPosInDay];
+  const temp = currentWorkout[index];
+  currentWorkout[index] = currentWorkout[swapIndex];
+  currentWorkout[swapIndex] = temp;
   renderList();
-});
+};
 
+window.removeItem = function(uid) {
+  currentWorkout = currentWorkout.filter(item => item.uid !== uid);
+  renderList();
+};
+
+// Salvataggio su Supabase Cloud e Invio all'Atleta
 document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   const athleteId = document.getElementById("builderAthleteSelect").value;
   if (!athleteId) {
-    alert("Seleziona un atleta collegato dal menu a tendina in alto per inviare la scheda alla sua app.");
+    alert("Seleziona prima un atleta collegato dal menu a tendina in alto!");
     return;
   }
   if (currentWorkout.length === 0) {
-    alert("Aggiungi almeno un esercizio prima di salvare.");
+    alert("Inserisci almeno un esercizio prima di salvare!");
     return;
   }
 
   const btn = document.getElementById("btnSaveCloud");
   btn.disabled = true;
-  btn.textContent = "Salvataggio in corso...";
+  btn.textContent = "Invio in corso...";
 
-  const weeks = parseInt(document.getElementById("durationWeeks").value) || 4;
+  const durationWeeks = parseInt(document.getElementById("durationWeeks").value) || 4;
   const generalNotes = document.getElementById("generalNotes").value.trim();
+
   const startDate = new Date();
   const endDate = new Date();
-  endDate.setDate(startDate.getDate() + (weeks * 7));
+  endDate.setDate(startDate.getDate() + (durationWeeks * 7));
 
   await supabaseClient
     .from('workouts')
@@ -348,34 +492,34 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
     .insert({
       trainer_id: currentProfile.id,
       athlete_id: athleteId,
-      duration_weeks: weeks,
+      title: `Scheda ${durationWeeks} Settimane`,
+      general_notes: generalNotes,
+      duration_weeks: durationWeeks,
       start_date: startDate.toISOString().split('T')[0],
       end_date: endDate.toISOString().split('T')[0],
-      general_notes: generalNotes,
       status: 'active'
     })
     .select()
     .single();
 
   if (wError || !newWorkout) {
-    alert("Errore salvataggio scheda: " + (wError ? wError.message : ""));
+    alert("Errore salvataggio scheda: " + (wError ? wError.message : "sconosciuto"));
     btn.disabled = false;
     btn.textContent = "☁️ Salva e Invia all'app dell'Atleta";
     return;
   }
 
-  // Ordina gli esercizi per giorno prima di salvare così order_index rispecchia l'ordine visivo
-  const orderedWorkout = [...currentWorkout].sort((a, b) => a.day.localeCompare(b.day, undefined, { numeric: true }));
-
-  const rowsToInsert = orderedWorkout.map((ex, index) => ({
+  const rowsToInsert = currentWorkout.map((ex, idx) => ({
     workout_id: newWorkout.id,
     exercise_id: ex.id,
     day_name: ex.day,
-    order_index: index,
     sets_reps: ex.setsReps,
     rest: ex.rest,
     rir: ex.rir,
-    notes: ex.notes
+    notes: ex.notes,
+    order_index: idx,
+    circuit_role: ex.circuitRole || null,
+    circuit_label: ex.circuitLabel || null
   }));
 
   const { error: exError } = await supabaseClient
@@ -386,10 +530,9 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   btn.textContent = "☁️ Salva e Invia all'app dell'Atleta";
 
   if (exError) {
-    alert("Errore inserimento esercizi: " + exError.message);
+    alert("Scheda creata ma errore negli esercizi: " + exError.message);
   } else {
-    alert("Scheda salvata e inviata con successo all'app dell'atleta!");
-    editingBuilderUid = null;
+    alert("✅ Scheda salvata e inviata! L'atleta la vedrà immediatamente aprendo la sua app.");
     currentWorkout = [];
     renderList();
     showTrainerView("trainerClientsView");
@@ -397,67 +540,127 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   }
 });
 
+// Generazione PDF Stampabile con Circuiti evidenziati
 document.getElementById("btnPdf").addEventListener("click", () => {
-  if (currentWorkout.length === 0) { alert("Aggiungi almeno un esercizio."); return; }
-  const athlete = document.getElementById("athleteName").value.trim() || "Atleta";
-  const weeks = document.getElementById("durationWeeks").value || "4";
+  if (currentWorkout.length === 0) {
+    alert("Inserisci almeno un esercizio prima di generare il PDF!");
+    return;
+  }
+
+  const athleteName = document.getElementById("athleteName").value.trim() || "Atleta";
+  const durationWeeks = document.getElementById("durationWeeks").value || "4";
   const generalNotes = document.getElementById("generalNotes").value.trim();
 
-  document.getElementById("pdfCoachTag").textContent = `COACH: ${currentProfile.full_name.toUpperCase()}`;
-  document.getElementById("pdfFooterCoach").textContent = `Coach ${currentProfile.full_name} • Workout Builder`;
-  document.getElementById("pdfAthlete").textContent = athlete;
-  document.getElementById("pdfDuration").textContent = `${weeks} settimane`;
+  document.getElementById("pdfAthlete").textContent = athleteName;
+  document.getElementById("pdfDuration").textContent = `${durationWeeks} Settimane`;
   document.getElementById("pdfCount").textContent = currentWorkout.length;
-  document.getElementById("pdfDate").textContent = new Date().toLocaleDateString("it-IT");
+  document.getElementById("pdfDate").textContent = new Date().toLocaleDateString('it-IT');
+  document.getElementById("pdfCoachTag").textContent = currentProfile ? `COACH: ${currentProfile.full_name.toUpperCase()}` : "COACH";
+  document.getElementById("pdfFooterCoach").textContent = currentProfile ? `Preparatore: ${currentProfile.full_name}` : "Workout Builder";
 
   const notesBox = document.getElementById("pdfGeneralNotesBox");
   if (generalNotes) {
-    document.getElementById("pdfGeneralNotesText").textContent = generalNotes;
     notesBox.style.display = "block";
+    document.getElementById("pdfGeneralNotesText").textContent = generalNotes;
   } else {
     notesBox.style.display = "none";
   }
 
-  const container = document.getElementById("pdfTablesContainer");
-  container.innerHTML = "";
+  const tablesContainer = document.getElementById("pdfTablesContainer");
+  tablesContainer.innerHTML = "";
+
   const grouped = {};
-  currentWorkout.forEach(ex => { if (!grouped[ex.day]) grouped[ex.day] = []; grouped[ex.day].push(ex); });
+  currentWorkout.forEach(item => {
+    if (!grouped[item.day]) grouped[item.day] = [];
+    grouped[item.day].push(item);
+  });
 
   Object.keys(grouped).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(dayName => {
-    const exercises = grouped[dayName];
     const dayTitle = document.createElement("div");
-    dayTitle.className = "pdf-day-banner";
-    dayTitle.innerHTML = `<span>${dayName}</span><span>${exercises.length} esercizi</span>`;
-    container.appendChild(dayTitle);
+    dayTitle.className = "pdf-day-title";
+    dayTitle.textContent = dayName;
+    tablesContainer.appendChild(dayTitle);
 
     const table = document.createElement("table");
     table.className = "pdf-table";
     table.innerHTML = `
-      <thead><tr><th style="width:96px;text-align:center;">Movimento</th><th>Esercizio</th><th style="width:95px;text-align:center;">Serie e Reps</th><th style="width:60px;text-align:center;">Rest</th><th style="width:70px;text-align:center;">RIR / @</th><th>Note</th></tr></thead>
-      <tbody>
-        ${exercises.map((ex, i) => `
-          <tr>
-            <td>${ex.imgStart === ex.imgEnd ? `<div style="display:flex;justify-content:center;"><img src="${ex.imgStart}" style="width:90px;height:50px;object-fit:contain;border:1px solid #cbd5e1;border-radius:4px;" crossorigin="anonymous"></div>` : `<div class="pdf-photos-wrap"><img src="${ex.imgStart}" class="pdf-img" crossorigin="anonymous"><img src="${ex.imgEnd}" class="pdf-img" crossorigin="anonymous"></div>`}</td>
-            <td><strong>${i + 1}. ${escapeHtml(ex.name)}</strong></td>
-            <td style="text-align:center;font-weight:bold;">${escapeHtml(ex.setsReps)}</td>
-            <td style="text-align:center;">${escapeHtml(ex.rest)}</td>
-            <td style="text-align:center;font-weight:600;">${escapeHtml(ex.rir)}</td>
-            <td class="pdf-notes-cell">${escapeHtml(ex.notes)}</td>
-          </tr>
-        `).join("")}
-      </tbody>
+      <thead>
+        <tr>
+          <th style="width: 6%;">#</th>
+          <th style="width: 14%;">Esecuzione</th>
+          <th style="width: 24%;">Esercizio</th>
+          <th style="width: 13%;">Serie/Reps</th>
+          <th style="width: 9%;">Rest</th>
+          <th style="width: 9%;">RIR / @</th>
+          <th style="width: 25%;">Note</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
     `;
-    container.appendChild(table);
+
+    const tbody = table.querySelector("tbody");
+    let inCircuit = false;
+
+    grouped[dayName].forEach((item, index) => {
+      const isSingle = item.imgStart === item.imgEnd;
+      const isCircuitStart = item.circuitRole === "start" || item.circuitRole === "single";
+      const isCircuitEnd = item.circuitRole === "end" || item.circuitRole === "single";
+
+      if (isCircuitStart) {
+        inCircuit = true;
+        const label = item.circuitLabel ? item.circuitLabel : "CIRCUITO";
+        const bannerTr = document.createElement("tr");
+        bannerTr.innerHTML = `<td colspan="7" class="pdf-circuit-banner">🔄 INIZIO ${escapeHtml(label)}</td>`;
+        tbody.appendChild(bannerTr);
+      }
+
+      const tr = document.createElement("tr");
+      if (inCircuit) tr.className = "pdf-circuit-row";
+
+      tr.innerHTML = `
+        <td><strong>${index + 1}</strong></td>
+        <td style="white-space: nowrap;">
+          ${isSingle ? `
+            <img src="${item.imgStart}" class="pdf-thumb" style="width: 66px; object-fit: contain;">
+          ` : `
+            <img src="${item.imgStart}" class="pdf-thumb">
+            <img src="${item.imgEnd}" class="pdf-thumb">
+          `}
+        </td>
+        <td>
+          <strong>${escapeHtml(item.name)}</strong><br>
+          <span style="font-size: 9px; color: #64748b;">${escapeHtml(item.muscle)}</span>
+        </td>
+        <td><strong>${escapeHtml(item.setsReps)}</strong></td>
+        <td>${escapeHtml(item.rest)}</td>
+        <td>${escapeHtml(item.rir)}</td>
+        <td style="font-size: 9.5px; white-space: pre-wrap;">${escapeHtml(item.notes)}</td>
+      `;
+      tbody.appendChild(tr);
+
+      if (isCircuitEnd && inCircuit) {
+        const endTr = document.createElement("tr");
+        endTr.innerHTML = `<td colspan="7" class="pdf-circuit-end">🏁 FINE CIRCUITO</td>`;
+        tbody.appendChild(endTr);
+        inCircuit = false;
+      }
+    });
+
+    tablesContainer.appendChild(table);
   });
 
   const wrapper = document.getElementById("pdfPreviewWrapper");
   wrapper.style.display = "block";
-  html2pdf().set({
-    margin: [8, 8, 8, 8],
-    filename: `Scheda_${athlete.replace(/\s+/g, '_')}.pdf`,
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2, useCORS: true, scrollY: 0, scrollX: 0 },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-  }).from(document.getElementById("pdfSheet")).save().then(() => { wrapper.style.display = "none"; });
+  const element = document.getElementById("pdfSheet");
+  const opt = {
+    margin: 5,
+    filename: `Scheda_${athleteName.replace(/\s+/g, '_')}.pdf`,
+    image: { type: 'jpeg', quality: 0.95 },
+    html2canvas: { scale: 2, useCORS: true, allowTaint: true },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  };
+
+  html2pdf().set(opt).from(element).save().then(() => {
+    wrapper.style.display = "none";
+  });
 });
