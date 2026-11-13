@@ -16,7 +16,6 @@ function applyTheme(theme) {
   }
 }
 
-// Applica subito il tema salvato all'apertura della pagina
 applyTheme(localStorage.getItem("wb_theme") || "dark");
 
 document.getElementById("btnThemeDark").addEventListener("click", () => applyTheme("dark"));
@@ -26,13 +25,13 @@ document.getElementById("btnThemeLight").addEventListener("click", () => applyTh
 document.getElementById("btnOpenSettings").addEventListener("click", () => {
   const panel = document.getElementById("settingsSection");
   panel.classList.toggle("hidden");
+  document.getElementById("notificationsSection").classList.add("hidden");
 
-  // Mostra la sezione Logo solo se l'utente loggato è un Personal Trainer
   const trainerLogoBox = document.getElementById("trainerLogoSettingsBox");
   if (currentProfile && currentProfile.role === "trainer") {
     trainerLogoBox.classList.remove("hidden");
     const preview = document.getElementById("settingsLogoPreview");
-    preview.src = currentProfile.logo_url || "logo_carlo.png";
+    preview.src = currentProfile.logo_url || "logo_W.jpeg";
     preview.style.display = "block";
   } else {
     trainerLogoBox.classList.add("hidden");
@@ -45,7 +44,7 @@ document.getElementById("btnCloseSettings").addEventListener("click", () => {
 
 // Aggiorna visivamente il logo in tutta l'app (Header + PDF)
 function applyBrandLogo(logoUrl) {
-  const src = logoUrl || "logo_carlo.png";
+  const src = logoUrl || "logo_W.jpeg";
   const headerLogo = document.getElementById("headerLogoImg");
   const pdfLogo = document.getElementById("pdfLogoImg");
   if (headerLogo) {
@@ -58,7 +57,7 @@ function applyBrandLogo(logoUrl) {
   }
 }
 
-// Ridimensiona immagine lato browser prima del salvataggio (max 280px, leggera e nitida)
+// Ridimensiona immagine lato browser prima del salvataggio
 function resizeLogoImage(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -138,7 +137,7 @@ document.getElementById("btnResetLogo").addEventListener("click", async () => {
   if (!error) {
     currentProfile.logo_url = null;
     applyBrandLogo(null);
-    document.getElementById("settingsLogoPreview").src = "logo_carlo.png";
+    document.getElementById("settingsLogoPreview").src = "logo_W.jpeg";
     alert("Logo predefinito ripristinato.");
   }
 });
