@@ -417,7 +417,7 @@ function updatePreview() {
     imgStartEl.style.objectFit = "contain";
     tagStartEl.textContent = "Esecuzione";
   } else {
-    wrapEndEl.style.display = "block";
+    wrapEndEl.style.display = "flex";
     imgStartEl.style.width = "64px";
     imgStartEl.style.objectFit = "cover";
     tagStartEl.textContent = "Partenza";
