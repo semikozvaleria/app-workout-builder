@@ -1,63 +1,105 @@
-// Memoria locale dei log caricati, indicizzata per workout_exercise_id
-let athleteLogsCache = {};
-
-function renderAthleteLogSummary(workoutExerciseId, exLogs) {
-  if (!exLogs || exLogs.length === 0) {
-    return `<div class="last-log-tag">📝 Registra il tuo allenamento:</div>`;
-  }
-
-  const latest = exLogs[0];
-  const latestDate = new Date(latest.logged_at).toLocaleDateString('it-IT');
-  const rirTxt = (latest.rir !== null && latest.rir !== undefined) ? ` • RIR/@: ${latest.rir}` : '';
-
-  const olderHtml = exLogs.length > 1 ? `
-    <details class="past-logs-details">
-      <summary>Vedi storico sessioni (${exLogs.length - 1})</summary>
-      <div style="margin-top: 4px;">
-        ${exLogs.slice(1).map(old => {
-          const d = new Date(old.logged_at).toLocaleDateString('it-IT');
-          const r = (old.rir !== null && old.rir !== undefined) ? ` • RIR/@: ${old.rir}` : '';
-          const n = old.athlete_notes ? `\n"${escapeHtml(old.athlete_notes)}"` : '';
-          return `
-            <div class="past-log-line past-log-item-flex">
-              <div><strong>${d}:</strong> ${old.weight_kg ?? '-'} kg × ${escapeHtml(old.reps_done || '-')}${r}${n}</div>
-              <div class="log-mini-actions">
-                <button type="button" class="btn-icon-mini" title="Modifica" onclick="startEditAthleteLog('${workoutExerciseId}', '${old.id}')">✏️</button>
-                <button type="button" class="btn-icon-mini del" title="Elimina" onclick="deleteAthleteLog('${workoutExerciseId}', '${old.id}')">🗑️</button>
-              </div>
-            </div>
-          `;
-        }).join("")}
-      </div>
-    </details>
-  ` : "";
-
-  return `
-    <div class="log-header-row">
-      <div class="last-log-tag">
-        ✅ Ultimo (${latestDate}): ${latest.weight_kg ?? '-'} kg × ${escapeHtml(latest.reps_done || '-')}${rirTxt}
-      </div>
-      <div class="log-mini-actions">
-        <button type="button" class="btn-icon-mini" title="Modifica questo log" onclick="startEditAthleteLog('${workoutExerciseId}', '${latest.id}')">✏️</button>
-        <button type="button" class="btn-icon-mini del" title="Elimina questo log" onclick="deleteAthleteLog('${workoutExerciseId}', '${latest.id}')">🗑️</button>
-      </div>
-    </div>
-    ${latest.athlete_notes ? `<div class="feedback-note">"${escapeHtml(latest.athlete_notes)}"</div>` : ''}
-    ${olderHtml}
-  `;
-}
-
 async function initAthleteArea() {
   if (!currentProfile.trainer_id) {
     document.getElementById("athleteLinkCoachCard").classList.remove("hidden");
     document.getElementById("athleteWorkoutCard").classList.add("hidden");
     updateNotificationCenter([]);
+  } else {
+    document.getElementById("athleteLinkCoachCard").classList.add("hidden");
+    document.getElementById("athleteWorkoutCard").classList.remove("hidden");
+    await loadAthleteWorkout();
+  }
+}
+
+document.getElementById("btnLinkCoach").addEventListener("click", async () => {
+  const code = document.getElementById("inputCoachCode").value.trim();
+  if (!code) {
+    alert("Inserisci il codice invito del tuo coach.");
     return;
   }
 
-  document.getElementById("athleteLinkCoachCard").classList.add("hidden");
-  document.getElementById("athleteWorkoutCard").classList.remove("hidden");
+  const { data: coach, error } = await supabaseClient
+    .from('profiles')
+    .select('id, full_name, role, logo_url')
+    .eq('id', code)
+    .eq('role', 'trainer')
+    .single();
 
+  if (error || !coach) {
+    alert("Codice invito non valido. Controlla di aver copiato tutto il codice.");
+    return;
+  }
+
+  const { error: uError } = await supabaseClient
+    .from('profiles')
+    .update({ trainer_id: coach.id })
+    .eq('id', currentProfile.id);
+
+  if (uError) {
+    alert("Errore collegamento: " + uError.message);
+  } else {
+    currentProfile.trainer_id = coach.id;
+    applyBrandLogo(coach.logo_url);
+    alert(`Collegato con successo al coach ${coach.full_name}!`);
+    initAthleteArea();
+  }
+});
+
+// Costruisce il markup HTML della singola card esercizio nell'app Atleta
+function buildAthleteExerciseCardHtml(row, idx, latestLog) {
+  const ex = row.exercises;
+  const start = ex ? ex.img_start : "";
+  const end = ex ? (ex.img_end || ex.img_start) : "";
+  const isSingle = start === end;
+
+  let roleTag = "";
+  if (row.circuit_role === "start") {
+    roleTag = `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 INIZIO CIRCUITO</span>`;
+  } else if (row.circuit_role === "end") {
+    roleTag = `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🏁 FINE CIRCUITO</span>`;
+  } else if (row.circuit_role === "single") {
+    roleTag = `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 BLOCCO CIRCUITO</span>`;
+  }
+
+  const lastSummary = latestLog
+    ? `Ultimo salvato: <strong>${latestLog.weight_kg ?? '-'} kg</strong> × <strong>${escapeHtml(latestLog.reps_done || '-')}</strong>${latestLog.rir !== null && latestLog.rir !== undefined ? ` (RIR ${latestLog.rir})` : ''}`
+    : "Nessun carico ancora registrato";
+
+  return `
+    <div class="exercise-item">
+      <div class="exercise-top">
+        <div class="item-photos">
+          ${isSingle ? `
+            <img src="${start}" class="item-img" style="width: 82px; object-fit: contain;">
+          ` : `
+            <img src="${start}" class="item-img">
+            <img src="${end}" class="item-img">
+          `}
+        </div>
+        <div class="item-details">
+          <strong>${idx + 1}. ${escapeHtml(ex ? ex.name : 'Esercizio')}</strong> ${roleTag}
+          <div class="item-sub"><strong>${escapeHtml(row.sets_reps)}</strong> | Rest: ${escapeHtml(row.rest)} | RIR/@: ${escapeHtml(row.rir)}</div>
+          ${row.notes && row.notes !== '-' ? `<div class="item-notes">Note: ${escapeHtml(row.notes)}</div>` : ''}
+        </div>
+      </div>
+
+      <!-- Barra Diario Carichi e Note dell'Atleta -->
+      <div class="athlete-log-bar" style="flex-direction: column; align-items: stretch;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap;">
+          <span style="font-size: 0.72rem; color: var(--text-muted);">${lastSummary}</span>
+          <div style="display: flex; align-items: center; gap: 5px; flex-wrap: wrap;">
+            <input type="number" step="0.5" placeholder="Kg" id="logKg_${row.id}" value="${latestLog?.weight_kg ?? ''}" title="Carico usato (Kg)">
+            <input type="text" placeholder="Reps (es. 10-9-8)" id="logReps_${row.id}" value="${latestLog?.reps_done ?? ''}" style="width: 105px;" title="Ripetizioni eseguite">
+            <input type="number" step="0.5" placeholder="RIR" id="logRir_${row.id}" value="${latestLog?.rir ?? ''}" style="width: 55px;" title="RIR percepito">
+            <button class="btn btn-success btn-sm" onclick="saveWorkoutLog('${row.id}')">Salva</button>
+          </div>
+        </div>
+        <input type="text" id="logNote_${row.id}" value="${escapeHtml(latestLog?.athlete_notes ?? '')}" placeholder="📝 Aggiungi una nota per te o il tuo coach (es. sensazioni, fatica, dolore)..." style="font-size: 0.78rem; padding: 6px 8px; margin-top: 2px;">
+      </div>
+    </div>
+  `;
+}
+
+async function loadAthleteWorkout() {
   const { data: coach } = await supabaseClient
     .from('profiles')
     .select('full_name, logo_url')
@@ -69,7 +111,7 @@ async function initAthleteArea() {
     applyBrandLogo(coach.logo_url);
   }
 
-  const { data: workout } = await supabaseClient
+  const { data: workout, error } = await supabaseClient
     .from('workouts')
     .select('*')
     .eq('athlete_id', currentProfile.id)
@@ -79,291 +121,195 @@ async function initAthleteArea() {
     .single();
 
   const container = document.getElementById("athleteExercisesContainer");
-  const oldBanner = document.getElementById("athleteExpiryBanner");
-  if (oldBanner) oldBanner.remove();
+  const notesEl = document.getElementById("athleteGeneralNotes");
+  const metaEl = document.getElementById("athleteWorkoutMeta");
 
-  if (!workout) {
-    document.getElementById("athleteWorkoutMeta").textContent = "Nessuna scheda attiva assegnata al momento.";
-    document.getElementById("athleteGeneralNotes").classList.add("hidden");
+  if (error || !workout) {
+    metaEl.textContent = "In attesa che il tuo Personal Trainer ti assegni una scheda.";
+    notesEl.classList.add("hidden");
     container.innerHTML = "";
-    updateNotificationCenter([]);
+    updateNotificationCenter([{
+      level: "warning",
+      title: "Nessuna scheda attiva",
+      message: "Il tuo coach non ha ancora pubblicato una scheda attiva sul tuo profilo."
+    }]);
     return;
   }
 
-  const endStr = workout.end_date ? new Date(workout.end_date).toLocaleDateString('it-IT') : '-';
-  const metaEl = document.getElementById("athleteWorkoutMeta");
+  const end = workout.end_date ? new Date(workout.end_date) : null;
+  const endStr = end ? end.toLocaleDateString('it-IT') : '-';
   metaEl.textContent = `Durata: ${workout.duration_weeks} settimane • Scadenza: ${endStr}`;
 
-  // Controllo scadenza scheda per l'Atleta
   const athleteAlerts = [];
-  if (workout.end_date) {
-    const today = new Date();
-    const end = new Date(workout.end_date);
-    const diffDays = Math.ceil((end - today) / (1000 * 60 * 60 * 24));
-
+  if (end) {
+    const diffDays = Math.ceil((end - new Date()) / (1000 * 60 * 60 * 24));
     if (diffDays < 0) {
       athleteAlerts.push({
         level: "danger",
         title: "⚠️ Scheda Scaduta",
         message: `La tua scheda è scaduta il ${endStr}. Contatta il tuo coach per il rinnovo!`
       });
-      metaEl.insertAdjacentHTML("afterend", `
-        <div id="athleteExpiryBanner" class="athlete-expiry-banner expired">
-          <span>⚠️ <strong>Scheda scaduta il ${endStr}:</strong> contatta il tuo coach per ricevere la nuova programmazione.</span>
-        </div>
-      `);
     } else if (diffDays <= 5) {
       athleteAlerts.push({
         level: "warning",
         title: "⏳ Scheda in Scadenza",
-        message: `Mancano ${diffDays} giorni alla scadenza della scheda (${endStr}).`
+        message: `Mancano ${diffDays} giorni alla scadenza della tua scheda (${endStr}).`
       });
-      metaEl.insertAdjacentHTML("afterend", `
-        <div id="athleteExpiryBanner" class="athlete-expiry-banner">
-          <span>⏳ <strong>In scadenza:</strong> mancano ${diffDays} giorni al termine di questa scheda (${endStr}).</span>
-        </div>
-      `);
     }
   }
   updateNotificationCenter(athleteAlerts);
 
   if (workout.general_notes) {
-    document.getElementById("athleteGeneralNotes").textContent = "NOTE DEL COACH:\n" + workout.general_notes;
-    document.getElementById("athleteGeneralNotes").classList.remove("hidden");
+    notesEl.classList.remove("hidden");
+    notesEl.textContent = "NOTE DEL COACH:\n" + workout.general_notes;
   } else {
-    document.getElementById("athleteGeneralNotes").classList.add("hidden");
+    notesEl.classList.add("hidden");
   }
 
-  const { data: items } = await supabaseClient
-    .from('workout_exercises')
-    .select('*, exercises(*)')
-    .eq('workout_id', workout.id)
-    .order('order_index', { ascending: true });
-
-  const { data: myLogs } = await supabaseClient
-    .from('workout_logs')
-    .select('*')
-    .eq('athlete_id', currentProfile.id)
-    .order('logged_at', { ascending: false });
+  const [{ data: items }, { data: logs }] = await Promise.all([
+    supabaseClient
+      .from('workout_exercises')
+      .select('*, exercises(*)')
+      .eq('workout_id', workout.id)
+      .order('order_index', { ascending: true }),
+    supabaseClient
+      .from('workout_logs')
+      .select('*')
+      .eq('athlete_id', currentProfile.id)
+      .order('logged_at', { ascending: false })
+  ]);
 
   if (!items || items.length === 0) {
-    container.innerHTML = `<div style="color: var(--text-muted); font-size: 0.85rem;">Scheda vuota.</div>`;
+    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem;">Nessun esercizio inserito nella scheda.</div>`;
     return;
   }
 
-  athleteLogsCache = {};
+  const latestLogMap = {};
+  (logs || []).forEach(l => {
+    if (!latestLogMap[l.workout_exercise_id]) {
+      latestLogMap[l.workout_exercise_id] = l;
+    }
+  });
+
+  container.innerHTML = "";
   const grouped = {};
   items.forEach(item => {
     if (!grouped[item.day_name]) grouped[item.day_name] = [];
     grouped[item.day_name].push(item);
   });
 
-  container.innerHTML = "";
   Object.keys(grouped).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(dayName => {
-    const groupEl = document.createElement("div");
-    groupEl.className = "day-group";
-    groupEl.innerHTML = `<div class="day-badge">📅 ${escapeHtml(dayName)}</div>`;
+    const groupDiv = document.createElement("div");
+    groupDiv.className = "day-group";
+    groupDiv.innerHTML = `<div class="day-badge">📅 ${escapeHtml(dayName)}</div>`;
 
-    grouped[dayName].forEach((row, idx) => {
-      const ex = row.exercises;
-      const start = ex ? ex.img_start : "";
-      const end = ex ? (ex.img_end || ex.img_start) : "";
-      const exLogs = (myLogs || []).filter(l => l.workout_exercise_id === row.id);
-      athleteLogsCache[row.id] = exLogs;
-      const lastLog = exLogs[0];
+    const dayItems = grouped[dayName];
+    let inCircuit = false;
+    let circuitHtmlBuffer = "";
+    let circuitHeaderTitle = "CIRCUITO";
 
-      const itemEl = document.createElement("div");
-      itemEl.className = "exercise-item";
-      itemEl.innerHTML = `
-        <div class="exercise-top">
-          <div class="item-photos">
-            ${start === end ? `
-              <img src="${start}" class="item-img" style="width: 82px; object-fit: contain;">
-            ` : `
-              <img src="${start}" class="item-img">
-              <img src="${end}" class="item-img">
-            `}
-          </div>
-          <div class="item-details">
-            <strong>${idx + 1}. ${escapeHtml(ex ? ex.name : 'Esercizio')}</strong>
-            <div class="item-sub"><strong>${escapeHtml(row.sets_reps)}</strong> | Rest: ${escapeHtml(row.rest)} | Target RIR/@: ${escapeHtml(row.rir)}</div>
-            ${row.notes && row.notes !== '-' ? `<div class="item-notes">Note: ${escapeHtml(row.notes)}</div>` : ''}
-          </div>
-        </div>
+    dayItems.forEach((row, idx) => {
+      const latestLog = latestLogMap[row.id] || null;
+      const cardHtml = buildAthleteExerciseCardHtml(row, idx, latestLog);
 
-        <div class="log-box" id="logBox_${row.id}">
-          <div id="logHistoryBox_${row.id}">
-            ${renderAthleteLogSummary(row.id, exLogs)}
-          </div>
-          <input type="hidden" id="editingLogId_${row.id}" value="">
-          <div class="log-row-top">
-            <input type="number" step="0.5" id="logWeight_${row.id}" placeholder="Peso (kg)" value="${lastLog && lastLog.weight_kg !== null ? lastLog.weight_kg : ''}">
-            <input type="text" id="logReps_${row.id}" placeholder="Reps (es. 10-9-8)">
-            <input type="number" step="0.5" id="logRir_${row.id}" placeholder="RIR / @" value="${lastLog && lastLog.rir !== null ? lastLog.rir : ''}">
-          </div>
-          <div class="log-row-bottom">
-            <textarea id="logNote_${row.id}" rows="2" placeholder="Nota rapida (opzionale)"></textarea>
-            <div style="display: flex; gap: 4px;">
-              <button type="button" class="btn btn-success btn-sm" id="btnSaveLog_${row.id}" onclick="saveAthleteLog('${row.id}')">Salva</button>
-              <button type="button" class="btn btn-outline btn-sm hidden" id="btnCancelEdit_${row.id}" title="Annulla modifica" onclick="cancelEditAthleteLog('${row.id}')">✖</button>
+      if (row.circuit_role === "single") {
+        if (inCircuit) {
+          groupDiv.innerHTML += `
+            <div class="circuit-group-box">
+              <div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitHeaderTitle)}</span><span>INIZIO CIRCUITO</span></div>
+              ${circuitHtmlBuffer}
+              <div class="circuit-group-footer">🏁 Fine Circuito</div>
             </div>
+          `;
+          inCircuit = false;
+          circuitHtmlBuffer = "";
+        }
+        const label = row.circuit_label ? row.circuit_label : "BLOCCO CIRCUITO";
+        groupDiv.innerHTML += `
+          <div class="circuit-group-box">
+            <div class="circuit-group-header"><span>🔄 ${escapeHtml(label)}</span><span>CIRCUITO</span></div>
+            ${cardHtml}
+            <div class="circuit-group-footer">🏁 Fine Circuito</div>
           </div>
-        </div>
-      `;
-      groupEl.appendChild(itemEl);
+        `;
+      } else if (row.circuit_role === "start") {
+        if (inCircuit) {
+          groupDiv.innerHTML += `
+            <div class="circuit-group-box">
+              <div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitHeaderTitle)}</span><span>INIZIO CIRCUITO</span></div>
+              ${circuitHtmlBuffer}
+              <div class="circuit-group-footer">🏁 Fine Circuito</div>
+            </div>
+          `;
+        }
+        inCircuit = true;
+        circuitHeaderTitle = row.circuit_label ? row.circuit_label : "CIRCUITO";
+        circuitHtmlBuffer = cardHtml;
+      } else if (row.circuit_role === "end") {
+        if (inCircuit) {
+          circuitHtmlBuffer += cardHtml;
+          groupDiv.innerHTML += `
+            <div class="circuit-group-box">
+              <div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitHeaderTitle)}</span><span>INIZIO CIRCUITO</span></div>
+              ${circuitHtmlBuffer}
+              <div class="circuit-group-footer">🏁 Fine Circuito</div>
+            </div>
+          `;
+          inCircuit = false;
+          circuitHtmlBuffer = "";
+        } else {
+          groupDiv.innerHTML += cardHtml;
+        }
+      } else {
+        if (inCircuit) {
+          circuitHtmlBuffer += cardHtml;
+        } else {
+          groupDiv.innerHTML += cardHtml;
+        }
+      }
     });
 
-    container.appendChild(groupEl);
+    // Chiusura di sicurezza se un circuito non aveva il flag di fine esplicito
+    if (inCircuit) {
+      groupDiv.innerHTML += `
+        <div class="circuit-group-box">
+          <div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitHeaderTitle)}</span><span>INIZIO CIRCUITO</span></div>
+          ${circuitHtmlBuffer}
+          <div class="circuit-group-footer">🏁 Fine Circuito</div>
+        </div>
+      `;
+    }
+
+    container.appendChild(groupDiv);
   });
 }
 
-// Carica un log esistente nei campi per modificarlo
-window.startEditAthleteLog = function(workoutExerciseId, logId) {
-  const logs = athleteLogsCache[workoutExerciseId] || [];
-  const target = logs.find(l => l.id === logId);
-  if (!target) return;
-
-  document.getElementById(`editingLogId_${workoutExerciseId}`).value = logId;
-  document.getElementById(`logWeight_${workoutExerciseId}`).value = target.weight_kg !== null ? target.weight_kg : "";
-  document.getElementById(`logReps_${workoutExerciseId}`).value = (target.reps_done && target.reps_done !== "-") ? target.reps_done : "";
-  document.getElementById(`logRir_${workoutExerciseId}`).value = target.rir !== null ? target.rir : "";
-  document.getElementById(`logNote_${workoutExerciseId}`).value = target.athlete_notes || "";
-
-  const box = document.getElementById(`logBox_${workoutExerciseId}`);
-  const btnSave = document.getElementById(`btnSaveLog_${workoutExerciseId}`);
-  const btnCancel = document.getElementById(`btnCancelEdit_${workoutExerciseId}`);
-
-  box.classList.add("editing-mode");
-  btnSave.textContent = "Aggiorna";
-  btnSave.style.background = "var(--warning)";
-  btnSave.style.color = "#000";
-  btnCancel.classList.remove("hidden");
-};
-
-// Annulla la modifica e ripristina i campi
-window.cancelEditAthleteLog = function(workoutExerciseId) {
-  const logs = athleteLogsCache[workoutExerciseId] || [];
-  const lastLog = logs[0];
-
-  document.getElementById(`editingLogId_${workoutExerciseId}`).value = "";
-  document.getElementById(`logWeight_${workoutExerciseId}`).value = (lastLog && lastLog.weight_kg !== null) ? lastLog.weight_kg : "";
-  document.getElementById(`logReps_${workoutExerciseId}`).value = "";
-  document.getElementById(`logRir_${workoutExerciseId}`).value = (lastLog && lastLog.rir !== null) ? lastLog.rir : "";
-  document.getElementById(`logNote_${workoutExerciseId}`).value = "";
-
-  const box = document.getElementById(`logBox_${workoutExerciseId}`);
-  const btnSave = document.getElementById(`btnSaveLog_${workoutExerciseId}`);
-  const btnCancel = document.getElementById(`btnCancelEdit_${workoutExerciseId}`);
-
-  box.classList.remove("editing-mode");
-  btnSave.textContent = "Salva";
-  btnSave.style.background = "";
-  btnSave.style.color = "";
-  btnCancel.classList.add("hidden");
-};
-
-// Elimina un log errato
-window.deleteAthleteLog = async function(workoutExerciseId, logId) {
-  if (!confirm("Vuoi eliminare definitivamente questa registrazione?")) return;
-
-  const { error } = await supabaseClient
-    .from('workout_logs')
-    .delete()
-    .eq('id', logId)
-    .eq('athlete_id', currentProfile.id);
-
-  if (error) {
-    alert("Errore durante l'eliminazione: " + error.message);
-    return;
-  }
-
-  if (document.getElementById(`editingLogId_${workoutExerciseId}`).value === logId) {
-    cancelEditAthleteLog(workoutExerciseId);
-  }
-
-  await refreshExerciseLogs(workoutExerciseId);
-};
-
-// Salva nuovo log oppure aggiorna quello in modifica
-window.saveAthleteLog = async function(workoutExerciseId) {
-  const editingLogId = document.getElementById(`editingLogId_${workoutExerciseId}`).value;
-  const weightVal = document.getElementById(`logWeight_${workoutExerciseId}`).value;
+window.saveWorkoutLog = async function(workoutExerciseId) {
+  const kgVal = document.getElementById(`logKg_${workoutExerciseId}`).value;
   const repsVal = document.getElementById(`logReps_${workoutExerciseId}`).value.trim();
   const rirVal = document.getElementById(`logRir_${workoutExerciseId}`).value;
   const noteVal = document.getElementById(`logNote_${workoutExerciseId}`).value.trim();
 
-  if (!weightVal && !repsVal && !rirVal && !noteVal) {
-    alert("Inserisci almeno un dato (peso, ripetizioni, RIR/@ o una nota).");
-    return;
-  }
-
-  const payload = {
-    weight_kg: weightVal !== "" ? parseFloat(weightVal) : null,
-    reps_done: repsVal || "-",
-    rir: rirVal !== "" ? parseFloat(rirVal) : null,
-    athlete_notes: noteVal || null
-  };
-
-  let error = null;
-
-  if (editingLogId) {
-    const res = await supabaseClient
-      .from('workout_logs')
-      .update(payload)
-      .eq('id', editingLogId)
-      .eq('athlete_id', currentProfile.id);
-    error = res.error;
-  } else {
-    const res = await supabaseClient
-      .from('workout_logs')
-      .insert({
-        ...payload,
-        workout_exercise_id: workoutExerciseId,
-        athlete_id: currentProfile.id
-      });
-    error = res.error;
-  }
-
-  if (error) {
-    alert("Errore salvataggio: " + error.message);
-    return;
-  }
-
-  await refreshExerciseLogs(workoutExerciseId);
-  cancelEditAthleteLog(workoutExerciseId);
-};
-
-async function refreshExerciseLogs(workoutExerciseId) {
-  const { data: updatedLogs } = await supabaseClient
-    .from('workout_logs')
-    .select('*')
-    .eq('workout_exercise_id', workoutExerciseId)
-    .eq('athlete_id', currentProfile.id)
-    .order('logged_at', { ascending: false });
-
-  athleteLogsCache[workoutExerciseId] = updatedLogs || [];
-  const historyBox = document.getElementById(`logHistoryBox_${workoutExerciseId}`);
-  if (historyBox) {
-    historyBox.innerHTML = renderAthleteLogSummary(workoutExerciseId, athleteLogsCache[workoutExerciseId]);
-  }
-}
-
-document.getElementById("btnLinkCoach").addEventListener("click", async () => {
-  const code = document.getElementById("inputCoachCode").value.trim();
-  if (!code) {
-    alert("Inserisci il codice invito del tuo coach.");
+  if (!kgVal && !repsVal && !noteVal) {
+    alert("Inserisci almeno il peso usato, le ripetizioni o una nota.");
     return;
   }
 
   const { error } = await supabaseClient
-    .from('profiles')
-    .update({ trainer_id: code })
-    .eq('id', currentProfile.id);
+    .from('workout_logs')
+    .insert({
+      workout_exercise_id: workoutExerciseId,
+      athlete_id: currentProfile.id,
+      weight_kg: kgVal ? parseFloat(kgVal) : null,
+      reps_done: repsVal || "-",
+      rir: rirVal ? parseFloat(rirVal) : null,
+      athlete_notes: noteVal || null
+    });
 
   if (error) {
-    alert("Codice non valido. Controlla di averlo copiato correttamente.");
+    alert("Errore salvataggio: " + error.message);
   } else {
-    currentProfile.trainer_id = code;
-    initAthleteArea();
+    alert("✅ Dati salvati! Il tuo Personal Trainer può ora vederli nella sua app.");
+    loadAthleteWorkout();
   }
-});
+};
