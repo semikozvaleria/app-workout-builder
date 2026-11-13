@@ -1,4 +1,4 @@
-let currentProfile = null;
+currentProfile = null;
 
 // Gestione dei Tab (Accedi / Registrati)
 document.getElementById("tabLogin").addEventListener("click", () => {
