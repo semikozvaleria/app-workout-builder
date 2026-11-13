@@ -50,6 +50,7 @@ async function loadTrainerClients() {
   if (error || !clients || clients.length === 0) {
     container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">Nessun atleta ancora collegato. Condividi il tuo Codice Invito!</div>`;
     document.getElementById("clientsCount").textContent = "0 atleti";
+    updateNotificationCenter([]);
     return;
   }
 
@@ -67,23 +68,55 @@ async function loadTrainerClients() {
 
   container.innerHTML = "";
   const today = new Date();
+  const coachAlerts = [];
+  const enrichedClients = [];
 
   clients.forEach(client => {
     const activeWorkout = (workouts || []).find(w => w.athlete_id === client.id);
     let badgeHtml = `<span class="status-badge status-none">Nessuna scheda attiva</span>`;
+    let priority = 2; // 0 = scaduta, 1 = in scadenza, 2 = nessuna scheda, 3 = attiva ok
 
-    if (activeWorkout && activeWorkout.end_date) {
+    if (!activeWorkout) {
+      coachAlerts.push({
+        level: "warning",
+        title: `${escapeHtml(client.full_name)} — Nessuna scheda`,
+        message: "Questo atleta non ha ancora una scheda attiva assegnata.",
+        actionHtml: `<button class="btn btn-primary btn-sm" onclick="document.getElementById('notificationsSection').classList.add('hidden'); openBuilderForClient('${client.id}', '${escapeHtml(client.full_name)}')">Assegna Ora</button>`
+      });
+    } else if (activeWorkout.end_date) {
       const end = new Date(activeWorkout.end_date);
       const diffDays = Math.ceil((end - today) / (1000 * 60 * 60 * 24));
       if (diffDays < 0) {
+        priority = 0;
         badgeHtml = `<span class="status-badge status-expired">Scaduta il ${end.toLocaleDateString('it-IT')}</span>`;
+        coachAlerts.push({
+          level: "danger",
+          title: `⚠️ Scaduta: ${escapeHtml(client.full_name)}`,
+          message: `La scheda è scaduta da ${Math.abs(diffDays)} giorni (${end.toLocaleDateString('it-IT')}).`,
+          actionHtml: `<button class="btn btn-primary btn-sm" onclick="document.getElementById('notificationsSection').classList.add('hidden'); openBuilderForClient('${client.id}', '${escapeHtml(client.full_name)}')">Rinnova</button>`
+        });
       } else if (diffDays <= 5) {
+        priority = 1;
         badgeHtml = `<span class="status-badge status-expiring">Scade tra ${diffDays} gg (${end.toLocaleDateString('it-IT')})</span>`;
+        coachAlerts.push({
+          level: "warning",
+          title: `⏳ In scadenza: ${escapeHtml(client.full_name)}`,
+          message: `La scheda scade tra ${diffDays} giorni (${end.toLocaleDateString('it-IT')}).`,
+          actionHtml: `<button class="btn btn-primary btn-sm" onclick="document.getElementById('notificationsSection').classList.add('hidden'); openBuilderForClient('${client.id}', '${escapeHtml(client.full_name)}')">Prepara Nuova</button>`
+        });
       } else {
+        priority = 3;
         badgeHtml = `<span class="status-badge status-active">Attiva fino al ${end.toLocaleDateString('it-IT')}</span>`;
       }
     }
 
+    enrichedClients.push({ client, badgeHtml, priority });
+  });
+
+  // Ordina gli atleti mettendo in alto scaduti e in scadenza
+  enrichedClients.sort((a, b) => a.priority - b.priority);
+
+  enrichedClients.forEach(({ client, badgeHtml }) => {
     const card = document.createElement("div");
     card.className = "client-card";
     card.innerHTML = `
@@ -100,9 +133,11 @@ async function loadTrainerClients() {
     `;
     container.appendChild(card);
   });
+
+  updateNotificationCenter(coachAlerts);
 }
 
-// Visualizza scheda attiva + storico completo delle schede assegnate all'atleta (compatibile tema Chiaro/Scuro)
+// Visualizza scheda attiva + storico completo delle schede assegnate all'atleta
 window.viewClientWorkouts = async function(clientId, clientName) {
   showTrainerView("trainerWorkoutsView");
   document.getElementById("workoutsAthleteTitle").textContent = `📋 Schede: ${clientName}`;
@@ -144,9 +179,8 @@ window.viewClientWorkouts = async function(clientId, clientName) {
           </div>
           ${grouped[dayName].map((row, idx) => `
             <div style="background: var(--card-bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; margin-bottom: 5px; font-size: 0.82rem;">
-              <strong>${idx + 1}. ${escapeHtml(row.exercises?.name || 'Esercizio')}</strong>
-              <span style="color: var(--text-muted);"> — ${escapeHtml(row.sets_reps)} | Rest: ${escapeHtml(row.rest)} | RIR/@: ${escapeHtml(row.rir)}</span>
-              ${row.notes && row.notes !== '-' ? `<div style="color: var(--primary); font-size: 0.76rem; margin-top: 2px;">Note: ${escapeHtml(row.notes)}</div>` : ''}
+              <strong>${idx + 1}.${escapeHtml(row.exercises?.name || 'Esercizio')}</strong>
+              <span style="color: var(--text-muted);"> — ${escapeHtml(row.sets_reps)} \vert{} Rest:${escapeHtml(row.rest)} | RIR/@: ${escapeHtml(row.rir)}</span>${row.notes && row.notes !== '-' ? `<div style="color: var(--primary); font-size: 0.76rem; margin-top: 2px;">Note: ${escapeHtml(row.notes)}</div>` : ''}
             </div>
           `).join("")}
         </div>
@@ -220,14 +254,13 @@ window.cloneWorkoutToBuilder = async function(workoutId, clientId, clientName) {
   renderList();
 };
 
-// VISTA PROGRESSI: Scheda identica a quella dell'atleta + riquadro affiancato con le modifiche/log registrati
+// VISTA PROGRESSI: Scheda identica a quella dell'atleta + riquadro affiancato con i log registrati
 window.viewClientProgress = async function(clientId, clientName) {
   showTrainerView("trainerProgressView");
   document.getElementById("progressAthleteTitle").textContent = `📊 Progressi: ${clientName}`;
   const container = document.getElementById("progressLogsContainer");
   container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento scheda e riscontri atleta...</div>`;
 
-  // 1. Recupera la scheda attiva dell'atleta
   const { data: workout } = await supabaseClient
     .from('workouts')
     .select('*')
@@ -243,7 +276,6 @@ window.viewClientProgress = async function(clientId, clientName) {
     return;
   }
 
-  // 2. Recupera gli esercizi assegnati e tutti i log salvati dall'atleta
   const [{ data: items }, { data: logs }] = await Promise.all([
     supabaseClient
       .from('workout_exercises')
@@ -310,8 +342,7 @@ window.viewClientProgress = async function(clientId, clientName) {
               <div style="margin-top: 4px;">
                 ${exLogs.slice(1).map(old => {
                   const d = new Date(old.logged_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
-                  const r = (old.rir !== null && old.rir !== undefined) ? ` • RIR: ${old.rir}` : '';
-                  const n = old.athlete_notes ? `\n"${escapeHtml(old.athlete_notes)}"` : '';
+                  const r = (old.rir !== null && old.rir !== undefined) ? ` • RIR: ${old.rir}` : ''; const n = old.athlete_notes ? `\n"${escapeHtml(old.athlete_notes)}"` : '';
                   return `<div class="past-log-line"><strong>${d}:</strong> ${old.weight_kg ?? '-'} kg × ${escapeHtml(old.reps_done || '-')}${r}${n}</div>`;
                 }).join("")}
               </div>
