@@ -417,7 +417,7 @@ window.cloneWorkoutToBuilder = async function(workoutId, clientId, clientName) {
   renderList();
 };
 
-// VISTA PROGRESSI: Raggruppa per giorno (1 data per giorno) + Note Atleta in Verde + Note Coach in Rosso
+// VISTA PROGRESSI: Raggruppa per giorno (1 data per giorno) + Note Atleta in Verde + Chat continua Coach in Rosso
 window.viewClientProgress = async function(clientId, clientName) {
   showTrainerView("trainerProgressView");
   document.getElementById("progressAthleteTitle").textContent = `📊 Progressi: ${clientName}`;
@@ -543,8 +543,8 @@ window.viewClientProgress = async function(clientId, clientName) {
               ` : ''}
 
               <div class="coach-reply-form">
-                <input type="text" id="coachReplyInput_${latest.id}" value="${escapeHtml(latest.coach_notes ?? '')}" placeholder="🔴 Scrivi nota del coach in rosso...">
-                <button type="button" class="btn btn-sm" style="background:#ef4444; color:#fff; width:auto; flex-shrink:0;" onclick="saveCoachNoteOnLog('${latest.id}', '${clientId}', '${escapeHtml(clientName)}')">Salva</button>
+                <input type="text" id="coachReplyInput_${latest.id}" placeholder="🔴 Aggiungi messaggio del coach...">
+                <button type="button" class="btn btn-sm" style="background:#ef4444; color:#fff; width:auto; flex-shrink:0;" onclick="saveCoachNoteOnLog('${latest.id}', '${clientId}', '${escapeHtml(clientName)}')">Invia</button>
               </div>
 
               ${olderHtml}
@@ -583,24 +583,44 @@ window.viewClientProgress = async function(clientId, clientName) {
   container.innerHTML = html;
 };
 
-// Salva la nota del Coach (in rosso) e verifica che la policy RLS abbia effettivamente salvato la riga
+// Accoda il nuovo messaggio del Coach (in rosso) ai precedenti senza sovrascriverli
 window.saveCoachNoteOnLog = async function(logId, clientId, clientName) {
   const inputEl = document.getElementById(`coachReplyInput_${logId}`);
   if (!inputEl) return;
-  const noteText = inputEl.value.trim();
+  const newNote = inputEl.value.trim();
+
+  if (!newNote) {
+    alert("Scrivi un messaggio prima di inviare.");
+    return;
+  }
+
+  // Recupera le eventuali note del coach già presenti su questo log
+  const { data: currentLog, error: fetchErr } = await supabaseClient
+    .from('workout_logs')
+    .select('coach_notes')
+    .eq('id', logId)
+    .single();
+
+  if (fetchErr) {
+    alert("Errore lettura messaggio precedente: " + fetchErr.message);
+    return;
+  }
+
+  const prevNotes = (currentLog?.coach_notes || "").trim();
+  const combinedNotes = prevNotes ? `${prevNotes}\n${newNote}` : newNote;
 
   const { data, error } = await supabaseClient
     .from('workout_logs')
     .update({
-      coach_notes: noteText || null,
-      coach_replied_at: noteText ? new Date().toISOString() : null,
-      athlete_seen_at: noteText ? null : new Date().toISOString()
+      coach_notes: combinedNotes,
+      coach_replied_at: new Date().toISOString(),
+      athlete_seen_at: null
     })
     .eq('id', logId)
     .select();
 
   if (error) {
-    alert("Errore salvataggio nota coach: " + error.message);
+    alert("Errore invio nota coach: " + error.message);
     return;
   }
 
