@@ -287,6 +287,23 @@
             <textarea id="inNotes" style="min-height: 75px;" placeholder="es. Discesa 3s controllata."></textarea>
           </div>
 
+          <!-- Opzioni Circuito / Superset -->
+          <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 10px;">
+            <div style="display: flex; gap: 14px; flex-wrap: wrap; align-items: center;">
+              <label style="display: flex; align-items: center; gap: 6px; margin: 0; cursor: pointer; font-size: 0.82rem; color: var(--text);">
+                <input type="checkbox" id="chkCircuitStart" style="width: auto; margin: 0;">
+                <span>🔄 <strong>Inizio Circuito</strong></span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; margin: 0; cursor: pointer; font-size: 0.82rem; color: var(--text);">
+                <input type="checkbox" id="chkCircuitEnd" style="width: auto; margin: 0;">
+                <span>🏁 <strong>Fine Circuito</strong></span>
+              </label>
+            </div>
+            <div id="circuitLabelWrap" class="hidden" style="margin-top: 8px;">
+              <input type="text" id="inCircuitLabel" placeholder="es. Circuito 3 giri — Rec. 90'' a fine giro">
+            </div>
+          </div>
+
           <button class="btn btn-primary" id="btnAddEx">➕ Inserisci nella Scheda</button>
         </div>
 
