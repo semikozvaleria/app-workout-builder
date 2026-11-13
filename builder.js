@@ -1,5 +1,3 @@
-//Gestisce la creazione della scheda, i filtri sui 404 esercizi, il salvataggio nel cloud e la generazione del PDF.
-
 const muscleFilter = document.getElementById("muscleFilter");
 const exerciseSearch = document.getElementById("exerciseSearch");
 const exerciseSelect = document.getElementById("exerciseSelect");
@@ -153,11 +151,16 @@ document.getElementById("btnAddEx").addEventListener("click", () => {
 
 function renderList() {
   const list = document.getElementById("exerciseList");
+  const btnClear = document.getElementById("btnClearBuilder");
   document.getElementById("counterLabel").textContent = `${currentWorkout.length} inseriti`;
+
   if (currentWorkout.length === 0) {
+    if (btnClear) btnClear.classList.add("hidden");
     list.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Nessun esercizio aggiunto</div>`;
     return;
   }
+
+  if (btnClear) btnClear.classList.remove("hidden");
 
   const grouped = {};
   currentWorkout.forEach(ex => {
@@ -197,6 +200,15 @@ window.deleteEx = function(uid) {
   currentWorkout = currentWorkout.filter(e => e.uid !== uid);
   renderList();
 };
+
+document.getElementById("btnClearBuilder").addEventListener("click", () => {
+  if (currentWorkout.length === 0) return;
+  if (!confirm("Vuoi rimuovere tutti gli esercizi inseriti e ripartire da zero?")) return;
+
+  currentWorkout = [];
+  document.getElementById("generalNotes").value = "";
+  renderList();
+});
 
 document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   const athleteId = document.getElementById("builderAthleteSelect").value;
