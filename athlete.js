@@ -132,8 +132,8 @@ window.saveAthleteLog = async function(workoutExerciseId) {
   const rirVal = document.getElementById(`logRir_${workoutExerciseId}`).value;
   const noteVal = document.getElementById(`logNote_${workoutExerciseId}`).value.trim();
 
-  if (!weightVal && !repsVal && !rirVal) {
-    alert("Inserisci almeno il peso (kg), le ripetizioni o il RIR/@.");
+  if (!weightVal && !repsVal && !rirVal && !noteVal) {
+    alert("Inserisci almeno un dato (peso, ripetizioni, RIR/@ o una nota).");
     return;
   }
 
@@ -153,7 +153,8 @@ window.saveAthleteLog = async function(workoutExerciseId) {
   } else {
     const tag = document.getElementById(`lastLog_${workoutExerciseId}`);
     const rirTxt = rirVal !== "" ? ` • RIR/@: ${rirVal}` : '';
-    tag.textContent = `✅ Salvato ora: ${weightVal || '-'} kg x ${repsVal || '-'}${rirTxt}`;
+    const noteTxt = noteVal ? ` • Nota salvata` : '';
+    tag.textContent = `✅ Salvato ora: ${weightVal || '-'} kg x ${repsVal || '-'}${rirTxt}${noteTxt}`;
     document.getElementById(`logNote_${workoutExerciseId}`).value = "";
   }
 };
