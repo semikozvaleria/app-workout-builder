@@ -230,7 +230,10 @@
         <div class="card">
           <div class="section-title">
             <span>3. Riepilogo ed Invio</span>
-            <span id="counterLabel" style="color: var(--text-muted); font-size: 0.85rem;">0 inseriti</span>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span id="counterLabel" style="color: var(--text-muted); font-size: 0.85rem;">0 inseriti</span>
+              <button class="btn btn-outline btn-sm hidden" id="btnClearBuilder" style="border-color: var(--danger); color: var(--danger);">🗑️ Svuota</button>
+            </div>
           </div>
 
           <div class="exercise-list" id="exerciseList">
@@ -242,8 +245,6 @@
             <button class="btn btn-outline" id="btnPdf">📄 Scarica PDF Stampabile</button>
           </div>
         </div>
-      </div>
-    </div>
 
     <!-- 3. AREA ATLETA -->
     <div id="athleteSection" class="hidden" style="display: flex; flex-direction: column; gap: 14px;">
