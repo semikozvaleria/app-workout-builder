@@ -23,12 +23,16 @@ document.getElementById("btnAuthSubmit").addEventListener("click", async () => {
   const password = document.getElementById("authPassword").value;
   const isRegister = document.getElementById("tabRegister").classList.contains("active");
   const msgEl = document.getElementById("authMessage");
+  const submitBtn = document.getElementById("btnAuthSubmit");
 
   if (!email || !password) {
+    msgEl.style.color = "var(--danger)";
     msgEl.textContent = "Compila tutti i campi obbligatori.";
     return;
   }
 
+  submitBtn.disabled = true;
+  msgEl.style.color = "var(--text-muted)";
   msgEl.textContent = "Elaborazione in corso...";
 
   if (isRegister) {
@@ -37,46 +41,57 @@ document.getElementById("btnAuthSubmit").addEventListener("click", async () => {
     const role = document.getElementById("authRole").value;
 
     if (!fullName) {
+      msgEl.style.color = "var(--danger)";
       msgEl.textContent = "Inserisci il tuo nome e cognome.";
+      submitBtn.disabled = false;
       return;
     }
 
     const { data, error } = await supabaseClient.auth.signUp({
       email,
       password,
-      options: { data: { full_name: fullName } }
+      options: { data: { full_name: fullName, role: role } }
     });
 
     if (error) {
+      msgEl.style.color = "var(--danger)";
       msgEl.textContent = "Errore registrazione: " + error.message;
+      submitBtn.disabled = false;
       return;
     }
 
     if (data.user) {
-      // Inserisce il profilo nella tabella profiles su Supabase
+      // Usa upsert per aggiornare il profilo anche se creato automaticamente da un trigger Supabase
       const { error: pError } = await supabaseClient
         .from('profiles')
-        .insert({
+        .upsert({
           id: data.user.id,
           email: email,
           full_name: fullName,
           role: role,
           logo_url: null
-        });
+        }, { onConflict: 'id' });
 
       if (pError) {
+        msgEl.style.color = "var(--danger)";
         msgEl.textContent = "Profilo registrato ma errore database: " + pError.message;
+        submitBtn.disabled = false;
       } else {
         msgEl.style.color = "var(--success)";
         msgEl.textContent = "Registrazione completata! Accesso in corso...";
-        setTimeout(() => checkSession(), 1000);
+        submitBtn.disabled = false;
+        setTimeout(() => checkSession(), 600);
       }
+    } else {
+      submitBtn.disabled = false;
     }
   } else {
     // ACCESSO UTENTE ESISTENTE
     const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
 
+    submitBtn.disabled = false;
     if (error) {
+      msgEl.style.color = "var(--danger)";
       msgEl.textContent = "Credenziali non valide: " + error.message;
     } else {
       msgEl.textContent = "";
@@ -89,13 +104,12 @@ document.getElementById("btnAuthSubmit").addEventListener("click", async () => {
 document.getElementById("btnLogout").addEventListener("click", async () => {
   await supabaseClient.auth.signOut();
   currentProfile = null;
-  
-  // Nasconde tutti i moduli e i controlli delle notifiche al logout
+
   document.getElementById("btnOpenNotifications").classList.add("hidden");
   document.getElementById("notifCountBadge").classList.add("hidden");
   document.getElementById("notificationsSection").classList.add("hidden");
   document.getElementById("settingsSection").classList.add("hidden");
-  
+
   checkSession();
 });
 
@@ -108,14 +122,12 @@ async function checkSession() {
     document.getElementById("authSection").classList.remove("hidden");
     document.getElementById("trainerSection").classList.add("hidden");
     document.getElementById("athleteSection").classList.add("hidden");
-    
-    // NASCONDI CAMPANELLA, CONTEGGIO E LOGOUT
+
     document.getElementById("btnOpenNotifications").classList.add("hidden");
     document.getElementById("notifCountBadge").classList.add("hidden");
     document.getElementById("btnLogout").classList.add("hidden");
-    document.getElementById("dbCount").textContent = "";
-    
-    // Ripristina il logo predefinito
+    document.getElementById("userRoleBadge").textContent = "Cloud Coaching System";
+
     applyBrandLogo(null);
     return;
   }
@@ -128,7 +140,6 @@ async function checkSession() {
     .single();
 
   if (error || !profile) {
-    // In caso di errore anomalo, disconnette la sessione
     await supabaseClient.auth.signOut();
     checkSession();
     return;
@@ -136,15 +147,14 @@ async function checkSession() {
 
   currentProfile = profile;
 
-  // MOSTRAMO LA CAMPANELLA E IL LOGOUT ADESSO CHE L'UTENTE È AUTENTICATO
+  // Mostra campanella e logout
   document.getElementById("btnOpenNotifications").classList.remove("hidden");
   document.getElementById("btnLogout").classList.remove("hidden");
   document.getElementById("authSection").classList.add("hidden");
 
-  // Applica il logo corretto (se personalizzato dal trainer o se ereditato dall'atleta)
   applyBrandLogo(profile.logo_url);
 
-  // Reindirizzamento e inizializzazione in base al ruolo dell'account
+  // Reindirizzamento in base al ruolo
   if (profile.role === 'trainer') {
     document.getElementById("trainerSection").classList.remove("hidden");
     document.getElementById("athleteSection").classList.add("hidden");
