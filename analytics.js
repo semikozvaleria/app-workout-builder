@@ -6,6 +6,12 @@ document.getElementById("btnBackFromStats").addEventListener("click", () => {
   showTrainerView("trainerClientsView");
 });
 
+// Mostra/nasconde il riquadro informativo di una statistica
+window.toggleStatInfo = function(infoId) {
+  const el = document.getElementById(infoId);
+  if (el) el.classList.toggle("hidden");
+};
+
 // Estrae numero di serie da stringhe tipo "4x8-10" o "3x12"
 function parsePrescribedSets(setsRepsStr) {
   if (!setsRepsStr) return 1;
@@ -23,7 +29,6 @@ function parseLoggedReps(repsStr, fallbackSets = 1) {
   if (parsed.length === 0) return { totalReps: 0, setsCount: 0, maxSingleSetReps: 0 };
 
   if (parsed.length === 1) {
-    // Se l'atleta ha scritto un solo numero (es. "10"), lo moltiplichiamo per le serie prescritte
     return {
       totalReps: parsed[0] * fallbackSets,
       setsCount: fallbackSets,
@@ -86,7 +91,6 @@ window.viewClientStats = async function(clientId, clientName) {
   const activeWorkout = workouts.find(w => w.status === 'active') || workouts[0];
   const allLogs = logs || [];
 
-  // Mappa tutti i workout_exercises di tutte le schede dell'atleta
   const weMap = {};
   workouts.forEach(w => {
     (w.workout_exercises || []).forEach(we => {
@@ -113,7 +117,6 @@ window.viewClientStats = async function(clientId, clientName) {
   );
   const adherencePct = Math.min(100, Math.round((activeLogsDates.size / expectedSessions) * 100));
 
-  // Ultimi 28 giorni per il calendario attività
   const last28Days = [];
   for (let i = 27; i >= 0; i--) {
     const d = new Date();
@@ -127,12 +130,12 @@ window.viewClientStats = async function(clientId, clientName) {
     });
   }
 
-  // 2. VOLUME DI LAVORO (Tonnellaggio & Serie per Muscolo)
+  // 2. VOLUME DI LAVORO
   let totalTonnageKg = 0;
   const muscleSetsMap = {};
-  const exerciseHistoryMap = {}; // exercise_id -> { name, points: [] }
+  const exerciseHistoryMap = {};
 
-  // 3. RECUPERO (RIR Prescritto vs RIR Percepito)
+  // 3. RECUPERO (RIR)
   let targetRirSum = 0;
   let targetRirCount = 0;
   let loggedRirSum = 0;
@@ -153,7 +156,6 @@ window.viewClientStats = async function(clientId, clientName) {
     const effectiveSets = setsCount > 0 ? setsCount : prescribedSets;
     muscleSetsMap[muscle] = (muscleSetsMap[muscle] || 0) + effectiveSets;
 
-    // RIR confronto
     const tRir = parseTargetRir(we?.rir);
     if (tRir !== null && log.rir !== null && log.rir !== undefined) {
       targetRirSum += tRir;
@@ -162,7 +164,6 @@ window.viewClientStats = async function(clientId, clientName) {
       loggedRirCount++;
     }
 
-    // Serie storica per esercizio (1RM & Carico)
     if (exInfo && (weight > 0 || maxSingleSetReps > 0)) {
       if (!exerciseHistoryMap[exInfo.id]) {
         exerciseHistoryMap[exInfo.id] = { name: exInfo.name, points: [] };
@@ -198,31 +199,64 @@ window.viewClientStats = async function(clientId, clientName) {
     <div class="stats-kpi-grid">
       <div class="kpi-box">
         <span class="kpi-value">${adherencePct}%</span>
-        <span class="kpi-label">Costanza Scheda</span>
+        <span class="kpi-label">
+          Costanza Scheda
+          <button type="button" class="btn-stat-info" onclick="toggleStatInfo('infoKpiAdherence')" title="Info">i</button>
+        </span>
       </div>
       <div class="kpi-box">
         <span class="kpi-value">${trainedDatesSet.size}</span>
-        <span class="kpi-label">Sedute Svolte</span>
+        <span class="kpi-label">
+          Sedute Svolte
+          <button type="button" class="btn-stat-info" onclick="toggleStatInfo('infoKpiSessions')" title="Info">i</button>
+        </span>
       </div>
       <div class="kpi-box">
         <span class="kpi-value">${Math.round(totalTonnageKg).toLocaleString('it-IT')} kg</span>
-        <span class="kpi-label">Tonnellaggio Tot.</span>
+        <span class="kpi-label">
+          Tonnellaggio Tot.
+          <button type="button" class="btn-stat-info" onclick="toggleStatInfo('infoKpiTonnage')" title="Info">i</button>
+        </span>
       </div>
       <div class="kpi-box">
         <span class="kpi-value">${avgLoggedRir} / ${avgTargetRir}</span>
-        <span class="kpi-label">RIR Reale vs Target</span>
+        <span class="kpi-label">
+          RIR Reale vs Target
+          <button type="button" class="btn-stat-info" onclick="toggleStatInfo('infoKpiRir')" title="Info">i</button>
+        </span>
       </div>
+    </div>
+
+    <!-- RIQUADRI INFO KPI (A COMPASSA) -->
+    <div id="infoKpiAdherence" class="stat-info-box hidden">
+      <strong>Costanza Scheda (%):</strong> misura l'aderenza dell'atleta al programma attuale. Viene calcolata dividendo i giorni in cui ha registrato almeno un esercizio per le sedute attese finora (<em>giorni settimanali della scheda × settimane trascorse</em>).
+    </div>
+    <div id="infoKpiSessions" class="stat-info-box hidden">
+      <strong>Sedute Svolte:</strong> conta il numero totale di giornate distinte in cui l'atleta ha salvato almeno una registrazione nel diario carichi dall'inizio del percorso.
+    </div>
+    <div id="infoKpiTonnage" class="stat-info-box hidden">
+      <strong>Tonnellaggio Totale (kg):</strong> indica il carico meccanico complessivo sollevato. Si calcola sommando <em>Peso (kg) × Ripetizioni totali</em> di ogni esercizio registrato (se l'atleta inserisce un solo numero di reps, viene moltiplicato per le serie prescritte).
+    </div>
+    <div id="infoKpiRir" class="stat-info-box hidden">
+      <strong>RIR Reale vs Target:</strong> confronta il buffer medio percepito dall'atleta (<em>RIR Reale</em>) con quello assegnato nella scheda (<em>Target</em>). Serve a capire se si sta allenando con la giusta intensità o se accumula troppa fatica.
     </div>
 
     <!-- 1. PROGRESSIONE CARICHI & STIMA 1RM -->
     <div class="stats-card-block">
       <div class="stats-block-title">
-        <span>🏋️ Progressione Carichi & Stima 1RM</span>
+        <span>
+          🏋️ Progressione Carichi & Stima 1RM
+          <button type="button" class="btn-stat-info" onclick="toggleStatInfo('infoBlock1RM')" title="Info">i</button>
+        </span>
         ${exerciseIds.length > 0 ? `
           <select id="statsExerciseSelect" style="width: auto; max-width: 220px; padding: 5px 8px; font-size: 0.78rem;">
             ${exerciseIds.map(id => `<option value="${id}">${escapeHtml(exerciseHistoryMap[id].name)}</option>`).join("")}
           </select>
         ` : ''}
+      </div>
+      <div id="infoBlock1RM" class="stat-info-box hidden">
+        <strong>A cosa serve:</strong> monitora l'aumento della forza nel tempo su ciascun esercizio.<br>
+        <strong>Come si calcola:</strong> la linea azzurra mostra il carico effettivo usato; la linea verde tratteggiata stima il massimale su 1 ripetizione tramite la <em>formula di Epley</em>: <code>Peso × (1 + Reps / 30)</code>.
       </div>
       ${exerciseIds.length > 0 ? `
         <div id="statsBest1RmBanner" style="font-size: 0.78rem; color: var(--success); font-weight: 700; margin-bottom: 6px;"></div>
@@ -233,7 +267,14 @@ window.viewClientStats = async function(clientId, clientName) {
     <!-- 2. VOLUME DI LAVORO (SERIE PER MUSCOLO) -->
     <div class="stats-card-block">
       <div class="stats-block-title">
-        <span>📊 Ripartizione Serie per Gruppo Muscolare</span>
+        <span>
+          📊 Ripartizione Serie per Gruppo Muscolare
+          <button type="button" class="btn-stat-info" onclick="toggleStatInfo('infoBlockMuscle')" title="Info">i</button>
+        </span>
+      </div>
+      <div id="infoBlockMuscle" class="stat-info-box hidden">
+        <strong>A cosa serve:</strong> verifica l'equilibrio del volume allenante tra i vari distretti muscolari.<br>
+        <strong>Come si calcola:</strong> somma tutte le serie effettivamente registrate dall'atleta raggruppandole per il distretto muscolare principale di ogni esercizio.
       </div>
       ${Object.keys(muscleSetsMap).length > 0 ? `
         <div class="chart-canvas-wrap"><canvas id="canvasMuscleVolume"></canvas></div>
@@ -243,7 +284,14 @@ window.viewClientStats = async function(clientId, clientName) {
     <!-- 3. RECUPERO & INTENSITÀ (RIR) -->
     <div class="stats-card-block">
       <div class="stats-block-title">
-        <span>🔋 Recupero & Gestione Intensità (RIR)</span>
+        <span>
+          🔋 Recupero & Gestione Intensità (RIR)
+          <button type="button" class="btn-stat-info" onclick="toggleStatInfo('infoBlockRir')" title="Info">i</button>
+        </span>
+      </div>
+      <div id="infoBlockRir" class="stat-info-box hidden">
+        <strong>A cosa serve:</strong> valuta la qualità del recupero e l'accuratezza dell'autoregolazione dell'atleta.<br>
+        <strong>Come si calcola:</strong> fa la media aritmetica dei RIR (o RPE convertiti) inseriti dall'atleta e la confronta con la media dei RIR prescritti negli stessi esercizi.
       </div>
       <div class="rir-compare-bar">
         <div class="rir-pill-box">
@@ -261,8 +309,15 @@ window.viewClientStats = async function(clientId, clientName) {
     <!-- 4. CALENDARIO ATTIVITÀ (ULTIMI 28 GIORNI) -->
     <div class="stats-card-block" style="margin-bottom: 0;">
       <div class="stats-block-title">
-        <span>📅 Calendario Attività (Ultimi 28 giorni)</span>
+        <span>
+          📅 Calendario Attività (Ultimi 28 giorni)
+          <button type="button" class="btn-stat-info" onclick="toggleStatInfo('infoBlockCal')" title="Info">i</button>
+        </span>
         <span style="font-size: 0.74rem; color: var(--success);">${activeLogsDates.size} / ${expectedSessions} sedute scheda</span>
+      </div>
+      <div id="infoBlockCal" class="stat-info-box hidden">
+        <strong>A cosa serve:</strong> offre un colpo d'occhio sulla regolarità settimanale e sugli eventuali buchi di allenamento nell'ultimo mese.<br>
+        <strong>Come si calcola:</strong> evidenzia in verde ogni data degli ultimi 28 giorni in cui risulta salvata almeno una serie nel diario dell'atleta.
       </div>
       <div class="activity-cal-grid">
         ${last28Days.map(d => `
