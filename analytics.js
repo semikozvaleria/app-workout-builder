@@ -195,35 +195,27 @@ window.viewClientStats = async function(clientId, clientName) {
   currentStatsDataset = { exerciseHistoryMap, muscleSetsMap };
 
   container.innerHTML = `
-    <!-- KPI PRINCIPALI -->
+<!-- KPI PRINCIPALI -->
     <div class="stats-kpi-grid">
       <div class="kpi-box">
+        <button type="button" class="btn-stat-info" onclick="toggleStatInfo('infoKpiAdherence')" title="Info">i</button>
         <span class="kpi-value">${adherencePct}%</span>
-        <span class="kpi-label">
-          Costanza Scheda
-          <button type="button" class="btn-stat-info" onclick="toggleStatInfo('infoKpiAdherence')" title="Info">i</button>
-        </span>
+        <span class="kpi-label">Costanza Scheda</span>
       </div>
       <div class="kpi-box">
+        <button type="button" class="btn-stat-info" onclick="toggleStatInfo('infoKpiSessions')" title="Info">i</button>
         <span class="kpi-value">${trainedDatesSet.size}</span>
-        <span class="kpi-label">
-          Sedute Svolte
-          <button type="button" class="btn-stat-info" onclick="toggleStatInfo('infoKpiSessions')" title="Info">i</button>
-        </span>
+        <span class="kpi-label">Sedute Svolte</span>
       </div>
       <div class="kpi-box">
+        <button type="button" class="btn-stat-info" onclick="toggleStatInfo('infoKpiTonnage')" title="Info">i</button>
         <span class="kpi-value">${Math.round(totalTonnageKg).toLocaleString('it-IT')} kg</span>
-        <span class="kpi-label">
-          Tonnellaggio Tot.
-          <button type="button" class="btn-stat-info" onclick="toggleStatInfo('infoKpiTonnage')" title="Info">i</button>
-        </span>
+        <span class="kpi-label">Tonnellaggio Tot.</span>
       </div>
       <div class="kpi-box">
+        <button type="button" class="btn-stat-info" onclick="toggleStatInfo('infoKpiRir')" title="Info">i</button>
         <span class="kpi-value">${avgLoggedRir} / ${avgTargetRir}</span>
-        <span class="kpi-label">
-          RIR Reale vs Target
-          <button type="button" class="btn-stat-info" onclick="toggleStatInfo('infoKpiRir')" title="Info">i</button>
-        </span>
+        <span class="kpi-label">RIR Reale vs Target</span>
       </div>
     </div>
 
