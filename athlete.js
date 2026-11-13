@@ -12,11 +12,12 @@ async function initAthleteArea() {
 
   const { data: coach } = await supabaseClient
     .from('profiles')
-    .select('full_name')
+    .select('full_name, logo_url')
     .eq('id', currentProfile.trainer_id)
     .single();
 
   if (coach) {
+    applyBrandLogo(coach.logo_url);
     document.getElementById("athleteCoachName").textContent = `Coach: ${coach.full_name}`;
   }
 
