@@ -266,12 +266,8 @@ window.viewClientProgress = async function(clientId, clientName) {
     </div>
   `;
 
-  if (workout.general_notes) {
-    html += `
-      <div style="background: var(--notes-bg); color: var(--notes-text); border: 1px solid var(--border); padding: 10px; border-radius: 8px; font-size: 0.82rem; margin-bottom: 12px; white-space: pre-wrap;">
-        <strong>NOTE ASSEGNATE:</strong>\n${escapeHtml(workout.general_notes)}
-      </div>
-    `;
+if (workout.general_notes) {
+    html += `<div style="background: var(--notes-bg); color: var(--notes-text); border: 1px solid var(--border); padding: 10px; border-radius: 8px; font-size: 0.82rem; margin-bottom: 12px; white-space: pre-wrap;"><strong>NOTE ASSEGNATE:</strong>\n${escapeHtml(workout.general_notes)}</div>`;
   }
 
   const grouped = {};
