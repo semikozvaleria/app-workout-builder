@@ -464,3 +464,73 @@ textarea { resize: vertical; min-height: 70px; font-size: 0.85rem; line-height: 
 .stat-info-box strong {
   color: var(--text);
 }
+
+/* Evidenziazione Circuiti nell'App (Builder, Atleta, Storico Trainer) */
+.circuit-group-box {
+  border: 2px solid var(--primary);
+  border-left-width: 5px;
+  border-radius: 10px;
+  background: rgba(56, 189, 248, 0.05);
+  padding: 8px;
+  margin-bottom: 10px;
+}
+
+.circuit-group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  background: var(--primary);
+  color: var(--primary-text);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.circuit-group-footer {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--primary);
+  text-align: right;
+  padding-top: 4px;
+}
+
+.circuit-group-box .exercise-item {
+  margin-bottom: 6px;
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.circuit-group-box .exercise-item:last-of-type {
+  margin-bottom: 0;
+}
+
+/* Evidenziazione Circuiti nel PDF */
+.pdf-circuit-banner {
+  background: #e0f2fe;
+  color: #0369a1;
+  font-weight: 800;
+  font-size: 10px;
+  padding: 4px 8px;
+  border-left: 4px solid #0284c7;
+  text-transform: uppercase;
+}
+
+.pdf-circuit-row td {
+  background-color: #f0f9ff !important;
+  border-left: 3px solid #0284c7;
+}
+
+.pdf-circuit-end {
+  background: #f0f9ff;
+  color: #0369a1;
+  font-weight: 700;
+  font-size: 9px;
+  text-align: right;
+  padding: 3px 8px;
+  border-left: 4px solid #0284c7;
+  border-bottom: 1.5px solid #0284c7;
+}
