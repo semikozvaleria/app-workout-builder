@@ -361,7 +361,7 @@ window.cloneWorkoutToBuilder = async function(workoutId, clientId, clientName) {
   renderList();
 };
 
-// VISTA PROGRESSI: Segna automaticamente come letti i log dell'atleta + Note Atleta in Verde + Note Coach in Rosso
+// VISTA PROGRESSI: Segna automaticamente come letti i log dell'atleta + Note Atleta in Verde datate + Note Coach in Rosso datate
 window.viewClientProgress = async function(clientId, clientName) {
   showTrainerView("trainerProgressView");
   document.getElementById("progressAthleteTitle").textContent = `📊 Progressi: ${clientName}`;
@@ -452,17 +452,27 @@ window.viewClientProgress = async function(clientId, clientName) {
         } else {
           const latestDate = new Date(latest.logged_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' });
           const rirTxt = (latest.rir !== null && latest.rir !== undefined) ? ` • RIR/@: ${latest.rir}` : '';
+          const athNoteLine = latest.athlete_notes ? `\n"${escapeHtml(latest.athlete_notes)}"` : '';
+          const coachDateStr = latest.coach_replied_at
+            ? ` (${new Date(latest.coach_replied_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' })})`
+            : '';
 
           const olderHtml = exLogs.length > 1 ? `
             <details class="past-logs-details">
               <summary>Vedi sessioni precedenti (${exLogs.length - 1})</summary>
-              <div style="margin-top: 4px;">
+              <div style="margin-top: 5px; display: flex; flex-direction: column; gap: 5px;">
                 ${exLogs.slice(1).map(old => {
-                  const d = new Date(old.logged_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+                  const d = new Date(old.logged_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' });
                   const r = (old.rir !== null && old.rir !== undefined) ? ` • RIR: ${old.rir}` : '';
-                  const nAth = old.athlete_notes ? `<div class="note-athlete-box" style="margin-top:3px;">🟢 Atleta: ${escapeHtml(old.athlete_notes)}</div>` : '';
-                  const nCoach = old.coach_notes ? `<div class="note-coach-box" style="margin-top:3px;">🔴 Coach: ${escapeHtml(old.coach_notes)}</div>` : '';
-                  return `<div class="past-log-line"><strong>${d}:</strong> ${old.weight_kg ?? '-'} kg × ${escapeHtml(old.reps_done || '-')}${r}${nAth}${nCoach}</div>`;
+                  const nAth = old.athlete_notes ? `\n"${escapeHtml(old.athlete_notes)}"` : '';
+                  const cd = old.coach_replied_at ? ` (${new Date(old.coach_replied_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' })})` : '';
+                  const nCoach = old.coach_notes ? `<div class="note-coach-box" style="margin-top:3px;">🔴 Coach${cd}: ${escapeHtml(old.coach_notes)}</div>` : '';
+                  return `
+                    <div style="border-top: 1px dashed var(--border); padding-top: 4px;">
+                      <div class="note-athlete-box" style="margin-top:0;">🟢 ${d} — ${old.weight_kg ?? '-'} kg × ${escapeHtml(old.reps_done || '-')}${r}${nAth}</div>
+                      ${nCoach}
+                    </div>
+                  `;
                 }).join("")}
               </div>
             </details>
@@ -470,20 +480,10 @@ window.viewClientProgress = async function(clientId, clientName) {
 
           feedbackHtml = `
             <div class="athlete-feedback-box">
-              <div class="feedback-header">
-                <span>✅ RISCONTRO ATLETA</span>
-                <span>${latestDate}</span>
-              </div>
-              <div class="feedback-metrics">
-                ${latest.weight_kg ?? '-'} kg × ${escapeHtml(latest.reps_done || '-')}${rirTxt}
-              </div>
-
-              ${latest.athlete_notes ? `
-                <div class="note-athlete-box">🟢 Nota Atleta: ${escapeHtml(latest.athlete_notes)}</div>
-              ` : ''}
+              <div class="note-athlete-box" style="margin-top:0;">🟢 ${latestDate} — ${latest.weight_kg ?? '-'} kg × ${escapeHtml(latest.reps_done || '-')}${rirTxt}${athNoteLine}</div>
 
               ${latest.coach_notes ? `
-                <div class="note-coach-box">🔴 Nota Coach: ${escapeHtml(latest.coach_notes)}</div>
+                <div class="note-coach-box">🔴 Coach${coachDateStr}: ${escapeHtml(latest.coach_notes)}</div>
               ` : ''}
 
               <div class="coach-reply-form">
