@@ -29,6 +29,7 @@ document.getElementById("navTrainerClients").addEventListener("click", () => {
 
 document.getElementById("navTrainerBuilder").addEventListener("click", () => {
   showTrainerView("trainerBuilderView");
+  if (typeof loadTrainerDrafts === "function") loadTrainerDrafts();
 });
 
 document.getElementById("btnBackToClients").addEventListener("click", () => {
@@ -139,7 +140,7 @@ async function loadTrainerClients() {
   updateNotificationCenter(coachAlerts);
 }
 
-// Visualizza scheda attiva + storico completo delle schede assegnate all'atleta
+// Visualizza scheda attiva + storico completo delle schede assegnate all'atleta (escludendo le bozze)
 window.viewClientWorkouts = async function(clientId, clientName) {
   showTrainerView("trainerWorkoutsView");
   document.getElementById("workoutsAthleteTitle").textContent = `📋 Schede: ${clientName}`;
@@ -151,6 +152,7 @@ window.viewClientWorkouts = async function(clientId, clientName) {
     .select('*, workout_exercises(*, exercises(name, muscle, img_start, img_end))')
     .eq('trainer_id', currentProfile.id)
     .eq('athlete_id', clientId)
+    .neq('status', 'draft')
     .order('created_at', { ascending: false });
 
   if (error || !workouts || workouts.length === 0) {
@@ -313,6 +315,7 @@ window.cloneWorkoutToBuilder = async function(workoutId, clientId, clientName) {
     return;
   }
 
+  if (typeof currentDraftId !== "undefined") currentDraftId = null;
   openBuilderForClient(clientId, clientName);
   document.getElementById("durationWeeks").value = workout.duration_weeks || 4;
   document.getElementById("generalNotes").value = workout.general_notes || "";
@@ -481,6 +484,7 @@ window.viewClientProgress = async function(clientId, clientName) {
 
 window.openBuilderForClient = function(clientId, clientName) {
   showTrainerView("trainerBuilderView");
+  if (typeof loadTrainerDrafts === "function") loadTrainerDrafts();
   document.getElementById("builderAthleteSelect").value = clientId;
   document.getElementById("athleteName").value = clientName;
   document.getElementById("btnLoadExistingWorkout").classList.remove("hidden");
