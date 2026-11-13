@@ -238,3 +238,80 @@ textarea { resize: vertical; min-height: 70px; font-size: 0.85rem; line-height: 
   border-color: var(--warning);
   box-shadow: 0 0 0 1px var(--warning);
 }
+
+/* Azioni rapide e modifica inline nel Workout Builder */
+.builder-item-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
+.builder-btn-row {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.btn-builder-act {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 4px 7px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.btn-builder-act:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.btn-builder-act:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.btn-builder-act.del {
+  color: var(--danger);
+}
+
+.btn-builder-act.del:hover {
+  border-color: var(--danger);
+}
+
+.builder-inline-edit {
+  background: var(--card-bg);
+  border: 1px solid var(--warning);
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.builder-edit-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+@media (min-width: 520px) {
+  .builder-edit-grid {
+    grid-template-columns: 1.2fr 1.2fr 0.8fr 0.8fr;
+  }
+}
+
+.builder-inline-edit input,
+.builder-inline-edit select,
+.builder-inline-edit textarea {
+  padding: 7px 8px;
+  font-size: 0.82rem;
+}
+
+.builder-inline-edit textarea {
+  min-height: 56px;
+}
