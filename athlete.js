@@ -51,6 +51,7 @@ async function initAthleteArea() {
   if (!currentProfile.trainer_id) {
     document.getElementById("athleteLinkCoachCard").classList.remove("hidden");
     document.getElementById("athleteWorkoutCard").classList.add("hidden");
+    updateNotificationCenter([]);
     return;
   }
 
@@ -78,17 +79,54 @@ async function initAthleteArea() {
     .single();
 
   const container = document.getElementById("athleteExercisesContainer");
+  const oldBanner = document.getElementById("athleteExpiryBanner");
+  if (oldBanner) oldBanner.remove();
 
   if (!workout) {
     document.getElementById("athleteWorkoutMeta").textContent = "Nessuna scheda attiva assegnata al momento.";
     document.getElementById("athleteGeneralNotes").classList.add("hidden");
     container.innerHTML = "";
+    updateNotificationCenter([]);
     return;
   }
 
   const endStr = workout.end_date ? new Date(workout.end_date).toLocaleDateString('it-IT') : '-';
-  document.getElementById("athleteWorkoutMeta").textContent = `Durata: ${workout.duration_weeks} settimane • Scadenza: ${endStr}`;
-  
+  const metaEl = document.getElementById("athleteWorkoutMeta");
+  metaEl.textContent = `Durata: ${workout.duration_weeks} settimane • Scadenza: ${endStr}`;
+
+  // Controllo scadenza scheda per l'Atleta
+  const athleteAlerts = [];
+  if (workout.end_date) {
+    const today = new Date();
+    const end = new Date(workout.end_date);
+    const diffDays = Math.ceil((end - today) / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) {
+      athleteAlerts.push({
+        level: "danger",
+        title: "⚠️ Scheda Scaduta",
+        message: `La tua scheda è scaduta il ${endStr}. Contatta il tuo coach per il rinnovo!`
+      });
+      metaEl.insertAdjacentHTML("afterend", `
+        <div id="athleteExpiryBanner" class="athlete-expiry-banner expired">
+          <span>⚠️ <strong>Scheda scaduta il ${endStr}:</strong> contatta il tuo coach per ricevere la nuova programmazione.</span>
+        </div>
+      `);
+    } else if (diffDays <= 5) {
+      athleteAlerts.push({
+        level: "warning",
+        title: "⏳ Scheda in Scadenza",
+        message: `Mancano ${diffDays} giorni alla scadenza della scheda (${endStr}).`
+      });
+      metaEl.insertAdjacentHTML("afterend", `
+        <div id="athleteExpiryBanner" class="athlete-expiry-banner">
+          <span>⏳ <strong>In scadenza:</strong> mancano ${diffDays} giorni al termine di questa scheda (${endStr}).</span>
+        </div>
+      `);
+    }
+  }
+  updateNotificationCenter(athleteAlerts);
+
   if (workout.general_notes) {
     document.getElementById("athleteGeneralNotes").textContent = "NOTE DEL COACH:\n" + workout.general_notes;
     document.getElementById("athleteGeneralNotes").classList.remove("hidden");
@@ -239,7 +277,6 @@ window.deleteAthleteLog = async function(workoutExerciseId, logId) {
     return;
   }
 
-  // Se stavo modificando proprio quel log, resetto il form
   if (document.getElementById(`editingLogId_${workoutExerciseId}`).value === logId) {
     cancelEditAthleteLog(workoutExerciseId);
   }
