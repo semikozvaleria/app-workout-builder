@@ -220,12 +220,14 @@ window.cloneWorkoutToBuilder = async function(workoutId, clientId, clientName) {
   renderList();
 };
 
+// VISTA PROGRESSI: Scheda identica a quella dell'atleta + riquadro affiancato con le modifiche/log registrati
 window.viewClientProgress = async function(clientId, clientName) {
   showTrainerView("trainerProgressView");
   document.getElementById("progressAthleteTitle").textContent = `📊 Progressi: ${clientName}`;
   const container = document.getElementById("progressLogsContainer");
   container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento scheda e riscontri atleta...</div>`;
 
+  // 1. Recupera la scheda attiva dell'atleta
   const { data: workout } = await supabaseClient
     .from('workouts')
     .select('*')
@@ -241,6 +243,7 @@ window.viewClientProgress = async function(clientId, clientName) {
     return;
   }
 
+  // 2. Recupera gli esercizi assegnati e tutti i log salvati dall'atleta
   const [{ data: items }, { data: logs }] = await Promise.all([
     supabaseClient
       .from('workout_exercises')
@@ -266,7 +269,7 @@ window.viewClientProgress = async function(clientId, clientName) {
     </div>
   `;
 
-if (workout.general_notes) {
+  if (workout.general_notes) {
     html += `<div style="background: var(--notes-bg); color: var(--notes-text); border: 1px solid var(--border); padding: 10px; border-radius: 8px; font-size: 0.82rem; margin-bottom: 12px; white-space: pre-wrap;"><strong>NOTE ASSEGNATE:</strong>\n${escapeHtml(workout.general_notes)}</div>`;
   }
 
@@ -308,7 +311,7 @@ if (workout.general_notes) {
                 ${exLogs.slice(1).map(old => {
                   const d = new Date(old.logged_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
                   const r = (old.rir !== null && old.rir !== undefined) ? ` • RIR: ${old.rir}` : '';
-                  const n = old.athlete_notes ? ` — "${escapeHtml(old.athlete_notes)}"` : '';
+                  const n = old.athlete_notes ? `\n"${escapeHtml(old.athlete_notes)}"` : '';
                   return `<div class="past-log-line"><strong>${d}:</strong> ${old.weight_kg ?? '-'} kg × ${escapeHtml(old.reps_done || '-')}${r}${n}</div>`;
                 }).join("")}
               </div>
