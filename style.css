@@ -155,3 +155,39 @@ textarea { resize: vertical; min-height: 70px; font-size: 0.85rem; line-height: 
 .pdf-img { width: 44px; height: 44px; border-radius: 4px; object-fit: cover; border: 1px solid #94a3b8; }
 .pdf-notes-cell { font-size: 9.5px; color: #334155; white-space: pre-wrap; line-height: 1.25; }
 .pdf-footer { display: flex; justify-content: space-between; margin-top: 14px; padding-top: 8px; border-top: 1px solid #cbd5e1; font-size: 9.5px; color: #64748b; }
+
+/* Nota rapida multi-riga per l'atleta */
+.log-box textarea {
+  padding: 7px 8px;
+  font-size: 0.8rem;
+  min-height: 44px;
+  resize: vertical;
+  line-height: 1.35;
+}
+
+.log-row-bottom {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  align-items: stretch;
+}
+
+/* Ritorno a capo automatico per le note lunghe lato Trainer */
+.feedback-note {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  margin-top: 4px;
+  font-style: italic;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.past-log-line {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
