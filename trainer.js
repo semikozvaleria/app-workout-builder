@@ -15,6 +15,7 @@ function showTrainerView(viewId) {
   document.getElementById("trainerBuilderView").classList.add("hidden");
   document.getElementById("trainerProgressView").classList.add("hidden");
   document.getElementById("trainerWorkoutsView").classList.add("hidden");
+  document.getElementById("trainerStatsView").classList.add("hidden");
   document.getElementById(viewId).classList.remove("hidden");
 
   document.getElementById("navTrainerClients").className = viewId === "trainerClientsView" ? "btn btn-primary" : "btn btn-outline";
@@ -128,6 +129,7 @@ async function loadTrainerClients() {
       <div class="client-actions">
         <button class="btn btn-outline btn-sm" onclick="viewClientWorkouts('${client.id}', '${escapeHtml(client.full_name)}')">📋 Schede</button>
         <button class="btn btn-outline btn-sm" onclick="viewClientProgress('${client.id}', '${escapeHtml(client.full_name)}')">📊 Progressi</button>
+        <button class="btn btn-outline btn-sm" onclick="viewClientStats('${client.id}', '${escapeHtml(client.full_name)}')">📈 Statistiche</button>
         <button class="btn btn-primary btn-sm" onclick="openBuilderForClient('${client.id}', '${escapeHtml(client.full_name)}')">Crea Scheda</button>
       </div>
     `;
@@ -179,8 +181,9 @@ window.viewClientWorkouts = async function(clientId, clientName) {
           </div>
           ${grouped[dayName].map((row, idx) => `
             <div style="background: var(--card-bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; margin-bottom: 5px; font-size: 0.82rem;">
-              <strong>${idx + 1}.${escapeHtml(row.exercises?.name || 'Esercizio')}</strong>
-              <span style="color: var(--text-muted);"> — ${escapeHtml(row.sets_reps)} \vert{} Rest:${escapeHtml(row.rest)} | RIR/@: ${escapeHtml(row.rir)}</span>${row.notes && row.notes !== '-' ? `<div style="color: var(--primary); font-size: 0.76rem; margin-top: 2px;">Note: ${escapeHtml(row.notes)}</div>` : ''}
+              <strong>${idx + 1}. ${escapeHtml(row.exercises?.name || 'Esercizio')}</strong>
+              <span style="color: var(--text-muted);"> — ${escapeHtml(row.sets_reps)} | Rest: ${escapeHtml(row.rest)} | RIR/@: ${escapeHtml(row.rir)}</span>
+              ${row.notes && row.notes !== '-' ? `<div style="color: var(--primary); font-size: 0.76rem; margin-top: 2px;">Note: ${escapeHtml(row.notes)}</div>` : ''}
             </div>
           `).join("")}
         </div>
@@ -342,7 +345,8 @@ window.viewClientProgress = async function(clientId, clientName) {
               <div style="margin-top: 4px;">
                 ${exLogs.slice(1).map(old => {
                   const d = new Date(old.logged_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
-                  const r = (old.rir !== null && old.rir !== undefined) ? ` • RIR: ${old.rir}` : ''; const n = old.athlete_notes ? `\n"${escapeHtml(old.athlete_notes)}"` : '';
+                  const r = (old.rir !== null && old.rir !== undefined) ? ` • RIR: ${old.rir}` : '';
+                  const n = old.athlete_notes ? `\n"${escapeHtml(old.athlete_notes)}"` : '';
                   return `<div class="past-log-line"><strong>${d}:</strong> ${old.weight_kg ?? '-'} kg × ${escapeHtml(old.reps_done || '-')}${r}${n}</div>`;
                 }).join("")}
               </div>
