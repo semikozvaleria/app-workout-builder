@@ -41,6 +41,64 @@ document.getElementById("btnBackFromWorkouts").addEventListener("click", () => {
   showTrainerView("trainerClientsView");
 });
 
+function getTrainerDayKey(isoStr) {
+  if (!isoStr) return "";
+  const d = new Date(isoStr);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Unisce tutte le modifiche dello stesso giorno in un unico messaggio con data singola
+function consolidateTrainerLogsByDay(logs) {
+  if (!logs || logs.length === 0) return [];
+  const sorted = [...logs].sort((a, b) => new Date(b.logged_at) - new Date(a.logged_at));
+  const byDay = new Map();
+
+  sorted.forEach(log => {
+    const dayKey = getTrainerDayKey(log.logged_at);
+    if (!byDay.has(dayKey)) {
+      byDay.set(dayKey, {
+        id: log.id,
+        logged_at: log.logged_at,
+        weight_kg: log.weight_kg,
+        reps_done: log.reps_done,
+        rir: log.rir,
+        notesList: log.athlete_notes ? [log.athlete_notes.trim()] : [],
+        coachNotesList: log.coach_notes ? [log.coach_notes.trim()] : [],
+        coach_replied_at: log.coach_replied_at
+      });
+    } else {
+      const entry = byDay.get(dayKey);
+      if ((entry.weight_kg === null || entry.weight_kg === undefined) && log.weight_kg !== null && log.weight_kg !== undefined) {
+        entry.weight_kg = log.weight_kg;
+      }
+      if ((!entry.reps_done || entry.reps_done === '-') && log.reps_done && log.reps_done !== '-') {
+        entry.reps_done = log.reps_done;
+      }
+      if ((entry.rir === null || entry.rir === undefined) && log.rir !== null && log.rir !== undefined) {
+        entry.rir = log.rir;
+      }
+      if (log.athlete_notes) {
+        const clean = log.athlete_notes.trim();
+        if (clean && !entry.notesList.includes(clean)) {
+          entry.notesList.unshift(clean);
+        }
+      }
+      if (log.coach_notes) {
+        const cleanC = log.coach_notes.trim();
+        if (cleanC && !entry.coachNotesList.includes(cleanC)) {
+          entry.coachNotesList.unshift(cleanC);
+        }
+      }
+    }
+  });
+
+  return Array.from(byDay.values()).map(e => ({
+    ...e,
+    athlete_notes: e.notesList.join("\n"),
+    coach_notes: e.coachNotesList.join("\n")
+  }));
+}
+
 async function loadTrainerClients() {
   const { data: clients, error } = await supabaseClient
     .from('profiles')
@@ -123,7 +181,6 @@ async function loadTrainerClients() {
       }
     }
 
-    // 1 sola notifica cumulativa per questo atleta finché il coach non apre "Progressi"
     const clientUnreadLogs = (unreadLogs || []).filter(l => l.athlete_id === client.id);
     if (clientUnreadLogs.length > 0) {
       const hasNotes = clientUnreadLogs.some(l => l.athlete_notes);
@@ -165,7 +222,6 @@ async function loadTrainerClients() {
   updateNotificationCenter(coachAlerts);
 }
 
-// Visualizza scheda attiva + storico completo delle schede assegnate all'atleta (escludendo le bozze)
 window.viewClientWorkouts = async function(clientId, clientName) {
   showTrainerView("trainerWorkoutsView");
   document.getElementById("workoutsAthleteTitle").textContent = `📋 Schede: ${clientName}`;
@@ -361,21 +417,20 @@ window.cloneWorkoutToBuilder = async function(workoutId, clientId, clientName) {
   renderList();
 };
 
-// VISTA PROGRESSI: Segna automaticamente come letti i log dell'atleta + Note Atleta in Verde datate + Note Coach in Rosso datate
+// VISTA PROGRESSI: Raggruppa per giorno (1 data per giorno) + Note Atleta in Verde + Note Coach in Rosso
 window.viewClientProgress = async function(clientId, clientName) {
   showTrainerView("trainerProgressView");
   document.getElementById("progressAthleteTitle").textContent = `📊 Progressi: ${clientName}`;
   const container = document.getElementById("progressLogsContainer");
   container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento scheda e riscontri atleta...</div>`;
 
-  // Marca subito tutti i log non ancora letti di questo atleta come visti dal trainer
+  // Marca come letti tutti i log non visti di questo atleta
   await supabaseClient
     .from('workout_logs')
     .update({ trainer_seen_at: new Date().toISOString() })
     .eq('athlete_id', clientId)
     .is('trainer_seen_at', null);
 
-  // Aggiorna in background i badge e la campanella del coach
   loadTrainerClients();
 
   const { data: workout } = await supabaseClient
@@ -439,8 +494,9 @@ window.viewClientProgress = async function(clientId, clientName) {
         const ex = row.exercises;
         const start = ex ? ex.img_start : "";
         const end = ex ? (ex.img_end || ex.img_start) : "";
-        const exLogs = (logs || []).filter(l => l.workout_exercise_id === row.id);
-        const latest = exLogs[0];
+        const rawExLogs = (logs || []).filter(l => l.workout_exercise_id === row.id);
+        const dailyLogs = consolidateTrainerLogsByDay(rawExLogs);
+        const latest = dailyLogs[0];
 
         let feedbackHtml = "";
         if (!latest) {
@@ -452,19 +508,19 @@ window.viewClientProgress = async function(clientId, clientName) {
         } else {
           const latestDate = new Date(latest.logged_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' });
           const rirTxt = (latest.rir !== null && latest.rir !== undefined) ? ` • RIR/@: ${latest.rir}` : '';
-          const athNoteLine = latest.athlete_notes ? `\n"${escapeHtml(latest.athlete_notes)}"` : '';
+          const athNoteLine = latest.athlete_notes ? `\n${escapeHtml(latest.athlete_notes)}` : '';
           const coachDateStr = latest.coach_replied_at
             ? ` (${new Date(latest.coach_replied_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' })})`
             : '';
 
-          const olderHtml = exLogs.length > 1 ? `
+          const olderHtml = dailyLogs.length > 1 ? `
             <details class="past-logs-details">
-              <summary>Vedi sessioni precedenti (${exLogs.length - 1})</summary>
+              <summary>Vedi giorni precedenti (${dailyLogs.length - 1})</summary>
               <div style="margin-top: 5px; display: flex; flex-direction: column; gap: 5px;">
-                ${exLogs.slice(1).map(old => {
+                ${dailyLogs.slice(1).map(old => {
                   const d = new Date(old.logged_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' });
                   const r = (old.rir !== null && old.rir !== undefined) ? ` • RIR: ${old.rir}` : '';
-                  const nAth = old.athlete_notes ? `\n"${escapeHtml(old.athlete_notes)}"` : '';
+                  const nAth = old.athlete_notes ? `\n${escapeHtml(old.athlete_notes)}` : '';
                   const cd = old.coach_replied_at ? ` (${new Date(old.coach_replied_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' })})` : '';
                   const nCoach = old.coach_notes ? `<div class="note-coach-box" style="margin-top:3px;">🔴 Coach${cd}: ${escapeHtml(old.coach_notes)}</div>` : '';
                   return `
@@ -487,8 +543,8 @@ window.viewClientProgress = async function(clientId, clientName) {
               ` : ''}
 
               <div class="coach-reply-form">
-                <input type="text" id="coachReplyInput_${latest.id}" value="${escapeHtml(latest.coach_notes ?? '')}" placeholder="🔴 Scrivi nota del coach in rosso per l'atleta...">
-                <button type="button" class="btn btn-sm" style="background:#ef4444; color:#fff; white-space:nowrap;" onclick="saveCoachNoteOnLog('${latest.id}', '${clientId}', '${escapeHtml(clientName)}')">Salva</button>
+                <input type="text" id="coachReplyInput_${latest.id}" value="${escapeHtml(latest.coach_notes ?? '')}" placeholder="🔴 Scrivi nota del coach in rosso...">
+                <button type="button" class="btn btn-sm" style="background:#ef4444; color:#fff; width:auto; flex-shrink:0;" onclick="saveCoachNoteOnLog('${latest.id}', '${clientId}', '${escapeHtml(clientName)}')">Salva</button>
               </div>
 
               ${olderHtml}
@@ -527,23 +583,29 @@ window.viewClientProgress = async function(clientId, clientName) {
   container.innerHTML = html;
 };
 
-// Salva la nota del Coach (in rosso) e reimposta athlete_seen_at a NULL così l'atleta riceve la notifica
+// Salva la nota del Coach (in rosso) e verifica che la policy RLS abbia effettivamente salvato la riga
 window.saveCoachNoteOnLog = async function(logId, clientId, clientName) {
   const inputEl = document.getElementById(`coachReplyInput_${logId}`);
   if (!inputEl) return;
   const noteText = inputEl.value.trim();
 
-  const { error } = await supabaseClient
+  const { data, error } = await supabaseClient
     .from('workout_logs')
     .update({
       coach_notes: noteText || null,
       coach_replied_at: noteText ? new Date().toISOString() : null,
       athlete_seen_at: noteText ? null : new Date().toISOString()
     })
-    .eq('id', logId);
+    .eq('id', logId)
+    .select();
 
   if (error) {
     alert("Errore salvataggio nota coach: " + error.message);
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    alert("⚠️ Supabase ha bloccato il salvataggio (permessi RLS). Esegui la query SQL di permesso UPDATE su workout_logs.");
     return;
   }
 
