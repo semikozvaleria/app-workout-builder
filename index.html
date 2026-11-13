@@ -1,6 +1,4 @@
 <!DOCTYPE html>
-<!-- Contiene solo la struttura HTML pulita (le schermate Login, Trainer, Atleta e il template PDF). -->
-
 <html lang="it">
 <head>
   <meta charset="UTF-8">
@@ -23,6 +21,10 @@
       </div>
       <div style="display: flex; align-items: center; gap: 6px;">
         <span style="font-size: 0.75rem; color: var(--primary);" id="dbCount">...</span>
+        <div class="notif-btn-wrap">
+          <button id="btnOpenNotifications" class="btn btn-outline btn-sm" title="Avvisi e Scadenze">🔔</button>
+          <span id="notifCountBadge" class="notif-badge hidden">0</span>
+        </div>
         <button id="btnOpenSettings" class="btn btn-outline btn-sm" title="Impostazioni">⚙️</button>
         <button id="btnLogout" class="btn btn-outline btn-sm hidden">Esci</button>
       </div>
@@ -61,6 +63,22 @@
         <div class="grid-2">
           <button type="button" class="btn btn-primary btn-sm" id="btnSaveLogo" style="width: 100%;">💾 Salva Logo</button>
           <button type="button" class="btn btn-outline btn-sm" id="btnResetLogo" style="width: 100%;">Ripristina Default</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PANNELLO NOTIFICHE E SCADENZE -->
+    <div id="notificationsSection" class="card hidden">
+      <div class="section-title">
+        <span>🔔 Avvisi e Scadenze Schede</span>
+        <div style="display: flex; gap: 6px;">
+          <button id="btnEnablePush" class="btn btn-outline btn-sm" title="Ricevi avvisi sul dispositivo">📲 Avvisi Device</button>
+          <button id="btnCloseNotifications" class="btn btn-outline btn-sm">Chiudi ✖</button>
+        </div>
+      </div>
+      <div id="notificationsListContainer">
+        <div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">
+          Nessuna notifica al momento.
         </div>
       </div>
     </div>
@@ -339,6 +357,7 @@
   <!-- Moduli JavaScript separati -->
   <script src="config.js"></script>
   <script src="settings.js"></script>
+  <script src="notifications.js"></script>
   <script src="auth.js"></script>
   <script src="trainer.js"></script>
   <script src="builder.js"></script>
