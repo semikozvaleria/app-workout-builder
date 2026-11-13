@@ -3,6 +3,8 @@ const exerciseSearch = document.getElementById("exerciseSearch");
 const exerciseSelect = document.getElementById("exerciseSelect");
 const exerciseSuggestions = document.getElementById("exerciseSuggestions");
 
+let editingBuilderUid = null;
+
 async function loadExercisesFromCloud() {
   const { data, error } = await supabaseClient
     .from('exercises')
@@ -110,6 +112,7 @@ document.getElementById("btnLoadExistingWorkout").addEventListener("click", asyn
     .order('order_index', { ascending: true });
 
   if (items) {
+    editingBuilderUid = null;
     currentWorkout = items.map((row, idx) => ({
       uid: Date.now() + idx,
       id: row.exercise_id,
@@ -149,6 +152,54 @@ document.getElementById("btnAddEx").addEventListener("click", () => {
   renderList();
 });
 
+// Sposta un esercizio su (-1) o giù (+1) all'interno dello stesso giorno
+window.moveBuilderEx = function(uid, direction) {
+  const currentIndex = currentWorkout.findIndex(e => e.uid === uid);
+  if (currentIndex === -1) return;
+
+  const targetDay = currentWorkout[currentIndex].day;
+  const sameDayIndices = [];
+  currentWorkout.forEach((item, idx) => {
+    if (item.day === targetDay) sameDayIndices.push(idx);
+  });
+
+  const posInDay = sameDayIndices.indexOf(currentIndex);
+  const newPosInDay = posInDay + direction;
+  if (newPosInDay < 0 || newPosInDay >= sameDayIndices.length) return;
+
+  const swapIndex = sameDayIndices[newPosInDay];
+  const temp = currentWorkout[currentIndex];
+  currentWorkout[currentIndex] = currentWorkout[swapIndex];
+  currentWorkout[swapIndex] = temp;
+
+  renderList();
+};
+
+// Attiva la modifica rapida inline per un esercizio
+window.startEditBuilderEx = function(uid) {
+  editingBuilderUid = uid;
+  renderList();
+};
+
+window.cancelEditBuilderEx = function() {
+  editingBuilderUid = null;
+  renderList();
+};
+
+window.saveEditBuilderEx = function(uid) {
+  const ex = currentWorkout.find(e => e.uid === uid);
+  if (!ex) return;
+
+  ex.day = document.getElementById(`editDay_${uid}`).value;
+  ex.setsReps = document.getElementById(`editSets_${uid}`).value.trim() || "-";
+  ex.rest = document.getElementById(`editRest_${uid}`).value.trim() || "-";
+  ex.rir = document.getElementById(`editRir_${uid}`).value.trim() || "-";
+  ex.notes = document.getElementById(`editNotes_${uid}`).value.trim() || "-";
+
+  editingBuilderUid = null;
+  renderList();
+};
+
 function renderList() {
   const list = document.getElementById("exerciseList");
   const btnClear = document.getElementById("btnClearBuilder");
@@ -168,28 +219,81 @@ function renderList() {
     grouped[ex.day].push(ex);
   });
 
+  const dayOptions = ["Giorno 1", "Giorno 2", "Giorno 3", "Giorno 4", "Giorno 5", "Giorno 6", "Giorno 7"];
+
   list.innerHTML = "";
   Object.keys(grouped).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(dayName => {
+    const dayItems = grouped[dayName];
     const groupEl = document.createElement("div");
     groupEl.className = "day-group";
-    groupEl.innerHTML = `<div class="day-badge">📅 ${dayName} (${grouped[dayName].length} esercizi)</div>`;
+    groupEl.innerHTML = `<div class="day-badge">📅 ${dayName} (${dayItems.length} esercizi)</div>`;
 
-    grouped[dayName].forEach((ex, idx) => {
+    dayItems.forEach((ex, idx) => {
       const item = document.createElement("div");
       item.className = "exercise-item";
-      item.innerHTML = `
-        <div class="exercise-top">
-          <div class="item-photos">
-            ${ex.imgStart === ex.imgEnd ? `<img src="${ex.imgStart}" class="item-img" style="width: 82px; object-fit: contain;">` : `<img src="${ex.imgStart}" class="item-img"><img src="${ex.imgEnd}" class="item-img">`}
+
+      if (editingBuilderUid === ex.uid) {
+        item.innerHTML = `
+          <div class="builder-inline-edit">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <strong style="font-size: 0.88rem; color: var(--warning);">✏️ Modifica: ${escapeHtml(ex.name)}</strong>
+            </div>
+            <div class="builder-edit-grid">
+              <div class="field" style="margin-bottom: 0;">
+                <label>Giorno</label>
+                <select id="editDay_${ex.uid}">
+                  ${dayOptions.map(d => `<option value="${d}" ${d === ex.day ? 'selected' : ''}>${d}</option>`).join("")}
+                </select>
+              </div>
+              <div class="field" style="margin-bottom: 0;">
+                <label>Serie e Reps</label>
+                <input type="text" id="editSets_${ex.uid}" value="${ex.setsReps !== '-' ? escapeHtml(ex.setsReps) : ''}" placeholder="es. 4x8">
+              </div>
+              <div class="field" style="margin-bottom: 0;">
+                <label>Rest</label>
+                <input type="text" id="editRest_${ex.uid}" value="${ex.rest !== '-' ? escapeHtml(ex.rest) : ''}" placeholder="es. 90''">
+              </div>
+              <div class="field" style="margin-bottom: 0;">
+                <label>RIR / @</label>
+                <input type="text" id="editRir_${ex.uid}" value="${ex.rir !== '-' ? escapeHtml(ex.rir) : ''}" placeholder="es. RIR 1">
+              </div>
+            </div>
+            <div class="field" style="margin-bottom: 0;">
+              <label>Note Esercizio</label>
+              <textarea id="editNotes_${ex.uid}" placeholder="Note esecuzione...">${ex.notes !== '-' ? escapeHtml(ex.notes) : ''}</textarea>
+            </div>
+            <div style="display: flex; gap: 6px; justify-content: flex-end;">
+              <button type="button" class="btn btn-outline btn-sm" onclick="cancelEditBuilderEx()">Annulla</button>
+              <button type="button" class="btn btn-success btn-sm" onclick="saveEditBuilderEx(${ex.uid})">💾 Salva Modifiche</button>
+            </div>
           </div>
-          <div class="item-details">
-            <strong>${idx + 1}. ${escapeHtml(ex.name)}</strong>
-            <div class="item-sub"><strong>${escapeHtml(ex.setsReps)}</strong> | Rest: ${escapeHtml(ex.rest)} | RIR/@: ${escapeHtml(ex.rir)}</div>
-            ${ex.notes !== '-' ? `<div class="item-notes">Note: ${escapeHtml(ex.notes)}</div>` : ''}
+        `;
+      } else {
+        const isFirst = idx === 0;
+        const isLast = idx === dayItems.length - 1;
+        item.innerHTML = `
+          <div class="exercise-top">
+            <div class="item-photos">
+              ${ex.imgStart === ex.imgEnd ? `<img src="${ex.imgStart}" class="item-img" style="width: 82px; object-fit: contain;">` : `<img src="${ex.imgStart}" class="item-img"><img src="${ex.imgEnd}" class="item-img">`}
+            </div>
+            <div class="item-details">
+              <strong>${idx + 1}. ${escapeHtml(ex.name)}</strong>
+              <div class="item-sub"><strong>${escapeHtml(ex.setsReps)}</strong> | Rest: ${escapeHtml(ex.rest)} | RIR/@: ${escapeHtml(ex.rir)}</div>
+              ${ex.notes !== '-' ? `<div class="item-notes">Note: ${escapeHtml(ex.notes)}</div>` : ''}
+            </div>
+            <div class="builder-item-actions">
+              <div class="builder-btn-row">
+                <button type="button" class="btn-builder-act" title="Sposta su" onclick="moveBuilderEx(${ex.uid}, -1)" ${isFirst ? 'disabled' : ''}>⬆️</button>
+                <button type="button" class="btn-builder-act" title="Sposta giù" onclick="moveBuilderEx(${ex.uid}, 1)" ${isLast ? 'disabled' : ''}>⬇️</button>
+              </div>
+              <div class="builder-btn-row">
+                <button type="button" class="btn-builder-act" title="Modifica parametri" onclick="startEditBuilderEx(${ex.uid})">✏️</button>
+                <button type="button" class="btn-builder-act del" title="Rimuovi" onclick="deleteEx(${ex.uid})">✖</button>
+              </div>
+            </div>
           </div>
-          <button class="btn-del" onclick="deleteEx(${ex.uid})">✖</button>
-        </div>
-      `;
+        `;
+      }
       groupEl.appendChild(item);
     });
     list.appendChild(groupEl);
@@ -197,6 +301,7 @@ function renderList() {
 }
 
 window.deleteEx = function(uid) {
+  if (editingBuilderUid === uid) editingBuilderUid = null;
   currentWorkout = currentWorkout.filter(e => e.uid !== uid);
   renderList();
 };
@@ -205,6 +310,7 @@ document.getElementById("btnClearBuilder").addEventListener("click", () => {
   if (currentWorkout.length === 0) return;
   if (!confirm("Vuoi rimuovere tutti gli esercizi inseriti e ripartire da zero?")) return;
 
+  editingBuilderUid = null;
   currentWorkout = [];
   document.getElementById("generalNotes").value = "";
   renderList();
@@ -258,7 +364,10 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
     return;
   }
 
-  const rowsToInsert = currentWorkout.map((ex, index) => ({
+  // Ordina gli esercizi per giorno prima di salvare così order_index rispecchia l'ordine visivo
+  const orderedWorkout = [...currentWorkout].sort((a, b) => a.day.localeCompare(b.day, undefined, { numeric: true }));
+
+  const rowsToInsert = orderedWorkout.map((ex, index) => ({
     workout_id: newWorkout.id,
     exercise_id: ex.id,
     day_name: ex.day,
@@ -280,6 +389,7 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
     alert("Errore inserimento esercizi: " + exError.message);
   } else {
     alert("Scheda salvata e inviata con successo all'app dell'atleta!");
+    editingBuilderUid = null;
     currentWorkout = [];
     renderList();
     showTrainerView("trainerClientsView");
