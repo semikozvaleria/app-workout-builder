@@ -44,7 +44,25 @@ document.getElementById("btnLinkCoach").addEventListener("click", async () => {
   }
 });
 
-// Costruisce il markup HTML della singola card esercizio nell'app Atleta
+// Segna come viste dall'atleta la scheda e le note del coach
+window.markAthleteUpdatesAsSeen = async function(workoutId) {
+  const nowIso = new Date().toISOString();
+  await Promise.all([
+    workoutId
+      ? supabaseClient.from('workouts').update({ athlete_seen_at: nowIso }).eq('id', workoutId)
+      : Promise.resolve(),
+    supabaseClient
+      .from('workout_logs')
+      .update({ athlete_seen_at: nowIso })
+      .eq('athlete_id', currentProfile.id)
+      .is('athlete_seen_at', null)
+  ]);
+
+  document.getElementById("notificationsSection").classList.add("hidden");
+  await loadAthleteWorkout();
+};
+
+// Costruisce il markup HTML della singola card esercizio nell'app Atleta (Note Atleta in Verde, Note Coach in Rosso)
 function buildAthleteExerciseCardHtml(row, idx, latestLog) {
   const ex = row.exercises;
   const start = ex ? ex.img_start : "";
@@ -64,6 +82,14 @@ function buildAthleteExerciseCardHtml(row, idx, latestLog) {
     ? `Ultimo salvato: <strong>${latestLog.weight_kg ?? '-'} kg</strong> × <strong>${escapeHtml(latestLog.reps_done || '-')}</strong>${latestLog.rir !== null && latestLog.rir !== undefined ? ` (RIR ${latestLog.rir})` : ''}`
     : "Nessun carico ancora registrato";
 
+  const athleteNoteHtml = latestLog?.athlete_notes
+    ? `<div class="note-athlete-box">🟢 La tua nota: ${escapeHtml(latestLog.athlete_notes)}</div>`
+    : "";
+
+  const coachNoteHtml = latestLog?.coach_notes
+    ? `<div class="note-coach-box">🔴 Risposta Coach: ${escapeHtml(latestLog.coach_notes)}</div>`
+    : "";
+
   return `
     <div class="exercise-item">
       <div class="exercise-top">
@@ -82,7 +108,7 @@ function buildAthleteExerciseCardHtml(row, idx, latestLog) {
         </div>
       </div>
 
-      <!-- Barra Diario Carichi e Note dell'Atleta -->
+      <!-- Barra Diario Carichi + Note Atleta (Verde) e Note Coach (Rosso) -->
       <div class="athlete-log-bar" style="flex-direction: column; align-items: stretch;">
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap;">
           <span style="font-size: 0.72rem; color: var(--text-muted);">${lastSummary}</span>
@@ -93,7 +119,9 @@ function buildAthleteExerciseCardHtml(row, idx, latestLog) {
             <button class="btn btn-success btn-sm" onclick="saveWorkoutLog('${row.id}')">Salva</button>
           </div>
         </div>
-        <input type="text" id="logNote_${row.id}" value="${escapeHtml(latestLog?.athlete_notes ?? '')}" placeholder="📝 Aggiungi una nota per te o il tuo coach (es. sensazioni, fatica, dolore)..." style="font-size: 0.78rem; padding: 6px 8px; margin-top: 2px;">
+        <input type="text" id="logNote_${row.id}" value="${escapeHtml(latestLog?.athlete_notes ?? '')}" placeholder="🟢 Scrivi una nota per te o il tuo coach (sensazioni, fatica, dolore)..." style="font-size: 0.78rem; padding: 6px 8px; margin-top: 2px; border-color: rgba(16, 185, 129, 0.45);">
+        ${athleteNoteHtml}
+        ${coachNoteHtml}
       </div>
     </div>
   `;
@@ -157,7 +185,6 @@ async function loadAthleteWorkout() {
       });
     }
   }
-  updateNotificationCenter(athleteAlerts);
 
   if (workout.general_notes) {
     notesEl.classList.remove("hidden");
@@ -179,17 +206,39 @@ async function loadAthleteWorkout() {
       .order('logged_at', { ascending: false })
   ]);
 
-  if (!items || items.length === 0) {
-    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem;">Nessun esercizio inserito nella scheda.</div>`;
-    return;
-  }
-
   const latestLogMap = {};
   (logs || []).forEach(l => {
     if (!latestLogMap[l.workout_exercise_id]) {
       latestLogMap[l.workout_exercise_id] = l;
     }
   });
+
+  // 1 sola notifica cumulativa se il coach ha inviato una nuova scheda o commentato in rosso (non ancora visti dall'atleta)
+  const hasNewWorkout = !workout.athlete_seen_at;
+  const hasUnreadCoachComment = (logs || []).some(l => l.coach_notes && !l.athlete_seen_at);
+
+  if (hasNewWorkout || hasUnreadCoachComment) {
+    let msg = "Il tuo coach ha aggiornato la tua scheda di allenamento.";
+    if (hasNewWorkout && hasUnreadCoachComment) {
+      msg = "Hai una nuova scheda assegnata e nuove indicazioni in rosso dal tuo coach.";
+    } else if (hasUnreadCoachComment) {
+      msg = "Il tuo coach ha lasciato un commento in rosso sui tuoi esercizi.";
+    }
+
+    athleteAlerts.unshift({
+      level: "info",
+      title: "🔴 Novità dal tuo Coach",
+      message: msg,
+      actionHtml: `<button class="btn btn-primary btn-sm" onclick="markAthleteUpdatesAsSeen('${workout.id}')">Segna come letto</button>`
+    });
+  }
+
+  updateNotificationCenter(athleteAlerts);
+
+  if (!items || items.length === 0) {
+    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem;">Nessun esercizio inserito nella scheda.</div>`;
+    return;
+  }
 
   container.innerHTML = "";
   const grouped = {};
@@ -269,7 +318,6 @@ async function loadAthleteWorkout() {
       }
     });
 
-    // Chiusura di sicurezza se un circuito non aveva il flag di fine esplicito
     if (inCircuit) {
       groupDiv.innerHTML += `
         <div class="circuit-group-box">
@@ -303,13 +351,15 @@ window.saveWorkoutLog = async function(workoutExerciseId) {
       weight_kg: kgVal ? parseFloat(kgVal) : null,
       reps_done: repsVal || "-",
       rir: rirVal ? parseFloat(rirVal) : null,
-      athlete_notes: noteVal || null
+      athlete_notes: noteVal || null,
+      trainer_seen_at: null,
+      athlete_seen_at: new Date().toISOString()
     });
 
   if (error) {
     alert("Errore salvataggio: " + error.message);
   } else {
-    alert("✅ Dati salvati! Il tuo Personal Trainer può ora vederli nella sua app.");
+    alert("✅ Dati salvati! Il tuo Personal Trainer è stato avvisato.");
     loadAthleteWorkout();
   }
 };
