@@ -15,17 +15,55 @@
   <div class="container">
     <header>
       <div class="header-brand">
-        <img src="logo_carlo.png" alt="Logo" class="site-logo" onerror="this.style.display='none'">
+        <img id="headerLogoImg" src="logo_carlo.png" alt="Logo" class="site-logo" onerror="this.style.display='none'">
         <div>
           <h1>Workout Builder</h1>
           <span id="userRoleBadge" style="font-size: 0.72rem; color: var(--text-muted);">Cloud Coaching System</span>
         </div>
       </div>
-      <div style="display: flex; align-items: center; gap: 8px;">
+      <div style="display: flex; align-items: center; gap: 6px;">
         <span style="font-size: 0.75rem; color: var(--primary);" id="dbCount">...</span>
+        <button id="btnOpenSettings" class="btn btn-outline btn-sm" title="Impostazioni">⚙️</button>
         <button id="btnLogout" class="btn btn-outline btn-sm hidden">Esci</button>
       </div>
     </header>
+
+    <!-- PANNELLO IMPOSTAZIONI (Tema Chiaro/Scuro + Logo Trainer) -->
+    <div id="settingsSection" class="card hidden">
+      <div class="section-title">
+        <span>⚙️ Impostazioni</span>
+        <button id="btnCloseSettings" class="btn btn-outline btn-sm">Chiudi ✖</button>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
+        <div>
+          <strong style="font-size: 0.88rem; display: block;">Aspetto Interfaccia</strong>
+          <span style="font-size: 0.76rem; color: var(--text-muted);">Scegli tra modalità scura o chiara</span>
+        </div>
+        <div class="theme-toggle-pill">
+          <button type="button" class="theme-opt active" id="btnThemeDark">🌙 Scuro</button>
+          <button type="button" class="theme-opt" id="btnThemeLight">☀️ Chiaro</button>
+        </div>
+      </div>
+
+      <!-- Caricamento Logo (visibile solo ai Personal Trainer loggati) -->
+      <div id="trainerLogoSettingsBox" class="hidden" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);">
+        <strong style="font-size: 0.88rem; display: block; margin-bottom: 4px;">Logo Personalizzato Coach</strong>
+        <span style="font-size: 0.76rem; color: var(--text-muted); display: block; margin-bottom: 10px;">
+          Apparirà nell'intestazione dell'app (anche ai tuoi atleti) e in cima alle schede PDF.
+        </span>
+
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
+          <img id="settingsLogoPreview" src="logo_carlo.png" alt="Anteprima Logo" style="height: 48px; width: auto; max-width: 120px; object-fit: contain; border: 1px solid var(--border); border-radius: 6px; padding: 4px; background: #fff;" onerror="this.style.display='none'">
+          <input type="file" id="inputLogoFile" accept="image/*" style="font-size: 0.8rem; padding: 7px;">
+        </div>
+
+        <div class="grid-2">
+          <button type="button" class="btn btn-primary btn-sm" id="btnSaveLogo" style="width: 100%;">💾 Salva Logo</button>
+          <button type="button" class="btn btn-outline btn-sm" id="btnResetLogo" style="width: 100%;">Ripristina Default</button>
+        </div>
+      </div>
+    </div>
 
     <!-- 1. SCHERMATA LOGIN / REGISTRAZIONE -->
     <div id="authSection" class="card">
@@ -86,17 +124,6 @@
         </div>
         <div id="clientsListContainer">
           <div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento atleti...</div>
-        </div>
-      </div>
-
-      <!-- VISTA B: PROGRESSI E DIARIO CARICHI ATLETA -->
-      <div id="trainerProgressView" class="card hidden">
-        <div class="section-title">
-          <span id="progressAthleteTitle">Progressi Atleta</span>
-          <button class="btn btn-outline btn-sm" id="btnBackToClients">← Indietro</button>
-        </div>
-        <div id="progressLogsContainer">
-          <div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento storico...</div>
         </div>
       </div>
 
@@ -245,6 +272,8 @@
             <button class="btn btn-outline" id="btnPdf">📄 Scarica PDF Stampabile</button>
           </div>
         </div>
+      </div>
+    </div>
 
     <!-- 3. AREA ATLETA -->
     <div id="athleteSection" class="hidden" style="display: flex; flex-direction: column; gap: 14px;">
@@ -267,7 +296,7 @@
           <span id="athleteCoachName" style="font-size: 0.78rem; color: var(--text-muted);"></span>
         </div>
         <div id="athleteWorkoutMeta" style="font-size: 0.8rem; color: var(--primary); margin-bottom: 10px;"></div>
-        <div id="athleteGeneralNotes" style="background: #161616; padding: 10px; border-radius: 8px; font-size: 0.82rem; color: #e2e8f0; margin-bottom: 12px; white-space: pre-wrap;"></div>
+        <div id="athleteGeneralNotes" style="background: var(--notes-bg); color: var(--notes-text); border: 1px solid var(--border); padding: 10px; border-radius: 8px; font-size: 0.82rem; margin-bottom: 12px; white-space: pre-wrap;"></div>
         
         <div class="exercise-list" id="athleteExercisesContainer"></div>
       </div>
@@ -280,7 +309,7 @@
     <div id="pdfSheet" class="pdf-sheet">
       <div class="pdf-header">
         <div class="pdf-header-left">
-          <img src="logo_carlo.png" alt="Logo" class="pdf-logo" onerror="this.style.display='none'">
+          <img id="pdfLogoImg" src="logo_carlo.png" alt="Logo" class="pdf-logo" onerror="this.style.display='none'">
           <div>
             <h2>SCHEDA DI ALLENAMENTO</h2>
             <div class="pdf-coach-tag" id="pdfCoachTag">COACH</div>
@@ -307,14 +336,14 @@
     </div>
   </div>
 
-  <!-- Moduli JavaScript separati in ordine di caricamento -->
+  <!-- Moduli JavaScript separati -->
   <script src="config.js"></script>
+  <script src="settings.js"></script>
   <script src="auth.js"></script>
   <script src="trainer.js"></script>
   <script src="builder.js"></script>
   <script src="athlete.js"></script>
   <script>
-    // Avvio iniziale dell'applicazione
     loadExercisesFromCloud();
     checkSession();
   </script>
