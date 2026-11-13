@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="style.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
@@ -22,7 +23,7 @@
       <div style="display: flex; align-items: center; gap: 6px;">
         <span style="font-size: 0.75rem; color: var(--primary);" id="dbCount">...</span>
         <div class="notif-btn-wrap">
-          <button id="btnOpenNotifications" class="btn btn-outline btn-sm" title="Avvisi e Scadenze">🔔</button>
+          <button id="btnOpenNotifications" class="btn btn-outline btn-sm hidden" title="Avvisi e Scadenze">🔔</button>
           <span id="notifCountBadge" class="notif-badge hidden">0</span>
         </div>
         <button id="btnOpenSettings" class="btn btn-outline btn-sm" title="Impostazioni">⚙️</button>
@@ -164,6 +165,17 @@
         </div>
         <div id="athleteWorkoutsHistoryContainer">
           <div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento schede...</div>
+        </div>
+      </div>
+
+      <!-- VISTA B3: STATISTICHE & ANALYTICS ATLETA -->
+      <div id="trainerStatsView" class="card hidden">
+        <div class="section-title">
+          <span id="statsAthleteTitle">📈 Statistiche Atleta</span>
+          <button class="btn btn-outline btn-sm" id="btnBackFromStats">← Indietro</button>
+        </div>
+        <div id="statsDashboardContainer">
+          <div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Elaborazione statistiche...</div>
         </div>
       </div>
 
@@ -360,6 +372,7 @@
   <script src="notifications.js"></script>
   <script src="auth.js"></script>
   <script src="trainer.js"></script>
+  <script src="analytics.js"></script>
   <script src="builder.js"></script>
   <script src="athlete.js"></script>
   <script>
