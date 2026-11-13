@@ -80,38 +80,56 @@ document.getElementById("btnLogout").addEventListener("click", async () => {
 
 async function checkSession() {
   const { data: { session } } = await supabaseClient.auth.getSession();
+
   if (!session) {
+    // Utente NON loggato: nascondiamo l'area privata e la campanella
     document.getElementById("authSection").classList.remove("hidden");
     document.getElementById("trainerSection").classList.add("hidden");
     document.getElementById("athleteSection").classList.add("hidden");
+    
+    // NASCONDI CAMPANELLA, CONTEGGIO E LOGOUT
+    document.getElementById("btnOpenNotifications").classList.add("hidden");
+    document.getElementById("notifCountBadge").classList.add("hidden");
     document.getElementById("btnLogout").classList.add("hidden");
+    document.getElementById("dbCount").textContent = "";
+    
+    // Resetta eventuale logo personalizzato sul default offline
+    applyBrandLogo(null);
     return;
   }
 
-  currentUser = session.user;
+  // Utente loggato: recuperiamo il profilo
   const { data: profile, error } = await supabaseClient
     .from('profiles')
     .select('*')
-    .eq('id', currentUser.id)
+    .eq('id', session.user.id)
     .single();
 
   if (error || !profile) {
-    authMessage.textContent = "Profilo non trovato. Riprova tra qualche secondo.";
+    await supabaseClient.auth.signOut();
+    checkSession();
     return;
   }
 
   currentProfile = profile;
-  document.getElementById("authSection").classList.add("hidden");
-  document.getElementById("btnLogout").classList.remove("hidden");
 
+  // MOSTRAMO LA CAMPANELLA E IL LOGOUT ADESSO CHE L'UTENTE È AUTENTICATO
+  document.getElementById("btnOpenNotifications").classList.remove("hidden");
+  document.getElementById("btnLogout").classList.remove("hidden");
+  document.getElementById("authSection").classList.add("hidden");
+
+  applyBrandLogo(profile.logo_url);
+
+  // Inizializzazione in base al ruolo
   if (profile.role === 'trainer') {
-    applyBrandLogo(profile.logo_url);
-    document.getElementById("userRoleBadge").textContent = `Coach: ${profile.full_name}`;
     document.getElementById("trainerSection").classList.remove("hidden");
-    initTrainerArea();
+    document.getElementById("athleteSection").classList.add("hidden");
+    document.getElementById("userRoleBadge").textContent = "Personal Trainer";
+    await initTrainerArea();
   } else {
-    document.getElementById("userRoleBadge").textContent = `Atleta: ${profile.full_name}`;
+    document.getElementById("trainerSection").classList.add("hidden");
     document.getElementById("athleteSection").classList.remove("hidden");
-    initAthleteArea();
+    document.getElementById("userRoleBadge").textContent = "Atleta";
+    await initAthleteArea();
   }
 }
