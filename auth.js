@@ -105,6 +105,7 @@ async function checkSession() {
   document.getElementById("btnLogout").classList.remove("hidden");
 
   if (profile.role === 'trainer') {
+    applyBrandLogo(profile.logo_url);
     document.getElementById("userRoleBadge").textContent = `Coach: ${profile.full_name}`;
     document.getElementById("trainerSection").classList.remove("hidden");
     initTrainerArea();
