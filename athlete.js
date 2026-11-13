@@ -282,7 +282,7 @@ async function loadAthleteWorkout() {
 
   if (workout.general_notes) {
     notesEl.classList.remove("hidden");
-    notesEl.textContent = "NOTE DEL COACH:\n" + workout.general_notes;
+    notesEl.innerHTML = `<strong>NOTE DEL COACH:</strong>\n${escapeHtml(workout.general_notes)}`;
   } else {
     notesEl.classList.add("hidden");
   }
