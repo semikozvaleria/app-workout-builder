@@ -645,3 +645,16 @@ body:not(.light-theme) .note-coach-box {
   flex-shrink: 0;
   padding: 6px 12px;
 }
+
+/* Allinea Serie/Reps, Rest e RIR sulla stessa riga con stile uniforme */
+.item-sub,
+.item-sub strong {
+  display: inline;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.item-sub strong {
+  color: var(--primary);
+}
