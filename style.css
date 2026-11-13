@@ -609,3 +609,39 @@ body:not(.light-theme) .note-coach-box {
   padding: 6px 8px;
   border-color: rgba(239, 68, 68, 0.45);
 }
+
+/* Barra compatta inserimento carichi atleta */
+.athlete-inputs-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  width: 100%;
+}
+
+.athlete-inputs-row input {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 0.8rem;
+}
+
+.athlete-inputs-row .inp-kg {
+  width: 68px;
+  flex-shrink: 0;
+}
+
+.athlete-inputs-row .inp-reps {
+  flex: 1;
+  min-width: 85px;
+}
+
+.athlete-inputs-row .inp-rir {
+  width: 58px;
+  flex-shrink: 0;
+}
+
+.athlete-inputs-row .btn {
+  width: auto;
+  flex-shrink: 0;
+  padding: 6px 12px;
+}
