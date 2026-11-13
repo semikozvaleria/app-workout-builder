@@ -306,3 +306,107 @@ textarea { resize: vertical; min-height: 70px; font-size: 0.85rem; line-height: 
   background: rgba(239, 68, 68, 0.14);
   border-color: var(--danger);
 }
+
+/* Dashboard Analytics & Statistiche Trainer */
+.stats-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+@media (min-width: 560px) {
+  .stats-kpi-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.kpi-box {
+  background: var(--subcard-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  text-align: center;
+}
+
+.kpi-value {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--primary);
+  display: block;
+}
+
+.kpi-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-weight: 700;
+  margin-top: 2px;
+  display: block;
+}
+
+.stats-card-block {
+  background: var(--subcard-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.stats-block-title {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chart-canvas-wrap {
+  position: relative;
+  width: 100%;
+  height: 210px;
+}
+
+/* Calendario attività (ultimi 28 giorni) */
+.activity-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.cal-day-cell {
+  border-radius: 6px;
+  padding: 6px 2px;
+  text-align: center;
+  font-size: 0.72rem;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text-muted);
+}
+
+.cal-day-cell.trained {
+  background: rgba(34, 197, 94, 0.22);
+  border-color: var(--success);
+  color: var(--text);
+  font-weight: 800;
+}
+
+.rir-compare-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.rir-pill-box {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  text-align: center;
+}
