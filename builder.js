@@ -8,7 +8,9 @@ const chkCircuitEnd = document.getElementById("chkCircuitEnd");
 const circuitLabelWrap = document.getElementById("circuitLabelWrap");
 const inCircuitLabel = document.getElementById("inCircuitLabel");
 
-// Verifica se nel giorno selezionato c'è attualmente un circuito aperto (iniziato ma non ancora chiuso)
+let currentDraftId = null; // Tiene traccia se stiamo modificando una bozza salvata
+
+// Verifica se nel giorno selezionato c'è attualmente un circuito aperto
 function hasOpenCircuitInDay(dayName) {
   const dayItems = currentWorkout.filter(item => item.day === dayName);
   let open = false;
@@ -28,7 +30,6 @@ function syncCircuitCheckboxes() {
   const labelEnd = chkCircuitEnd.closest("label");
 
   if (isOpen) {
-    // C'è un circuito aperto: si può solo chiuderlo con "Fine Circuito"
     chkCircuitStart.checked = false;
     chkCircuitStart.disabled = true;
     if (labelStart) {
@@ -43,7 +44,6 @@ function syncCircuitCheckboxes() {
     }
     circuitLabelWrap.classList.add("hidden");
   } else {
-    // Nessun circuito aperto: si può solo aprirne uno con "Inizio Circuito"
     chkCircuitStart.disabled = false;
     if (labelStart) {
       labelStart.style.opacity = "1";
@@ -99,6 +99,205 @@ async function loadExercisesFromCloud() {
   syncCircuitCheckboxes();
 }
 
+// Carica e mostra le bozze salvate del Personal Trainer
+async function loadTrainerDrafts() {
+  if (!currentProfile || currentProfile.role !== 'trainer') return;
+
+  const { data: drafts, error } = await supabaseClient
+    .from('workouts')
+    .select('*, workout_exercises(count)')
+    .eq('trainer_id', currentProfile.id)
+    .eq('status', 'draft')
+    .order('created_at', { ascending: false });
+
+  const card = document.getElementById("trainerDraftsCard");
+  const listEl = document.getElementById("trainerDraftsList");
+  const countEl = document.getElementById("draftsCountBadge");
+
+  if (error || !drafts || drafts.length === 0) {
+    card.classList.add("hidden");
+    listEl.innerHTML = "";
+    return;
+  }
+
+  card.classList.remove("hidden");
+  countEl.textContent = `${drafts.length} ${drafts.length === 1 ? 'bozza' : 'bozze'}`;
+
+  listEl.innerHTML = drafts.map(d => {
+    const client = trainerClients.find(c => c.id === d.athlete_id);
+    const labelName = client ? client.full_name : (d.title || "Bozza senza atleta");
+    const exCount = d.workout_exercises?.[0]?.count ?? 0;
+    const dateStr = new Date(d.created_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const isCurrent = currentDraftId === d.id;
+
+    return `
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--subcard-bg); border: 1px solid ${isCurrent ? 'var(--primary)' : 'var(--border)'}; border-radius: 8px; padding: 9px 11px; margin-bottom: 6px;">
+        <div>
+          <strong style="font-size: 0.86rem; display: block;">${escapeHtml(labelName)} ${isCurrent ? '<span style="color:var(--primary); font-size:0.72rem;">(aperta ora)</span>' : ''}</strong>
+          <span style="font-size: 0.75rem; color: var(--text-muted);">${d.duration_weeks} sett. • ${exCount} esercizi • Salvata il ${dateStr}</span>
+        </div>
+        <div style="display: flex; gap: 6px;">
+          <button type="button" class="btn btn-primary btn-sm" onclick="resumeDraft('${d.id}')">✏️ Riprendi</button>
+          <button type="button" class="btn btn-outline btn-sm" style="border-color: var(--danger); color: var(--danger);" onclick="deleteDraft('${d.id}')">🗑️</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+window.resumeDraft = async function(draftId) {
+  const { data: workout, error } = await supabaseClient
+    .from('workouts')
+    .select('*, workout_exercises(*, exercises(*))')
+    .eq('id', draftId)
+    .single();
+
+  if (error || !workout) {
+    alert("Errore nel caricamento della bozza.");
+    return;
+  }
+
+  currentDraftId = workout.id;
+
+  const selectEl = document.getElementById("builderAthleteSelect");
+  const loadBtn = document.getElementById("btnLoadExistingWorkout");
+
+  if (workout.athlete_id) {
+    selectEl.value = workout.athlete_id;
+    const found = trainerClients.find(c => c.id === workout.athlete_id);
+    document.getElementById("athleteName").value = found ? found.full_name : "";
+    loadBtn.classList.remove("hidden");
+  } else {
+    selectEl.value = "";
+    document.getElementById("athleteName").value = workout.title && workout.title !== "Bozza Scheda" ? workout.title : "";
+    loadBtn.classList.add("hidden");
+  }
+
+  document.getElementById("durationWeeks").value = workout.duration_weeks || 4;
+  document.getElementById("generalNotes").value = workout.general_notes || "";
+
+  const sortedItems = (workout.workout_exercises || []).sort((a, b) => a.order_index - b.order_index);
+  currentWorkout = sortedItems.map((row, idx) => ({
+    uid: Date.now() + idx,
+    id: row.exercise_id,
+    day: row.day_name,
+    name: row.exercises ? row.exercises.name : "Esercizio",
+    muscle: row.exercises ? row.exercises.muscle : "",
+    imgStart: row.exercises ? row.exercises.img_start : "",
+    imgEnd: row.exercises ? (row.exercises.img_end || row.exercises.img_start) : "",
+    setsReps: row.sets_reps,
+    rest: row.rest,
+    rir: row.rir,
+    notes: row.notes,
+    circuitRole: row.circuit_role || null,
+    circuitLabel: row.circuit_label || ""
+  }));
+
+  renderList();
+  loadTrainerDrafts();
+};
+
+window.deleteDraft = async function(draftId) {
+  if (!confirm("Eliminare questa bozza?")) return;
+
+  await supabaseClient.from('workout_exercises').delete().eq('workout_id', draftId);
+  await supabaseClient.from('workouts').delete().eq('id', draftId).eq('trainer_id', currentProfile.id);
+
+  if (currentDraftId === draftId) currentDraftId = null;
+  loadTrainerDrafts();
+};
+
+// Salva o aggiorna la bozza su Supabase senza inviarla all'atleta
+document.getElementById("btnSaveDraft").addEventListener("click", async () => {
+  if (currentWorkout.length === 0) {
+    alert("Inserisci almeno un esercizio prima di salvare la bozza!");
+    return;
+  }
+
+  const btn = document.getElementById("btnSaveDraft");
+  btn.disabled = true;
+  btn.textContent = "Salvataggio...";
+
+  const athleteId = document.getElementById("builderAthleteSelect").value || null;
+  const pdfName = document.getElementById("athleteName").value.trim();
+  const durationWeeks = parseInt(document.getElementById("durationWeeks").value) || 4;
+  const generalNotes = document.getElementById("generalNotes").value.trim();
+
+  let targetWorkoutId = currentDraftId;
+
+  if (targetWorkoutId) {
+    const { error: uErr } = await supabaseClient
+      .from('workouts')
+      .update({
+        athlete_id: athleteId,
+        title: pdfName || "Bozza Scheda",
+        general_notes: generalNotes,
+        duration_weeks: durationWeeks
+      })
+      .eq('id', targetWorkoutId)
+      .eq('trainer_id', currentProfile.id);
+
+    if (uErr) {
+      alert("Errore aggiornamento bozza: " + uErr.message);
+      btn.disabled = false;
+      btn.textContent = "📝 Salva Bozza";
+      return;
+    }
+
+    await supabaseClient.from('workout_exercises').delete().eq('workout_id', targetWorkoutId);
+  } else {
+    const { data: createdDraft, error: cErr } = await supabaseClient
+      .from('workouts')
+      .insert({
+        trainer_id: currentProfile.id,
+        athlete_id: athleteId,
+        title: pdfName || "Bozza Scheda",
+        general_notes: generalNotes,
+        duration_weeks: durationWeeks,
+        status: 'draft'
+      })
+      .select()
+      .single();
+
+    if (cErr || !createdDraft) {
+      alert("Errore salvataggio bozza: " + (cErr ? cErr.message : "sconosciuto"));
+      btn.disabled = false;
+      btn.textContent = "📝 Salva Bozza";
+      return;
+    }
+
+    targetWorkoutId = createdDraft.id;
+    currentDraftId = targetWorkoutId;
+  }
+
+  const rowsToInsert = currentWorkout.map((ex, idx) => ({
+    workout_id: targetWorkoutId,
+    exercise_id: ex.id,
+    day_name: ex.day,
+    sets_reps: ex.setsReps,
+    rest: ex.rest,
+    rir: ex.rir,
+    notes: ex.notes,
+    order_index: idx,
+    circuit_role: ex.circuitRole || null,
+    circuit_label: ex.circuitLabel || null
+  }));
+
+  const { error: exError } = await supabaseClient
+    .from('workout_exercises')
+    .insert(rowsToInsert);
+
+  btn.disabled = false;
+  btn.textContent = "📝 Salva Bozza";
+
+  if (exError) {
+    alert("Bozza salvata ma errore sugli esercizi: " + exError.message);
+  } else {
+    alert("📝 Bozza salvata! Puoi chiudere l'app e riprenderla quando vuoi.");
+    loadTrainerDrafts();
+  }
+});
+
 document.getElementById("builderAthleteSelect").addEventListener("change", (e) => {
   const athleteId = e.target.value;
   const loadBtn = document.getElementById("btnLoadExistingWorkout");
@@ -138,6 +337,7 @@ document.getElementById("btnLoadExistingWorkout").addEventListener("click", asyn
     return;
   }
 
+  currentDraftId = null;
   document.getElementById("durationWeeks").value = workout.duration_weeks || 4;
   document.getElementById("generalNotes").value = workout.general_notes || "";
 
@@ -159,13 +359,16 @@ document.getElementById("btnLoadExistingWorkout").addEventListener("click", asyn
   }));
 
   renderList();
+  loadTrainerDrafts();
 });
 
 // Pulsante Svuota scheda nel builder
 document.getElementById("btnClearBuilder").addEventListener("click", () => {
   if (!confirm("Vuoi rimuovere tutti gli esercizi inseriti in questa scheda?")) return;
   currentWorkout = [];
+  currentDraftId = null;
   renderList();
+  loadTrainerDrafts();
 });
 
 function populateDropdown() {
@@ -253,7 +456,6 @@ document.getElementById("btnAddEx").addEventListener("click", () => {
     circuitLabel: isStart ? inCircuitLabel.value.trim() : ""
   });
 
-  // Reset campi input e flag circuito
   document.getElementById("inSetsReps").value = "";
   document.getElementById("inRest").value = "";
   document.getElementById("inRir").value = "";
@@ -532,6 +734,13 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   if (exError) {
     alert("Scheda creata ma errore negli esercizi: " + exError.message);
   } else {
+    // Se questa scheda proveniva da una bozza salvata, elimina la bozza ormai pubblicata
+    if (currentDraftId) {
+      await supabaseClient.from('workout_exercises').delete().eq('workout_id', currentDraftId);
+      await supabaseClient.from('workouts').delete().eq('id', currentDraftId);
+      currentDraftId = null;
+    }
+
     alert("✅ Scheda salvata e inviata! L'atleta la vedrà immediatamente aprendo la sua app.");
     currentWorkout = [];
     renderList();
