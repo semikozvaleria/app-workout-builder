@@ -1,4 +1,34 @@
-//Gestisce l'area Atleta: collegamento al coach, visualizzazione scheda e salvataggio carichi/RIR nel diario.
+function renderAthleteLogSummary(exLogs) {
+  if (!exLogs || exLogs.length === 0) {
+    return `<div class="last-log-tag">📝 Registra il tuo allenamento:</div>`;
+  }
+
+  const latest = exLogs[0];
+  const latestDate = new Date(latest.logged_at).toLocaleDateString('it-IT');
+  const rirTxt = (latest.rir !== null && latest.rir !== undefined) ? ` • RIR/@: ${latest.rir}` : '';
+
+  const olderHtml = exLogs.length > 1 ? `
+    <details class="past-logs-details">
+      <summary>Vedi storico sessioni (${exLogs.length - 1})</summary>
+      <div style="margin-top: 4px;">
+        ${exLogs.slice(1).map(old => {
+          const d = new Date(old.logged_at).toLocaleDateString('it-IT');
+          const r = (old.rir !== null && old.rir !== undefined) ? ` • RIR/@: ${old.rir}` : '';
+          const n = old.athlete_notes ? `\n"${escapeHtml(old.athlete_notes)}"` : '';
+          return `<div class="past-log-line"><strong>${d}:</strong> ${old.weight_kg ?? '-'} kg × ${escapeHtml(old.reps_done || '-')}${r}${n}</div>`;
+        }).join("")}
+      </div>
+    </details>
+  ` : "";
+
+  return `
+    <div class="last-log-tag">
+      ✅ Ultimo (${latestDate}): ${latest.weight_kg ?? '-'} kg × ${escapeHtml(latest.reps_done || '-')}${rirTxt}
+    </div>
+    ${latest.athlete_notes ? `<div class="feedback-note">"${escapeHtml(latest.athlete_notes)}"</div>` : ''}
+    ${olderHtml}
+  `;
+}
 
 async function initAthleteArea() {
   if (!currentProfile.trainer_id) {
@@ -17,8 +47,8 @@ async function initAthleteArea() {
     .single();
 
   if (coach) {
-    applyBrandLogo(coach.logo_url);
     document.getElementById("athleteCoachName").textContent = `Coach: ${coach.full_name}`;
+    applyBrandLogo(coach.logo_url);
   }
 
   const { data: workout } = await supabaseClient
@@ -82,8 +112,8 @@ async function initAthleteArea() {
       const ex = row.exercises;
       const start = ex ? ex.img_start : "";
       const end = ex ? (ex.img_end || ex.img_start) : "";
-      const lastLog = (myLogs || []).find(l => l.workout_exercise_id === row.id);
-      const lastRirText = (lastLog && lastLog.rir !== null && lastLog.rir !== undefined) ? ` • RIR/@: ${lastLog.rir}` : '';
+      const exLogs = (myLogs || []).filter(l => l.workout_exercise_id === row.id);
+      const lastLog = exLogs[0];
 
       const itemEl = document.createElement("div");
       itemEl.className = "exercise-item";
@@ -105,8 +135,8 @@ async function initAthleteArea() {
         </div>
 
         <div class="log-box">
-          <div class="last-log-tag" id="lastLog_${row.id}">
-            ${lastLog ? `✅ Ultimo: ${lastLog.weight_kg ?? '-'} kg x ${escapeHtml(lastLog.reps_done || '-')}${lastRirText} (${new Date(lastLog.logged_at).toLocaleDateString('it-IT')})` : '📝 Registra il tuo allenamento:'}
+          <div id="logHistoryBox_${row.id}">
+            ${renderAthleteLogSummary(exLogs)}
           </div>
           <div class="log-row-top">
             <input type="number" step="0.5" id="logWeight_${row.id}" placeholder="Peso (kg)" value="${lastLog && lastLog.weight_kg !== null ? lastLog.weight_kg : ''}">
@@ -150,12 +180,22 @@ window.saveAthleteLog = async function(workoutExerciseId) {
 
   if (error) {
     alert("Errore salvataggio: " + error.message);
-  } else {
-    const tag = document.getElementById(`lastLog_${workoutExerciseId}`);
-    const rirTxt = rirVal !== "" ? ` • RIR/@: ${rirVal}` : '';
-    const noteTxt = noteVal ? ` • Nota salvata` : '';
-    tag.textContent = `✅ Salvato ora: ${weightVal || '-'} kg x ${repsVal || '-'}${rirTxt}${noteTxt}`;
-    document.getElementById(`logNote_${workoutExerciseId}`).value = "";
+    return;
+  }
+
+  document.getElementById(`logNote_${workoutExerciseId}`).value = "";
+
+  // Ricarica subito lo storico aggiornato per questo esercizio
+  const { data: updatedLogs } = await supabaseClient
+    .from('workout_logs')
+    .select('*')
+    .eq('workout_exercise_id', workoutExerciseId)
+    .eq('athlete_id', currentProfile.id)
+    .order('logged_at', { ascending: false });
+
+  const historyBox = document.getElementById(`logHistoryBox_${workoutExerciseId}`);
+  if (historyBox && updatedLogs) {
+    historyBox.innerHTML = renderAthleteLogSummary(updatedLogs);
   }
 };
 
