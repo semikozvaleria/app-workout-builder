@@ -129,7 +129,6 @@ window.viewClientWorkouts = async function(clientId, clientName) {
     const endStr = w.end_date ? new Date(w.end_date).toLocaleDateString('it-IT') : '-';
     const items = (w.workout_exercises || []).sort((a, b) => a.order_index - b.order_index);
 
-    // Raggruppa esercizi per giorno
     const grouped = {};
     items.forEach(item => {
       if (!grouped[item.day_name]) grouped[item.day_name] = [];
@@ -187,7 +186,6 @@ window.viewClientWorkouts = async function(clientId, clientName) {
   });
 };
 
-// Clona una scheda specifica (attiva o archiviata) direttamente dentro il Workout Builder
 window.cloneWorkoutToBuilder = async function(workoutId, clientId, clientName) {
   const { data: workout, error } = await supabaseClient
     .from('workouts')
@@ -222,42 +220,152 @@ window.cloneWorkoutToBuilder = async function(workoutId, clientId, clientName) {
   renderList();
 };
 
+// VISTA PROGRESSI: Scheda identica a quella dell'atleta + riquadro affiancato con le modifiche/log registrati
 window.viewClientProgress = async function(clientId, clientName) {
   showTrainerView("trainerProgressView");
   document.getElementById("progressAthleteTitle").textContent = `📊 Progressi: ${clientName}`;
   const container = document.getElementById("progressLogsContainer");
-  container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento storico carichi...</div>`;
+  container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento scheda e riscontri atleta...</div>`;
 
-  const { data: logs, error } = await supabaseClient
-    .from('workout_logs')
-    .select('*, workout_exercises(day_name, sets_reps, exercises(name))')
+  // 1. Recupera la scheda attiva dell'atleta
+  const { data: workout } = await supabaseClient
+    .from('workouts')
+    .select('*')
+    .eq('trainer_id', currentProfile.id)
     .eq('athlete_id', clientId)
-    .order('logged_at', { ascending: false })
-    .limit(50);
+    .eq('status', 'active')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
 
-  if (error || !logs || logs.length === 0) {
-    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">Nessun allenamento ancora registrato da ${escapeHtml(clientName)}.</div>`;
+  if (!workout) {
+    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">Nessuna scheda attiva trovata per ${escapeHtml(clientName)}.</div>`;
     return;
   }
 
-  container.innerHTML = logs.map(log => {
-    const dateStr = new Date(log.logged_at).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-    const exName = log.workout_exercises?.exercises?.name || "Esercizio";
-    const dayName = log.workout_exercises?.day_name || "";
-    const rirText = (log.rir !== null && log.rir !== undefined) ? ` • RIR/@: ${log.rir}` : '';
-    return `
-      <div class="history-row">
-        <div style="display: flex; justify-content: space-between;">
-          <strong>${escapeHtml(exName)}</strong>
-          <span class="history-date">${dateStr}</span>
-        </div>
-        <div style="color: var(--primary); font-weight: 700; margin-top: 2px;">
-          Carico: ${log.weight_kg ?? '-'} kg • Reps: ${escapeHtml(log.reps_done || '-')}${rirText} <span style="color: var(--text-muted); font-weight: 400;">(${escapeHtml(dayName)})</span>
-        </div>
-        ${log.athlete_notes ? `<div style="color: #cbd5e1; font-size: 0.78rem; margin-top: 2px;">Nota atleta: "${escapeHtml(log.athlete_notes)}"</div>` : ''}
+  // 2. Recupera gli esercizi assegnati e tutti i log salvati dall'atleta
+  const [{ data: items }, { data: logs }] = await Promise.all([
+    supabaseClient
+      .from('workout_exercises')
+      .select('*, exercises(*)')
+      .eq('workout_id', workout.id)
+      .order('order_index', { ascending: true }),
+    supabaseClient
+      .from('workout_logs')
+      .select('*')
+      .eq('athlete_id', clientId)
+      .order('logged_at', { ascending: false })
+  ]);
+
+  if (!items || items.length === 0) {
+    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">La scheda attiva non contiene esercizi.</div>`;
+    return;
+  }
+
+  const endStr = workout.end_date ? new Date(workout.end_date).toLocaleDateString('it-IT') : '-';
+  let html = `
+    <div style="font-size: 0.8rem; color: var(--primary); margin-bottom: 8px;">
+      Durata: ${workout.duration_weeks} settimane • Scadenza: ${endStr}
+    </div>
+  `;
+
+  if (workout.general_notes) {
+    html += `
+      <div style="background: #161616; padding: 10px; border-radius: 8px; font-size: 0.82rem; color: #e2e8f0; margin-bottom: 12px; white-space: pre-wrap;">
+        <strong>NOTE ASSEGNATE:</strong>\n${escapeHtml(workout.general_notes)}
       </div>
     `;
-  }).join("");
+  }
+
+  const grouped = {};
+  items.forEach(item => {
+    if (!grouped[item.day_name]) grouped[item.day_name] = [];
+    grouped[item.day_name].push(item);
+  });
+
+  html += `<div class="exercise-list">`;
+
+  Object.keys(grouped)
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+    .forEach(dayName => {
+      html += `<div class="day-group"><div class="day-badge">📅 ${escapeHtml(dayName)}</div>`;
+
+      grouped[dayName].forEach((row, idx) => {
+        const ex = row.exercises;
+        const start = ex ? ex.img_start : "";
+        const end = ex ? (ex.img_end || ex.img_start) : "";
+        const exLogs = (logs || []).filter(l => l.workout_exercise_id === row.id);
+        const latest = exLogs[0];
+
+        let feedbackHtml = "";
+        if (!latest) {
+          feedbackHtml = `
+            <div class="athlete-feedback-box empty">
+              Nessun dato ancora registrato dall'atleta per questo esercizio.
+            </div>
+          `;
+        } else {
+          const latestDate = new Date(latest.logged_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' });
+          const rirTxt = (latest.rir !== null && latest.rir !== undefined) ? ` • RIR/@: ${latest.rir}` : '';
+
+          const olderHtml = exLogs.length > 1 ? `
+            <details class="past-logs-details">
+              <summary>Vedi sessioni precedenti (${exLogs.length - 1})</summary>
+              <div style="margin-top: 4px;">
+                ${exLogs.slice(1).map(old => {
+                  const d = new Date(old.logged_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+                  const r = (old.rir !== null && old.rir !== undefined) ? ` • RIR: ${old.rir}` : '';
+                  const n = old.athlete_notes ? ` — "${escapeHtml(old.athlete_notes)}"` : '';
+                  return `<div class="past-log-line"><strong>${d}:</strong> ${old.weight_kg ?? '-'} kg × ${escapeHtml(old.reps_done || '-')}${r}${n}</div>`;
+                }).join("")}
+              </div>
+            </details>
+          ` : "";
+
+          feedbackHtml = `
+            <div class="athlete-feedback-box">
+              <div class="feedback-header">
+                <span>✅ RISCONTRO ATLETA</span>
+                <span>${latestDate}</span>
+              </div>
+              <div class="feedback-metrics">
+                ${latest.weight_kg ?? '-'} kg × ${escapeHtml(latest.reps_done || '-')}${rirTxt}
+              </div>
+              ${latest.athlete_notes ? `<div class="feedback-note">"${escapeHtml(latest.athlete_notes)}"</div>` : ''}
+              ${olderHtml}
+            </div>
+          `;
+        }
+
+        html += `
+          <div class="exercise-item">
+            <div class="progress-split">
+              <div class="exercise-top">
+                <div class="item-photos">
+                  ${start === end ? `
+                    <img src="${start}" class="item-img" style="width: 82px; object-fit: contain;">
+                  ` : `
+                    <img src="${start}" class="item-img">
+                    <img src="${end}" class="item-img">
+                  `}
+                </div>
+                <div class="item-details">
+                  <strong>${idx + 1}. ${escapeHtml(ex ? ex.name : 'Esercizio')}</strong>
+                  <div class="item-sub"><strong>${escapeHtml(row.sets_reps)}</strong> | Rest: ${escapeHtml(row.rest)} | Target RIR/@: ${escapeHtml(row.rir)}</div>
+                  ${row.notes && row.notes !== '-' ? `<div class="item-notes">Note: ${escapeHtml(row.notes)}</div>` : ''}
+                </div>
+              </div>
+              ${feedbackHtml}
+            </div>
+          </div>
+        `;
+      });
+
+      html += `</div>`;
+    });
+
+  html += `</div>`;
+  container.innerHTML = html;
 };
 
 window.openBuilderForClient = function(clientId, clientName) {
