@@ -102,7 +102,7 @@ async function loadTrainerClients() {
   });
 }
 
-// Visualizza scheda attiva + storico completo delle schede assegnate all'atleta
+// Visualizza scheda attiva + storico completo delle schede assegnate all'atleta (compatibile tema Chiaro/Scuro)
 window.viewClientWorkouts = async function(clientId, clientName) {
   showTrainerView("trainerWorkoutsView");
   document.getElementById("workoutsAthleteTitle").textContent = `📋 Schede: ${clientName}`;
@@ -139,21 +139,21 @@ window.viewClientWorkouts = async function(clientId, clientName) {
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
       .map(dayName => `
         <div style="margin-top: 8px;">
-          <div style="font-size: 0.78rem; font-weight: 700; color: var(--primary); text-transform: uppercase; margin-bottom: 4px;">
+          <div class="day-badge" style="margin-bottom: 6px;">
             📅 ${escapeHtml(dayName)}
           </div>
           ${grouped[dayName].map((row, idx) => `
-            <div style="background: #0d0d0d; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; margin-bottom: 4px; font-size: 0.8rem;">
+            <div style="background: var(--card-bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; margin-bottom: 5px; font-size: 0.82rem;">
               <strong>${idx + 1}. ${escapeHtml(row.exercises?.name || 'Esercizio')}</strong>
               <span style="color: var(--text-muted);"> — ${escapeHtml(row.sets_reps)} | Rest: ${escapeHtml(row.rest)} | RIR/@: ${escapeHtml(row.rir)}</span>
-              ${row.notes && row.notes !== '-' ? `<div style="color: var(--primary); font-size: 0.74rem; margin-top: 2px;">Note: ${escapeHtml(row.notes)}</div>` : ''}
+              ${row.notes && row.notes !== '-' ? `<div style="color: var(--primary); font-size: 0.76rem; margin-top: 2px;">Note: ${escapeHtml(row.notes)}</div>` : ''}
             </div>
           `).join("")}
         </div>
       `).join("");
 
     const box = document.createElement("div");
-    box.style.cssText = `background: #141414; border: 1px solid ${isActive ? 'var(--success)' : 'var(--border)'}; border-radius: 8px; padding: 12px; margin-bottom: 12px;`;
+    box.style.cssText = `background: var(--subcard-bg); color: var(--text); border: 1.5px solid ${isActive ? 'var(--success)' : 'var(--border)'}; border-radius: 8px; padding: 12px; margin-bottom: 12px;`;
 
     box.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap;">
@@ -161,7 +161,7 @@ window.viewClientWorkouts = async function(clientId, clientName) {
           <span class="status-badge ${isActive ? 'status-active' : 'status-none'}" style="margin-top: 0; margin-bottom: 4px;">
             ${isActive ? '● SCHEDA ATTIVA' : `ARCHIVIATA #${workouts.length - index}`}
           </span>
-          <div style="font-size: 0.82rem; color: var(--text); font-weight: 700;">
+          <div style="font-size: 0.84rem; color: var(--text); font-weight: 700;">
             Dal ${startStr} al ${endStr} (${w.duration_weeks} sett.)
           </div>
         </div>
@@ -170,10 +170,10 @@ window.viewClientWorkouts = async function(clientId, clientName) {
         </button>
       </div>
 
-      ${w.general_notes ? `<div style="background: #1c1c1e; padding: 6px 8px; border-radius: 6px; font-size: 0.78rem; color: #d1d5db; margin-top: 8px; white-space: pre-wrap;"><strong>Note generali:</strong> ${escapeHtml(w.general_notes)}</div>` : ''}
+      ${w.general_notes ? `<div style="background: var(--notes-bg); color: var(--notes-text); border: 1px solid var(--border); padding: 7px 9px; border-radius: 6px; font-size: 0.8rem; margin-top: 8px; white-space: pre-wrap;"><strong>Note generali:</strong> ${escapeHtml(w.general_notes)}</div>` : ''}
 
       <details ${isActive ? 'open' : ''} style="margin-top: 8px;">
-        <summary style="cursor: pointer; font-size: 0.8rem; color: var(--primary); font-weight: 600;">
+        <summary style="cursor: pointer; font-size: 0.82rem; color: var(--primary); font-weight: 700;">
           Mostra esercizi (${items.length})
         </summary>
         <div style="margin-top: 6px;">
@@ -220,14 +220,12 @@ window.cloneWorkoutToBuilder = async function(workoutId, clientId, clientName) {
   renderList();
 };
 
-// VISTA PROGRESSI: Scheda identica a quella dell'atleta + riquadro affiancato con le modifiche/log registrati
 window.viewClientProgress = async function(clientId, clientName) {
   showTrainerView("trainerProgressView");
   document.getElementById("progressAthleteTitle").textContent = `📊 Progressi: ${clientName}`;
   const container = document.getElementById("progressLogsContainer");
   container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento scheda e riscontri atleta...</div>`;
 
-  // 1. Recupera la scheda attiva dell'atleta
   const { data: workout } = await supabaseClient
     .from('workouts')
     .select('*')
@@ -243,7 +241,6 @@ window.viewClientProgress = async function(clientId, clientName) {
     return;
   }
 
-  // 2. Recupera gli esercizi assegnati e tutti i log salvati dall'atleta
   const [{ data: items }, { data: logs }] = await Promise.all([
     supabaseClient
       .from('workout_exercises')
@@ -271,7 +268,7 @@ window.viewClientProgress = async function(clientId, clientName) {
 
   if (workout.general_notes) {
     html += `
-      <div style="background: #161616; padding: 10px; border-radius: 8px; font-size: 0.82rem; color: #e2e8f0; margin-bottom: 12px; white-space: pre-wrap;">
+      <div style="background: var(--notes-bg); color: var(--notes-text); border: 1px solid var(--border); padding: 10px; border-radius: 8px; font-size: 0.82rem; margin-bottom: 12px; white-space: pre-wrap;">
         <strong>NOTE ASSEGNATE:</strong>\n${escapeHtml(workout.general_notes)}
       </div>
     `;
