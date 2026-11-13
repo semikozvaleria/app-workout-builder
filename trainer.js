@@ -174,20 +174,69 @@ window.viewClientWorkouts = async function(clientId, clientName) {
 
     const daysHtml = Object.keys(grouped)
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-      .map(dayName => `
-        <div style="margin-top: 8px;">
-          <div class="day-badge" style="margin-bottom: 6px;">
-            📅 ${escapeHtml(dayName)}
-          </div>
-          ${grouped[dayName].map((row, idx) => `
+      .map(dayName => {
+        let inCircuit = false;
+        let circuitBuffer = "";
+        let circuitTitle = "CIRCUITO";
+        let dayContent = "";
+
+        grouped[dayName].forEach((row, idx) => {
+          const roleBadge = row.circuit_role === 'start'
+            ? `<span style="font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 5px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 INIZIO</span>`
+            : row.circuit_role === 'end'
+              ? `<span style="font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 5px; border-radius:4px; font-weight:700; margin-left:4px;">🏁 FINE</span>`
+              : row.circuit_role === 'single'
+                ? `<span style="font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 5px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 CIRCUITO</span>`
+                : '';
+
+          const rowHtml = `
             <div style="background: var(--card-bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; margin-bottom: 5px; font-size: 0.82rem;">
-              <strong>${idx + 1}. ${escapeHtml(row.exercises?.name || 'Esercizio')}</strong>
+              <strong>${idx + 1}. ${escapeHtml(row.exercises?.name || 'Esercizio')}</strong>${roleBadge}
               <span style="color: var(--text-muted);"> — ${escapeHtml(row.sets_reps)} | Rest: ${escapeHtml(row.rest)} | RIR/@: ${escapeHtml(row.rir)}</span>
               ${row.notes && row.notes !== '-' ? `<div style="color: var(--primary); font-size: 0.76rem; margin-top: 2px;">Note: ${escapeHtml(row.notes)}</div>` : ''}
             </div>
-          `).join("")}
-        </div>
-      `).join("");
+          `;
+
+          if (row.circuit_role === 'single') {
+            if (inCircuit) {
+              dayContent += `<div class="circuit-group-box"><div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitTitle)}</span><span>INIZIO CIRCUITO</span></div>${circuitBuffer}<div class="circuit-group-footer">🏁 Fine Circuito</div></div>`;
+              inCircuit = false;
+              circuitBuffer = "";
+            }
+            const lbl = row.circuit_label || "BLOCCO CIRCUITO";
+            dayContent += `<div class="circuit-group-box"><div class="circuit-group-header"><span>🔄 ${escapeHtml(lbl)}</span><span>CIRCUITO</span></div>${rowHtml}<div class="circuit-group-footer">🏁 Fine Circuito</div></div>`;
+          } else if (row.circuit_role === 'start') {
+            if (inCircuit) {
+              dayContent += `<div class="circuit-group-box"><div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitTitle)}</span><span>INIZIO CIRCUITO</span></div>${circuitBuffer}<div class="circuit-group-footer">🏁 Fine Circuito</div></div>`;
+            }
+            inCircuit = true;
+            circuitTitle = row.circuit_label || "CIRCUITO";
+            circuitBuffer = rowHtml;
+          } else if (row.circuit_role === 'end' && inCircuit) {
+            circuitBuffer += rowHtml;
+            dayContent += `<div class="circuit-group-box"><div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitTitle)}</span><span>INIZIO CIRCUITO</span></div>${circuitBuffer}<div class="circuit-group-footer">🏁 Fine Circuito</div></div>`;
+            inCircuit = false;
+            circuitBuffer = "";
+          } else if (inCircuit) {
+            circuitBuffer += rowHtml;
+          } else {
+            dayContent += rowHtml;
+          }
+        });
+
+        if (inCircuit) {
+          dayContent += `<div class="circuit-group-box"><div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitTitle)}</span><span>INIZIO CIRCUITO</span></div>${circuitBuffer}<div class="circuit-group-footer">🏁 Fine Circuito</div></div>`;
+        }
+
+        return `
+          <div style="margin-top: 8px;">
+            <div class="day-badge" style="margin-bottom: 6px;">
+              📅 ${escapeHtml(dayName)}
+            </div>
+            ${dayContent}
+          </div>
+        `;
+      }).join("");
 
     const box = document.createElement("div");
     box.style.cssText = `background: var(--subcard-bg); color: var(--text); border: 1.5px solid ${isActive ? 'var(--success)' : 'var(--border)'}; border-radius: 8px; padding: 12px; margin-bottom: 12px;`;
@@ -280,7 +329,9 @@ window.cloneWorkoutToBuilder = async function(workoutId, clientId, clientName) {
     setsReps: row.sets_reps,
     rest: row.rest,
     rir: row.rir,
-    notes: row.notes
+    notes: row.notes,
+    circuitRole: row.circuit_role || null,
+    circuitLabel: row.circuit_label || ""
   }));
 
   renderList();
