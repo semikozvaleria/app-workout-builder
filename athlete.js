@@ -114,7 +114,7 @@ async function initAthleteArea() {
             <input type="number" step="0.5" id="logRir_${row.id}" placeholder="RIR / @" value="${lastLog && lastLog.rir !== null ? lastLog.rir : ''}">
           </div>
           <div class="log-row-bottom">
-            <input type="text" id="logNote_${row.id}" placeholder="Nota rapida (opzionale)">
+            <textarea id="logNote_${row.id}" rows="2" placeholder="Nota rapida (opzionale)"></textarea>
             <button class="btn btn-success btn-sm" onclick="saveAthleteLog('${row.id}')">Salva</button>
           </div>
         </div>
