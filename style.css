@@ -322,11 +322,19 @@ textarea { resize: vertical; min-height: 70px; font-size: 0.85rem; line-height: 
 }
 
 .kpi-box {
+  position: relative;
   background: var(--subcard-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 10px;
+  padding: 14px 10px 10px;
   text-align: center;
+}
+
+.kpi-box .btn-stat-info {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  margin-left: 0;
 }
 
 .kpi-value {
