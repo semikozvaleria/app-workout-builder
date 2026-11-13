@@ -34,6 +34,7 @@ document.getElementById("navTrainerBuilder").addEventListener("click", () => {
 
 document.getElementById("btnBackToClients").addEventListener("click", () => {
   showTrainerView("trainerClientsView");
+  loadTrainerClients();
 });
 
 document.getElementById("btnBackFromWorkouts").addEventListener("click", () => {
@@ -62,11 +63,21 @@ async function loadTrainerClients() {
   select.innerHTML = `<option value="">-- Nessun atleta collegato (Solo PDF) --</option>` +
     clients.map(c => `<option value="${c.id}">${escapeHtml(c.full_name)} (${c.email})</option>`).join("");
 
-  const { data: workouts } = await supabaseClient
-    .from('workouts')
-    .select('*')
-    .eq('trainer_id', currentProfile.id)
-    .eq('status', 'active');
+  const clientIds = clients.map(c => c.id);
+
+  const [{ data: workouts }, { data: unreadLogs }] = await Promise.all([
+    supabaseClient
+      .from('workouts')
+      .select('*')
+      .eq('trainer_id', currentProfile.id)
+      .eq('status', 'active'),
+    supabaseClient
+      .from('workout_logs')
+      .select('id, athlete_id, logged_at, athlete_notes')
+      .in('athlete_id', clientIds)
+      .is('trainer_seen_at', null)
+      .order('logged_at', { ascending: false })
+  ]);
 
   container.innerHTML = "";
   const today = new Date();
@@ -76,7 +87,7 @@ async function loadTrainerClients() {
   clients.forEach(client => {
     const activeWorkout = (workouts || []).find(w => w.athlete_id === client.id);
     let badgeHtml = `<span class="status-badge status-none">Nessuna scheda attiva</span>`;
-    let priority = 2; // 0 = scaduta, 1 = in scadenza, 2 = nessuna scheda, 3 = attiva ok
+    let priority = 2;
 
     if (!activeWorkout) {
       coachAlerts.push({
@@ -112,18 +123,32 @@ async function loadTrainerClients() {
       }
     }
 
-    enrichedClients.push({ client, badgeHtml, priority });
+    // 1 sola notifica cumulativa per questo atleta finché il coach non apre "Progressi"
+    const clientUnreadLogs = (unreadLogs || []).filter(l => l.athlete_id === client.id);
+    if (clientUnreadLogs.length > 0) {
+      const hasNotes = clientUnreadLogs.some(l => l.athlete_notes);
+      coachAlerts.push({
+        level: "info",
+        title: `🟢 Nuove modifiche da ${escapeHtml(client.full_name)}`,
+        message: `L'atleta ha aggiornato la scheda${hasNotes ? ' e inserito nuove note' : ''}.`,
+        actionHtml: `<button class="btn btn-primary btn-sm" onclick="document.getElementById('notificationsSection').classList.add('hidden'); viewClientProgress('${client.id}', '${escapeHtml(client.full_name)}')">Apri e Segna Letto</button>`
+      });
+    }
+
+    enrichedClients.push({ client, badgeHtml, priority, hasUnreadUpdate: clientUnreadLogs.length > 0 });
   });
 
-  // Ordina gli atleti mettendo in alto scaduti e in scadenza
   enrichedClients.sort((a, b) => a.priority - b.priority);
 
-  enrichedClients.forEach(({ client, badgeHtml }) => {
+  enrichedClients.forEach(({ client, badgeHtml, hasUnreadUpdate }) => {
     const card = document.createElement("div");
     card.className = "client-card";
     card.innerHTML = `
       <div>
-        <strong style="font-size: 0.95rem; display: block;">${escapeHtml(client.full_name)}</strong>
+        <strong style="font-size: 0.95rem; display: block;">
+          ${escapeHtml(client.full_name)}
+          ${hasUnreadUpdate ? '<span style="font-size:0.7rem; background:rgba(16,185,129,0.18); color:#10b981; padding:1px 6px; border-radius:4px; margin-left:4px;">● Da vedere</span>' : ''}
+        </strong>
         <span style="font-size: 0.78rem; color: var(--text-muted);">${escapeHtml(client.email)}</span><br>
         ${badgeHtml}
       </div>
@@ -279,14 +304,10 @@ window.viewClientWorkouts = async function(clientId, clientName) {
   });
 };
 
-// Elimina definitivamente una scheda (attiva o archiviata)
 window.deleteClientWorkout = async function(workoutId, clientId, clientName) {
   if (!confirm("Vuoi eliminare definitivamente questa scheda? L'azione non è reversibile.")) return;
 
-  await supabaseClient
-    .from('workout_exercises')
-    .delete()
-    .eq('workout_id', workoutId);
+  await supabaseClient.from('workout_exercises').delete().eq('workout_id', workoutId);
 
   const { error } = await supabaseClient
     .from('workouts')
@@ -340,12 +361,22 @@ window.cloneWorkoutToBuilder = async function(workoutId, clientId, clientName) {
   renderList();
 };
 
-// VISTA PROGRESSI: Scheda identica a quella dell'atleta + riquadro affiancato con i log registrati
+// VISTA PROGRESSI: Segna automaticamente come letti i log dell'atleta + Note Atleta in Verde + Note Coach in Rosso
 window.viewClientProgress = async function(clientId, clientName) {
   showTrainerView("trainerProgressView");
   document.getElementById("progressAthleteTitle").textContent = `📊 Progressi: ${clientName}`;
   const container = document.getElementById("progressLogsContainer");
   container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento scheda e riscontri atleta...</div>`;
+
+  // Marca subito tutti i log non ancora letti di questo atleta come visti dal trainer
+  await supabaseClient
+    .from('workout_logs')
+    .update({ trainer_seen_at: new Date().toISOString() })
+    .eq('athlete_id', clientId)
+    .is('trainer_seen_at', null);
+
+  // Aggiorna in background i badge e la campanella del coach
+  loadTrainerClients();
 
   const { data: workout } = await supabaseClient
     .from('workouts')
@@ -429,8 +460,9 @@ window.viewClientProgress = async function(clientId, clientName) {
                 ${exLogs.slice(1).map(old => {
                   const d = new Date(old.logged_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
                   const r = (old.rir !== null && old.rir !== undefined) ? ` • RIR: ${old.rir}` : '';
-                  const n = old.athlete_notes ? `\n"${escapeHtml(old.athlete_notes)}"` : '';
-                  return `<div class="past-log-line"><strong>${d}:</strong> ${old.weight_kg ?? '-'} kg × ${escapeHtml(old.reps_done || '-')}${r}${n}</div>`;
+                  const nAth = old.athlete_notes ? `<div class="note-athlete-box" style="margin-top:3px;">🟢 Atleta: ${escapeHtml(old.athlete_notes)}</div>` : '';
+                  const nCoach = old.coach_notes ? `<div class="note-coach-box" style="margin-top:3px;">🔴 Coach: ${escapeHtml(old.coach_notes)}</div>` : '';
+                  return `<div class="past-log-line"><strong>${d}:</strong> ${old.weight_kg ?? '-'} kg × ${escapeHtml(old.reps_done || '-')}${r}${nAth}${nCoach}</div>`;
                 }).join("")}
               </div>
             </details>
@@ -445,7 +477,20 @@ window.viewClientProgress = async function(clientId, clientName) {
               <div class="feedback-metrics">
                 ${latest.weight_kg ?? '-'} kg × ${escapeHtml(latest.reps_done || '-')}${rirTxt}
               </div>
-              ${latest.athlete_notes ? `<div class="feedback-note">"${escapeHtml(latest.athlete_notes)}"</div>` : ''}
+
+              ${latest.athlete_notes ? `
+                <div class="note-athlete-box">🟢 Nota Atleta: ${escapeHtml(latest.athlete_notes)}</div>
+              ` : ''}
+
+              ${latest.coach_notes ? `
+                <div class="note-coach-box">🔴 Nota Coach: ${escapeHtml(latest.coach_notes)}</div>
+              ` : ''}
+
+              <div class="coach-reply-form">
+                <input type="text" id="coachReplyInput_${latest.id}" value="${escapeHtml(latest.coach_notes ?? '')}" placeholder="🔴 Scrivi nota del coach in rosso per l'atleta...">
+                <button type="button" class="btn btn-sm" style="background:#ef4444; color:#fff; white-space:nowrap;" onclick="saveCoachNoteOnLog('${latest.id}', '${clientId}', '${escapeHtml(clientName)}')">Salva</button>
+              </div>
+
               ${olderHtml}
             </div>
           `;
@@ -480,6 +525,29 @@ window.viewClientProgress = async function(clientId, clientName) {
 
   html += `</div>`;
   container.innerHTML = html;
+};
+
+// Salva la nota del Coach (in rosso) e reimposta athlete_seen_at a NULL così l'atleta riceve la notifica
+window.saveCoachNoteOnLog = async function(logId, clientId, clientName) {
+  const inputEl = document.getElementById(`coachReplyInput_${logId}`);
+  if (!inputEl) return;
+  const noteText = inputEl.value.trim();
+
+  const { error } = await supabaseClient
+    .from('workout_logs')
+    .update({
+      coach_notes: noteText || null,
+      coach_replied_at: noteText ? new Date().toISOString() : null,
+      athlete_seen_at: noteText ? null : new Date().toISOString()
+    })
+    .eq('id', logId);
+
+  if (error) {
+    alert("Errore salvataggio nota coach: " + error.message);
+    return;
+  }
+
+  await viewClientProgress(clientId, clientName);
 };
 
 window.openBuilderForClient = function(clientId, clientName) {
