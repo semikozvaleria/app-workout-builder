@@ -187,6 +187,16 @@
 
       <!-- VISTA C: WORKOUT BUILDER -->
       <div id="trainerBuilderView" class="hidden" style="display: flex; flex-direction: column; gap: 14px;">
+        
+        <!-- PANNELLO BOZZE SALVATE -->
+        <div id="trainerDraftsCard" class="card hidden">
+          <div class="section-title">
+            <span>📂 Bozze in Lavorazione</span>
+            <span id="draftsCountBadge" style="font-size: 0.78rem; color: var(--text-muted);">0</span>
+          </div>
+          <div id="trainerDraftsList"></div>
+        </div>
+
         <div class="card">
           <div class="section-title">
             <span>1. Assegnazione e Durata</span>
@@ -322,7 +332,10 @@
 
           <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 14px;">
             <button class="btn btn-success" id="btnSaveCloud">☁️ Salva e Invia all'app dell'Atleta</button>
-            <button class="btn btn-outline" id="btnPdf">📄 Scarica PDF Stampabile</button>
+            <div class="grid-2">
+              <button class="btn btn-primary" id="btnSaveDraft" style="background: var(--subcard-bg); color: var(--text); border: 1px solid var(--border);">📝 Salva Bozza</button>
+              <button class="btn btn-outline" id="btnPdf">📄 Scarica PDF</button>
+            </div>
           </div>
         </div>
       </div>
