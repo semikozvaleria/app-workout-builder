@@ -1,111 +1,69 @@
-:root {
-  --bg: #000000;
-  --card-bg: #0d0d0d;
-  --input-bg: #161616;
-  --border: #262626;
-  --text: #ffffff;
-  --text-muted: #8e8e93;
-  --primary: #38bdf8;
-  --success: #22c55e;
-  --warning: #f59e0b;
-  --danger: #ef4444;
-  --radius: 12px;
+/* Vista Progressi Trainer affiancata */
+.progress-split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-body { background-color: var(--bg); color: var(--text); padding: 14px; min-height: 100vh; }
-.container { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
-.hidden { display: none !important; }
+@media (min-width: 560px) {
+  .progress-split {
+    grid-template-columns: 1.15fr 0.85fr;
+    align-items: start;
+  }
+}
 
-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
-.header-brand { display: flex; align-items: center; gap: 10px; }
-.site-logo { height: 36px; width: auto; max-width: 100px; object-fit: contain; border-radius: 6px; }
-h1 { font-size: 1.1rem; font-weight: 700; color: var(--primary); }
+.athlete-feedback-box {
+  background: #0b1116;
+  border: 1px solid #1e293b;
+  border-left: 3px solid var(--success);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 0.8rem;
+}
 
-.card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
-.section-title { font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; color: var(--primary); display: flex; justify-content: space-between; align-items: center; }
+.athlete-feedback-box.empty {
+  border-left-color: var(--border);
+  color: var(--text-muted);
+}
 
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.grid-3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 6px; }
-.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
-label { font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; }
-input, select, textarea { background: var(--input-bg); border: 1px solid var(--border); color: #fff; padding: 10px; border-radius: 8px; font-size: 0.9rem; outline: none; width: 100%; }
-input:focus, select:focus, textarea:focus { border-color: var(--primary); }
-textarea { resize: vertical; min-height: 70px; font-size: 0.85rem; line-height: 1.4; }
+.feedback-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.72rem;
+  color: var(--success);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
 
-.btn { border: none; border-radius: 8px; padding: 12px 14px; font-weight: 700; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; transition: opacity 0.2s; }
-.btn:active { transform: scale(0.98); }
-.btn-primary { background: var(--primary); color: #000; }
-.btn-success { background: var(--success); color: #fff; }
-.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
-.btn-sm { padding: 6px 10px; font-size: 0.78rem; width: auto; }
+.feedback-metrics {
+  font-weight: 700;
+  color: #ffffff;
+  font-size: 0.84rem;
+}
 
-/* Auth Tabs */
-.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 14px; background: #161616; padding: 4px; border-radius: 8px; }
-.auth-tab { padding: 8px; text-align: center; border-radius: 6px; font-size: 0.85rem; font-weight: 700; cursor: pointer; color: var(--text-muted); }
-.auth-tab.active { background: var(--primary); color: #000; }
+.feedback-note {
+  color: #cbd5e1;
+  font-size: 0.76rem;
+  margin-top: 3px;
+  font-style: italic;
+}
 
-/* Trainer Client List & Badges */
-.invite-box { background: #111c26; border: 1px dashed var(--primary); border-radius: 8px; padding: 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.invite-code { font-family: monospace; font-size: 0.8rem; color: var(--primary); word-break: break-all; }
-.client-card { background: #141414; border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-.client-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-.status-badge { font-size: 0.72rem; font-weight: 700; padding: 3px 8px; border-radius: 99px; display: inline-block; margin-top: 4px; }
-.status-active { background: rgba(34, 197, 94, 0.15); color: var(--success); border: 1px solid var(--success); }
-.status-expiring { background: rgba(245, 158, 11, 0.15); color: var(--warning); border: 1px solid var(--warning); }
-.status-expired { background: rgba(239, 68, 68, 0.15); color: var(--danger); border: 1px solid var(--danger); }
-.status-none { background: rgba(142, 142, 147, 0.15); color: var(--text-muted); border: 1px solid var(--border); }
+.past-logs-details {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed #1e293b;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
 
-/* Builder & Preview */
-.filter-row { display: flex; gap: 8px; margin-bottom: 8px; }
-.filter-row select { max-width: 125px; }
-.filter-row input { flex: 1; }
-.preview-box { display: flex; gap: 14px; align-items: center; margin: 8px 0; background: #141414; border: 1px solid var(--border); padding: 8px; border-radius: 8px; }
-.preview-photos { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
-.preview-photo-wrap { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.preview-thumb { width: 62px; height: 62px; border-radius: 6px; object-fit: cover; background: #000; border: 1px solid var(--border); }
-.photo-tag { font-size: 9px; color: var(--text-muted); text-transform: uppercase; font-weight: 700; }
-.preview-info { font-size: 0.85rem; line-height: 1.3; }
+.past-logs-details summary {
+  cursor: pointer;
+  color: var(--primary);
+  font-weight: 600;
+}
 
-.exercise-list { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
-.day-group { display: flex; flex-direction: column; gap: 8px; }
-.day-badge { background: #1a2736; border: 1px solid #0284c7; color: var(--primary); font-size: 0.8rem; font-weight: 700; padding: 6px 10px; border-radius: 6px; text-transform: uppercase; }
-.exercise-item { background: #141414; border: 1px solid var(--border); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
-.exercise-top { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; }
-.item-photos { display: flex; gap: 6px; flex-shrink: 0; align-items: center; }
-.item-img { width: 44px; height: 44px; border-radius: 5px; object-fit: cover; border: 1px solid var(--border); background: #000; }
-.item-details { flex: 1; font-size: 0.85rem; margin-left: 4px; }
-.item-details strong { font-size: 0.9rem; display: block; margin-bottom: 2px; }
-.item-sub { color: var(--text-muted); font-size: 0.75rem; margin-top: 2px; }
-.item-notes { color: var(--primary); font-size: 0.75rem; white-space: pre-wrap; margin-top: 4px; line-height: 1.35; }
-.btn-del { background: transparent; border: none; color: var(--danger); font-size: 1.2rem; cursor: pointer; padding: 4px 6px; }
-
-/* Diario Carichi Atleta */
-.log-box { background: #0b1116; border: 1px solid #1e293b; border-radius: 6px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
-.log-row-top { display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 6px; align-items: center; }
-.log-row-bottom { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; }
-.log-box input { padding: 7px 8px; font-size: 0.8rem; }
-.last-log-tag { font-size: 0.74rem; color: var(--success); font-weight: 600; }
-
-/* Storico Log Trainer */
-.history-row { background: #141414; border-left: 3px solid var(--primary); padding: 8px 10px; border-radius: 6px; margin-bottom: 6px; font-size: 0.82rem; }
-.history-date { font-size: 0.72rem; color: var(--text-muted); }
-
-/* PDF Layout */
-#pdfPreviewWrapper { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #ffffff; z-index: 99999; overflow-y: auto; }
-.pdf-sheet { background: #ffffff; color: #1e293b; padding: 18px 22px; width: 720px; margin: 0 auto; box-sizing: border-box; font-size: 11px; }
-.pdf-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #111827; padding-bottom: 8px; margin-bottom: 10px; }
-.pdf-header-left { display: flex; align-items: center; gap: 12px; }
-.pdf-logo { height: 50px; width: auto; max-width: 120px; object-fit: contain; }
-.pdf-header h2 { font-size: 18px; color: #111827; font-weight: 800; }
-.pdf-coach-tag { font-size: 10.5px; font-weight: 800; color: #111827; text-transform: uppercase; }
-.pdf-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: #f1f5f9; padding: 7px 10px; border-radius: 6px; margin-bottom: 8px; font-size: 10.5px; }
-.pdf-general-notes { background: #fffbeb; border-left: 3px solid #f59e0b; padding: 8px 10px; font-size: 10.5px; color: #78350f; margin-bottom: 10px; border-radius: 4px; display: none; line-height: 1.4; }
-.pdf-day-banner { background: #000000; color: #ffffff; font-size: 11px; font-weight: 800; padding: 6px 10px; border-radius: 4px; margin-top: 12px; margin-bottom: 4px; text-transform: uppercase; display: flex; justify-content: space-between; }
-.pdf-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
-.pdf-table th { background: #e2e8f0; color: #334155; text-align: left; padding: 5px 6px; font-size: 9.5px; text-transform: uppercase; }
-.pdf-table td { padding: 6px; border-bottom: 1px solid #cbd5e1; vertical-align: top; }
-.pdf-photos-wrap { display: flex; gap: 4px; align-items: center; justify-content: center; }
-.pdf-img { width: 44px; height: 44px; border-radius: 4px; object-fit: cover; border: 1px solid #94a3b8; }
-.pdf-notes-cell { font-size: 9.5px; color: #334155; white-space: pre-wrap; line-height: 1.25; }
-.pdf-footer { display: flex; justify-content: space-between; margin-top: 14px; padding-top: 8px; border-top: 1px solid #cbd5e1; font-size: 9.5px; color: #64748b; }
+.past-log-line {
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
