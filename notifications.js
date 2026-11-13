@@ -76,8 +76,8 @@ function triggerBrowserPushIfAllowed(alertsList, force = false) {
   localStorage.setItem(storageKey, "1");
   const first = alertsList[0];
   const extra = alertsList.length > 1 ? ` (+ altri ${alertsList.length - 1} avvisi)` : "";
-  new Notification("Workout Builder - Scadenza Scheda", {
+new Notification("Workout Builder - Scadenza Scheda", {
     body: `${first.title}: ${first.message}${extra}`,
-    icon: "logo_carlo.png"
+    icon: currentProfile?.logo_url || "logo_W.jpeg"
   });
 }
