@@ -202,9 +202,14 @@ window.viewClientWorkouts = async function(clientId, clientName) {
             Dal ${startStr} al ${endStr} (${w.duration_weeks} sett.)
           </div>
         </div>
-        <button class="btn btn-outline btn-sm" onclick="cloneWorkoutToBuilder('${w.id}', '${clientId}', '${escapeHtml(clientName)}')">
-          📥 Carica nel Builder
-        </button>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+          <button class="btn btn-outline btn-sm" onclick="cloneWorkoutToBuilder('${w.id}', '${clientId}', '${escapeHtml(clientName)}')">
+            📥 Carica nel Builder
+          </button>
+          <button class="btn btn-outline btn-sm" style="border-color: var(--danger); color: var(--danger);" onclick="deleteClientWorkout('${w.id}', '${clientId}', '${escapeHtml(clientName)}')">
+            🗑️ Elimina
+          </button>
+        </div>
       </div>
 
       ${w.general_notes ? `<div style="background: var(--notes-bg); color: var(--notes-text); border: 1px solid var(--border); padding: 7px 9px; border-radius: 6px; font-size: 0.8rem; margin-top: 8px; white-space: pre-wrap;"><strong>Note generali:</strong> ${escapeHtml(w.general_notes)}</div>` : ''}
@@ -221,6 +226,30 @@ window.viewClientWorkouts = async function(clientId, clientName) {
 
     container.appendChild(box);
   });
+};
+
+// Elimina definitivamente una scheda (attiva o archiviata)
+window.deleteClientWorkout = async function(workoutId, clientId, clientName) {
+  if (!confirm("Vuoi eliminare definitivamente questa scheda? L'azione non è reversibile.")) return;
+
+  await supabaseClient
+    .from('workout_exercises')
+    .delete()
+    .eq('workout_id', workoutId);
+
+  const { error } = await supabaseClient
+    .from('workouts')
+    .delete()
+    .eq('id', workoutId)
+    .eq('trainer_id', currentProfile.id);
+
+  if (error) {
+    alert("Errore durante l'eliminazione della scheda: " + error.message);
+    return;
+  }
+
+  await viewClientWorkouts(clientId, clientName);
+  await loadTrainerClients();
 };
 
 window.cloneWorkoutToBuilder = async function(workoutId, clientId, clientName) {
