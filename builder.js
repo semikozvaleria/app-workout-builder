@@ -862,22 +862,20 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
     tablesContainer.appendChild(table);
   });
 
-  const wrapper = document.getElementById("pdfPreviewWrapper");
-  const element = document.getElementById("pdfSheet");
+  const sourceSheet = document.getElementById("pdfSheet");
 
-  wrapper.style.setProperty("position", "absolute", "important");
-  wrapper.style.setProperty("top", "0px", "important");
-  wrapper.style.setProperty("left", "0px", "important");
-  wrapper.style.setProperty("width", "740px", "important");
-  wrapper.style.setProperty("margin", "0", "important");
-  wrapper.style.setProperty("padding", "0", "important");
-  wrapper.style.setProperty("transform", "none", "important");
-  wrapper.style.setProperty("z-index", "99999", "important");
+  // Crea un contenitore pulito attaccato direttamente al body all'origine esatta (0,0)
+  const printHost = document.createElement("div");
+  printHost.style.cssText = "position: absolute; top: 0; left: 0; width: 740px; margin: 0; padding: 0; background: #ffffff; z-index: 999999;";
 
-  element.style.setProperty("width", "740px", "important");
-  element.style.setProperty("max-width", "740px", "important");
-  element.style.setProperty("margin", "0", "important");
-  element.style.setProperty("transform", "none", "important");
+  const clonedSheet = sourceSheet.cloneNode(true);
+  clonedSheet.style.cssText = "width: 740px; max-width: 740px; margin: 0; box-sizing: border-box; background: #ffffff; color: #0f172a;";
+  printHost.appendChild(clonedSheet);
+  document.body.appendChild(printHost);
+
+  const prevScrollX = window.scrollX;
+  const prevScrollY = window.scrollY;
+  window.scrollTo(0, 0);
 
   await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 250)));
 
@@ -889,38 +887,22 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
       scale: 2,
       useCORS: true,
       allowTaint: true,
+      x: 0,
+      y: 0,
+      width: 740,
       scrollX: 0,
       scrollY: 0,
-      windowWidth: 740,
-      onclone: (clonedDoc) => {
-        clonedDoc.documentElement.style.margin = "0";
-        clonedDoc.documentElement.style.padding = "0";
-        clonedDoc.body.style.margin = "0";
-        clonedDoc.body.style.padding = "0";
-        clonedDoc.body.style.width = "740px";
-        clonedDoc.body.style.maxWidth = "740px";
-        clonedDoc.body.style.display = "block";
-
-        const cWrap = clonedDoc.getElementById("pdfPreviewWrapper");
-        const cSheet = clonedDoc.getElementById("pdfSheet");
-        if (cWrap) {
-          cWrap.style.cssText = "position: static !important; width: 740px !important; margin: 0 !important; padding: 0 !important; left: 0 !important; top: 0 !important; transform: none !important;";
-        }
-        if (cSheet) {
-          cSheet.style.cssText = "width: 740px !important; max-width: 740px !important; margin: 0 !important; box-sizing: border-box !important; transform: none !important;";
-        }
-      }
+      windowWidth: 740
     },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
     pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.pdf-day-title', '.pdf-header', '.pdf-general-notes'] }
   };
 
   try {
-    await html2pdf().set(opt).from(element).save();
+    await html2pdf().set(opt).from(clonedSheet).save();
   } finally {
-    wrapper.style.setProperty("position", "fixed", "important");
-    wrapper.style.setProperty("left", "-10000px", "important");
-    wrapper.style.setProperty("z-index", "-1", "important");
+    document.body.removeChild(printHost);
+    window.scrollTo(prevScrollX, prevScrollY);
     btn.disabled = false;
     btn.textContent = "📄 Scarica PDF";
   }
