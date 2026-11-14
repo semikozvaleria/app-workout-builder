@@ -741,3 +741,18 @@ body:not(.light-theme) .note-coach-box {
 }
 
 .pdf-footer { display: flex; justify-content: space-between; margin-top: 14px; padding-top: 8px; border-top: 1px solid #cbd5e1; font-size: 9.5px; color: #64748b; }
+
+#pdfSheet tr,
+.pdf-day-title,
+.pdf-header,
+.pdf-meta,
+.pdf-general-notes {
+  break-inside: avoid !important;
+  page-break-inside: avoid !important;
+}
+
+.pdf-day-title {
+  break-after: avoid !important;
+  page-break-after: avoid !important;
+}
+
