@@ -658,3 +658,78 @@ body:not(.light-theme) .note-coach-box {
 .item-sub strong {
   color: var(--primary);
 }
+
+/* Fix dimensioni immagini e colonne nella generazione PDF */
+#pdfSheet {
+  width: 794px !important;
+  max-width: 794px !important;
+  box-sizing: border-box !important;
+}
+
+#pdfSheet table {
+  width: 100% !important;
+  table-layout: fixed !important;
+  border-collapse: collapse !important;
+}
+
+#pdfSheet th,
+#pdfSheet td {
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+  vertical-align: middle !important;
+}
+
+/* Imposta larghezze fisse delle colonne della tabella PDF */
+#pdfSheet th:nth-child(1),
+#pdfSheet td:nth-child(1) {
+  width: 24px !important;
+  text-align: center !important;
+}
+
+#pdfSheet th:nth-child(2),
+#pdfSheet td:nth-child(2) {
+  width: 96px !important;
+  max-width: 96px !important;
+  text-align: center !important;
+}
+
+#pdfSheet th:nth-child(3),
+#pdfSheet td:nth-child(3) {
+  width: 150px !important;
+}
+
+#pdfSheet th:nth-child(4),
+#pdfSheet td:nth-child(4) {
+  width: 70px !important;
+}
+
+#pdfSheet th:nth-child(5),
+#pdfSheet td:nth-child(5) {
+  width: 55px !important;
+}
+
+#pdfSheet th:nth-child(6),
+#pdfSheet td:nth-child(6) {
+  width: 55px !important;
+}
+
+/* Blocca qualunque immagine dentro la cella Esecuzione (sia doppia sia singola) */
+#pdfSheet td:nth-child(2) img {
+  width: 42px !important;
+  max-width: 42px !important;
+  height: 42px !important;
+  max-height: 42px !important;
+  object-fit: contain !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
+  margin: 1px !important;
+}
+
+/* Se c'è una sola immagine nella cella Esecuzione, può essere leggermente più larga ma mai oltre 84px */
+#pdfSheet td:nth-child(2) img:only-child {
+  width: 82px !important;
+  max-width: 82px !important;
+  height: 46px !important;
+  max-height: 46px !important;
+}
+
