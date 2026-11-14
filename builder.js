@@ -8,10 +8,9 @@ const chkCircuitEnd = document.getElementById("chkCircuitEnd");
 const circuitLabelWrap = document.getElementById("circuitLabelWrap");
 const inCircuitLabel = document.getElementById("inCircuitLabel");
 
-let currentDraftId = null; // Tiene traccia se stiamo modificando una bozza salvata
+let currentDraftId = null;
 let searchDebounceTimer = null;
 
-// Disattiva il datalist nativo che manda in freeze iOS Safari durante la digitazione
 if (exerciseSearch) {
   exerciseSearch.removeAttribute("list");
 }
@@ -19,7 +18,6 @@ if (exerciseSuggestions) {
   exerciseSuggestions.innerHTML = "";
 }
 
-// Verifica se nel giorno selezionato c'è attualmente un circuito aperto
 function hasOpenCircuitInDay(dayName) {
   const dayItems = currentWorkout.filter(item => item.day === dayName);
   let open = false;
@@ -30,7 +28,6 @@ function hasOpenCircuitInDay(dayName) {
   return open;
 }
 
-// Aggiorna automaticamente quale spunta è consentita (solo Inizio se chiuso, solo Fine se aperto)
 function syncCircuitCheckboxes() {
   const dayName = exerciseDaySelect.value;
   const isOpen = hasOpenCircuitInDay(dayName);
@@ -108,7 +105,6 @@ async function loadExercisesFromCloud() {
   syncCircuitCheckboxes();
 }
 
-// Carica e mostra le bozze salvate del Personal Trainer
 async function loadTrainerDrafts() {
   if (!currentProfile || currentProfile.role !== 'trainer') return;
 
@@ -166,6 +162,7 @@ window.resumeDraft = async function(draftId) {
     return;
   }
 
+  showTrainerView("trainerBuilderView");
   currentDraftId = workout.id;
 
   const selectEl = document.getElementById("builderAthleteSelect");
@@ -216,7 +213,6 @@ window.deleteDraft = async function(draftId) {
   loadTrainerDrafts();
 };
 
-// Salva o aggiorna la bozza su Supabase senza inviarla all'atleta
 document.getElementById("btnSaveDraft").addEventListener("click", async () => {
   if (currentWorkout.length === 0) {
     alert("Inserisci almeno un esercizio prima di salvare la bozza!");
@@ -319,7 +315,6 @@ document.getElementById("builderAthleteSelect").addEventListener("change", (e) =
   }
 });
 
-// Carica nel builder la scheda attiva dell'atleta per modificarla
 document.getElementById("btnLoadExistingWorkout").addEventListener("click", async () => {
   const athleteId = document.getElementById("builderAthleteSelect").value;
   if (!athleteId) return;
@@ -371,7 +366,6 @@ document.getElementById("btnLoadExistingWorkout").addEventListener("click", asyn
   loadTrainerDrafts();
 });
 
-// Pulsante Svuota scheda nel builder
 document.getElementById("btnClearBuilder").addEventListener("click", () => {
   if (!confirm("Vuoi rimuovere tutti gli esercizi inseriti in questa scheda?")) return;
   currentWorkout = [];
@@ -380,7 +374,6 @@ document.getElementById("btnClearBuilder").addEventListener("click", () => {
   loadTrainerDrafts();
 });
 
-// Filtra il menu esercizi in modo leggero (senza datalist per evitare freeze su iOS)
 function populateDropdown() {
   const filter = muscleFilter.value;
   const search = exerciseSearch.value.trim().toLowerCase();
@@ -442,7 +435,6 @@ exerciseSearch.addEventListener("input", () => {
 
 exerciseSelect.addEventListener("change", updatePreview);
 
-// Aggiunta esercizio alla scheda (con gestione Circuito)
 document.getElementById("btnAddEx").addEventListener("click", () => {
   const selected = EXERCISE_DB.find(ex => ex.id === exerciseSelect.value);
   if (!selected) return;
@@ -481,7 +473,6 @@ document.getElementById("btnAddEx").addEventListener("click", () => {
   renderList();
 });
 
-// Costruisce il markup di una singola card esercizio nel Builder
 function buildBuilderItemHtml(item, idx, totalInDay) {
   const isSingle = item.imgStart === item.imgEnd;
   let roleTag = "";
@@ -520,7 +511,6 @@ function buildBuilderItemHtml(item, idx, totalInDay) {
   `;
 }
 
-// Renderizza l'elenco esercizi raggruppando visivamente i circuiti
 function renderList() {
   const listEl = document.getElementById("exerciseList");
   const clearBtn = document.getElementById("btnClearBuilder");
@@ -627,7 +617,6 @@ function renderList() {
   });
 }
 
-// Modifica rapida di un esercizio già inserito
 window.editItem = function(uid) {
   const index = currentWorkout.findIndex(item => item.uid === uid);
   if (index === -1) return;
@@ -673,7 +662,6 @@ window.removeItem = function(uid) {
   renderList();
 };
 
-// Salvataggio su Supabase Cloud e Invio all'Atleta
 document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   const athleteId = document.getElementById("builderAthleteSelect").value;
   if (!athleteId) {
@@ -747,7 +735,6 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   if (exError) {
     alert("Scheda creata ma errore negli esercizi: " + exError.message);
   } else {
-    // Se questa scheda proveniva da una bozza salvata, elimina la bozza ormai pubblicata
     if (currentDraftId) {
       await supabaseClient.from('workout_exercises').delete().eq('workout_id', currentDraftId);
       await supabaseClient.from('workouts').delete().eq('id', currentDraftId);
@@ -762,7 +749,7 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   }
 });
 
-// Generazione PDF Stampabile con Circuiti evidenziati (compatibile Desktop e iOS Safari)
+// Generazione PDF Stampabile centrata su qualsiasi schermo (Desktop e iOS Safari)
 document.getElementById("btnPdf").addEventListener("click", async () => {
   if (currentWorkout.length === 0) {
     alert("Inserisci almeno un esercizio prima di generare il PDF!");
@@ -878,23 +865,19 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
   const wrapper = document.getElementById("pdfPreviewWrapper");
   const element = document.getElementById("pdfSheet");
 
-  // Salva lo scroll attuale e porta la pagina in alto a sinistra
-  const prevScrollX = window.scrollX;
-  const prevScrollY = window.scrollY;
-  window.scrollTo(0, 0);
-
-  // Ancora il wrapper esattamente all'origine (0,0) senza offset laterali
-  wrapper.style.setProperty("position", "fixed", "important");
+  wrapper.style.setProperty("position", "absolute", "important");
   wrapper.style.setProperty("top", "0px", "important");
   wrapper.style.setProperty("left", "0px", "important");
   wrapper.style.setProperty("width", "740px", "important");
   wrapper.style.setProperty("margin", "0", "important");
   wrapper.style.setProperty("padding", "0", "important");
+  wrapper.style.setProperty("transform", "none", "important");
   wrapper.style.setProperty("z-index", "99999", "important");
 
   element.style.setProperty("width", "740px", "important");
   element.style.setProperty("max-width", "740px", "important");
   element.style.setProperty("margin", "0", "important");
+  element.style.setProperty("transform", "none", "important");
 
   await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 250)));
 
@@ -906,11 +889,27 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
       scale: 2,
       useCORS: true,
       allowTaint: true,
-      x: 0,
-      y: 0,
-      width: 740,
       scrollX: 0,
-      scrollY: 0
+      scrollY: 0,
+      windowWidth: 740,
+      onclone: (clonedDoc) => {
+        clonedDoc.documentElement.style.margin = "0";
+        clonedDoc.documentElement.style.padding = "0";
+        clonedDoc.body.style.margin = "0";
+        clonedDoc.body.style.padding = "0";
+        clonedDoc.body.style.width = "740px";
+        clonedDoc.body.style.maxWidth = "740px";
+        clonedDoc.body.style.display = "block";
+
+        const cWrap = clonedDoc.getElementById("pdfPreviewWrapper");
+        const cSheet = clonedDoc.getElementById("pdfSheet");
+        if (cWrap) {
+          cWrap.style.cssText = "position: static !important; width: 740px !important; margin: 0 !important; padding: 0 !important; left: 0 !important; top: 0 !important; transform: none !important;";
+        }
+        if (cSheet) {
+          cSheet.style.cssText = "width: 740px !important; max-width: 740px !important; margin: 0 !important; box-sizing: border-box !important; transform: none !important;";
+        }
+      }
     },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
     pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.pdf-day-title', '.pdf-header', '.pdf-general-notes'] }
@@ -919,9 +918,9 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
   try {
     await html2pdf().set(opt).from(element).save();
   } finally {
+    wrapper.style.setProperty("position", "fixed", "important");
     wrapper.style.setProperty("left", "-10000px", "important");
     wrapper.style.setProperty("z-index", "-1", "important");
-    window.scrollTo(prevScrollX, prevScrollY);
     btn.disabled = false;
     btn.textContent = "📄 Scarica PDF";
   }
