@@ -631,7 +631,7 @@ window.viewClientProgress = async function(clientId, clientName) {
               ` : ''}
 
               <div class="coach-reply-form" style="align-items: flex-end;">
-                <textarea id="coachReplyInput_${latest.id}" rows="2" placeholder="🔴 Aggiungi messaggio del coach (puoi andare a capo)..." style="flex: 1; min-height: 44px; font-size: 0.78rem; padding: 6px 8px; resize: vertical;"></textarea>
+                <textarea id="coachReplyInput_${latest.id}" rows="2" placeholder="🔴 Aggiungi messaggio del coach" style="flex: 1; min-height: 44px; font-size: 0.78rem; padding: 6px 8px; resize: vertical;"></textarea>
                 <button type="button" class="btn btn-sm" style="background:#ef4444; color:#fff; width:auto; flex-shrink:0; align-self: stretch;" onclick="saveCoachNoteOnLog('${latest.id}', '${clientId}', '${escapeHtml(clientName)}')">Invia</button>
               </div>
 
