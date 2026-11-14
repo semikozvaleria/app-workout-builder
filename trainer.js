@@ -41,6 +41,16 @@ document.getElementById("btnBackFromWorkouts").addEventListener("click", () => {
   showTrainerView("trainerClientsView");
 });
 
+window.markTrainerNotificationSeen = async function(notifId) {
+  await supabaseClient
+    .from('trainer_notifications')
+    .update({ seen_at: new Date().toISOString() })
+    .eq('id', notifId)
+    .eq('trainer_id', currentProfile.id);
+
+  await loadTrainerClients();
+};
+
 function getTrainerDayKey(isoStr) {
   if (!isoStr) return "";
   const d = new Date(isoStr);
@@ -114,18 +124,37 @@ function consolidateTrainerLogsByDay(logs) {
 }
 
 async function loadTrainerClients() {
-  const { data: clients, error } = await supabaseClient
-    .from('profiles')
-    .select('*')
-    .eq('trainer_id', currentProfile.id);
+  const [{ data: clients, error }, { data: systemNotifs }] = await Promise.all([
+    supabaseClient
+      .from('profiles')
+      .select('*')
+      .eq('trainer_id', currentProfile.id),
+    supabaseClient
+      .from('trainer_notifications')
+      .select('*')
+      .eq('trainer_id', currentProfile.id)
+      .is('seen_at', null)
+      .order('created_at', { ascending: false })
+  ]);
 
   const container = document.getElementById("clientsListContainer");
   const select = document.getElementById("builderAthleteSelect");
+  const coachAlerts = [];
+
+  (systemNotifs || []).forEach(n => {
+    coachAlerts.push({
+      level: n.type === 'athlete_linked' ? 'info' : 'danger',
+      title: escapeHtml(n.title),
+      message: escapeHtml(n.message),
+      actionHtml: `<button class="btn btn-outline btn-sm" onclick="markTrainerNotificationSeen('${n.id}')">Segna come letto</button>`
+    });
+  });
 
   if (error || !clients || clients.length === 0) {
     container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">Nessun atleta ancora collegato. Condividi il tuo Codice Invito!</div>`;
     document.getElementById("clientsCount").textContent = "0 atleti";
-    updateNotificationCenter([]);
+    select.innerHTML = `<option value="">-- Nessun atleta collegato (Solo PDF) --</option>`;
+    updateNotificationCenter(coachAlerts);
     return;
   }
 
@@ -153,7 +182,6 @@ async function loadTrainerClients() {
 
   container.innerHTML = "";
   const today = new Date();
-  const coachAlerts = [];
   const enrichedClients = [];
 
   clients.forEach(client => {
@@ -236,7 +264,6 @@ async function loadTrainerClients() {
   updateNotificationCenter(coachAlerts);
 }
 
-// Mostra Bozze (versione compatta), Scheda Attiva e Storico Schede
 window.viewClientWorkouts = async function(clientId, clientName) {
   showTrainerView("trainerWorkoutsView");
   document.getElementById("workoutsAthleteTitle").textContent = `📋 Schede: ${clientName}`;
@@ -289,7 +316,6 @@ window.viewClientWorkouts = async function(clientId, clientName) {
 
     const box = document.createElement("div");
 
-    // Se è una bozza: card compatta con solo badge, Riprendi, Cancella e riga durata/data
     if (isDraft) {
       box.style.cssText = `background: var(--subcard-bg); color: var(--text); border: 1.5px solid var(--primary); border-radius: 8px; padding: 12px; margin-bottom: 12px;`;
       box.innerHTML = `
@@ -316,7 +342,6 @@ window.viewClientWorkouts = async function(clientId, clientName) {
       return;
     }
 
-    // Scheda Attiva o Archiviata
     const startStr = w.start_date ? new Date(w.start_date).toLocaleDateString('it-IT') : '-';
     const endStr = w.end_date ? new Date(w.end_date).toLocaleDateString('it-IT') : '-';
 
@@ -631,7 +656,7 @@ window.viewClientProgress = async function(clientId, clientName) {
               ` : ''}
 
               <div class="coach-reply-form" style="align-items: flex-end;">
-                <textarea id="coachReplyInput_${latest.id}" rows="2" placeholder="🔴 Aggiungi messaggio del coach" style="flex: 1; min-height: 44px; font-size: 0.78rem; padding: 6px 8px; resize: vertical;"></textarea>
+                <textarea id="coachReplyInput_${latest.id}" rows="2" placeholder="🔴 Aggiungi messaggio del coach..." style="flex: 1; min-height: 44px; font-size: 0.78rem; padding: 6px 8px; resize: vertical;"></textarea>
                 <button type="button" class="btn btn-sm" style="background:#ef4444; color:#fff; width:auto; flex-shrink:0; align-self: stretch;" onclick="saveCoachNoteOnLog('${latest.id}', '${clientId}', '${escapeHtml(clientName)}')">Invia</button>
               </div>
 
