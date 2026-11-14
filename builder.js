@@ -749,12 +749,16 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   }
 });
 
-// Generazione PDF Stampabile con Circuiti evidenziati
-document.getElementById("btnPdf").addEventListener("click", () => {
+// Generazione PDF Stampabile con Circuiti evidenziati (compatibile iOS Safari)
+document.getElementById("btnPdf").addEventListener("click", async () => {
   if (currentWorkout.length === 0) {
     alert("Inserisci almeno un esercizio prima di generare il PDF!");
     return;
   }
+
+  const btn = document.getElementById("btnPdf");
+  btn.disabled = true;
+  btn.textContent = "⏳ Creazione PDF...";
 
   const athleteName = document.getElementById("athleteName").value.trim() || "Atleta";
   const durationWeeks = document.getElementById("durationWeeks").value || "4";
@@ -795,13 +799,13 @@ document.getElementById("btnPdf").addEventListener("click", () => {
     table.innerHTML = `
       <thead>
         <tr>
-          <th style="width: 6%;">#</th>
-          <th style="width: 14%;">Esecuzione</th>
-          <th style="width: 24%;">Esercizio</th>
-          <th style="width: 13%;">Serie/Reps</th>
-          <th style="width: 9%;">Rest</th>
-          <th style="width: 9%;">RIR / @</th>
-          <th style="width: 25%;">Note</th>
+          <th>#</th>
+          <th>Esecuzione</th>
+          <th>Esercizio</th>
+          <th>Serie/Reps</th>
+          <th>Rest</th>
+          <th>RIR / @</th>
+          <th>Note</th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -830,7 +834,7 @@ document.getElementById("btnPdf").addEventListener("click", () => {
         <td><strong>${index + 1}</strong></td>
         <td style="white-space: nowrap;">
           ${isSingle ? `
-            <img src="${item.imgStart}" class="pdf-thumb" style="width: 66px; object-fit: contain;">
+            <img src="${item.imgStart}" class="pdf-thumb">
           ` : `
             <img src="${item.imgStart}" class="pdf-thumb">
             <img src="${item.imgEnd}" class="pdf-thumb">
@@ -859,17 +863,36 @@ document.getElementById("btnPdf").addEventListener("click", () => {
   });
 
   const wrapper = document.getElementById("pdfPreviewWrapper");
-  wrapper.style.display = "block";
   const element = document.getElementById("pdfSheet");
+
+  // Porta in primo piano per Safari iOS e attendi il rendering completo
+  wrapper.style.setProperty("left", "0px", "important");
+  wrapper.style.setProperty("z-index", "99999", "important");
+
+  await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 250)));
+
   const opt = {
     margin: 5,
     filename: `Scheda_${athleteName.replace(/\s+/g, '_')}.pdf`,
     image: { type: 'jpeg', quality: 0.95 },
-    html2canvas: { scale: 2, useCORS: true, allowTaint: true },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    html2canvas: {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      scrollX: 0,
+      scrollY: 0,
+      windowWidth: 740
+    },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
   };
 
-  html2pdf().set(opt).from(element).save().then(() => {
-    wrapper.style.display = "none";
-  });
+  try {
+    await html2pdf().set(opt).from(element).save();
+  } finally {
+    wrapper.style.setProperty("left", "-10000px", "important");
+    wrapper.style.setProperty("z-index", "-1", "important");
+    btn.disabled = false;
+    btn.textContent = "📄 Scarica PDF";
+  }
 });
