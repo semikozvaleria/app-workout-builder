@@ -47,7 +47,6 @@ function getTrainerDayKey(isoStr) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// Formatta il log giornaliero dell'atleta (supporta sia il formato serie-per-serie sia il vecchio formato)
 function formatTrainerLogSummaryText(entry, dateStr) {
   const rirTxt = (entry.rir !== null && entry.rir !== undefined) ? ` • RIR/@: ${entry.rir}` : '';
   const athNoteLine = entry.athlete_notes ? `\n📝 ${escapeHtml(entry.athlete_notes)}` : '';
@@ -63,7 +62,6 @@ function formatTrainerLogSummaryText(entry, dateStr) {
   return `🟢 ${dateStr} — ${entry.weight_kg ?? '-'} kg × ${escapeHtml(entry.reps_done || '-')}${rirTxt}${athNoteLine}`;
 }
 
-// Unisce tutte le modifiche dello stesso giorno in un unico messaggio con data singola
 function consolidateTrainerLogsByDay(logs) {
   if (!logs || logs.length === 0) return [];
   const sorted = [...logs].sort((a, b) => new Date(b.logged_at) - new Date(a.logged_at));
@@ -238,31 +236,57 @@ async function loadTrainerClients() {
   updateNotificationCenter(coachAlerts);
 }
 
+// Mostra Bozze (sia collegate per ID che per nome), Scheda Attiva e Storico Schede
 window.viewClientWorkouts = async function(clientId, clientName) {
   showTrainerView("trainerWorkoutsView");
   document.getElementById("workoutsAthleteTitle").textContent = `📋 Schede: ${clientName}`;
   const container = document.getElementById("athleteWorkoutsHistoryContainer");
-  container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento schede...</div>`;
+  container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento schede e bozze...</div>`;
 
-  const { data: workouts, error } = await supabaseClient
-    .from('workouts')
-    .select('*, workout_exercises(*, exercises(name, muscle, img_start, img_end))')
-    .eq('trainer_id', currentProfile.id)
-    .eq('athlete_id', clientId)
-    .neq('status', 'draft')
-    .order('created_at', { ascending: false });
+  const [{ data: clientWorkouts, error }, { data: unlinkedDrafts }] = await Promise.all([
+    supabaseClient
+      .from('workouts')
+      .select('*, workout_exercises(*, exercises(name, muscle, img_start, img_end))')
+      .eq('trainer_id', currentProfile.id)
+      .eq('athlete_id', clientId)
+      .order('created_at', { ascending: false }),
+    supabaseClient
+      .from('workouts')
+      .select('*, workout_exercises(*, exercises(name, muscle, img_start, img_end))')
+      .eq('trainer_id', currentProfile.id)
+      .eq('status', 'draft')
+      .is('athlete_id', null)
+      .ilike('title', clientName.trim())
+      .order('created_at', { ascending: false })
+  ]);
 
-  if (error || !workouts || workouts.length === 0) {
-    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">Nessuna scheda assegnata a ${escapeHtml(clientName)}.</div>`;
+  const combinedMap = new Map();
+  (clientWorkouts || []).forEach(w => combinedMap.set(w.id, w));
+  (unlinkedDrafts || []).forEach(w => combinedMap.set(w.id, w));
+  const workouts = Array.from(combinedMap.values());
+
+  if (error || workouts.length === 0) {
+    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">Nessuna scheda o bozza trovata per ${escapeHtml(clientName)}.</div>`;
     return;
   }
 
-  container.innerHTML = "";
+  const statusWeight = { draft: 0, active: 1, archived: 2 };
+  const sortedWorkouts = [...workouts].sort((a, b) => {
+    const wa = statusWeight[a.status] ?? 2;
+    const wb = statusWeight[b.status] ?? 2;
+    if (wa !== wb) return wa - wb;
+    return new Date(b.created_at) - new Date(a.created_at);
+  });
 
-  workouts.forEach((w, index) => {
+  container.innerHTML = "";
+  const archivedList = sortedWorkouts.filter(w => w.status === 'archived');
+
+  sortedWorkouts.forEach((w) => {
+    const isDraft = w.status === 'draft';
     const isActive = w.status === 'active';
     const startStr = w.start_date ? new Date(w.start_date).toLocaleDateString('it-IT') : '-';
     const endStr = w.end_date ? new Date(w.end_date).toLocaleDateString('it-IT') : '-';
+    const createdStr = new Date(w.created_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
     const items = (w.workout_exercises || []).sort((a, b) => a.order_index - b.order_index);
 
     const grouped = {};
@@ -274,25 +298,43 @@ window.viewClientWorkouts = async function(clientId, clientName) {
     const daysHtml = Object.keys(grouped)
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
       .map(dayName => {
+        const dayItems = grouped[dayName];
         let inCircuit = false;
         let circuitBuffer = "";
         let circuitTitle = "CIRCUITO";
         let dayContent = "";
 
-        grouped[dayName].forEach((row, idx) => {
+        dayItems.forEach((row, idx) => {
+          const ex = row.exercises;
+          const start = ex ? ex.img_start : "";
+          const end = ex ? (ex.img_end || ex.img_start) : "";
+          const isSingle = start === end;
+
           const roleBadge = row.circuit_role === 'start'
-            ? `<span style="font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 5px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 INIZIO</span>`
+            ? `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 INIZIO CIRCUITO</span>`
             : row.circuit_role === 'end'
-              ? `<span style="font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 5px; border-radius:4px; font-weight:700; margin-left:4px;">🏁 FINE</span>`
+              ? `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🏁 FINE CIRCUITO</span>`
               : row.circuit_role === 'single'
-                ? `<span style="font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 5px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 CIRCUITO</span>`
+                ? `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 BLOCCO CIRCUITO</span>`
                 : '';
 
           const rowHtml = `
-            <div style="background: var(--card-bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; margin-bottom: 5px; font-size: 0.82rem;">
-              <strong>${idx + 1}. ${escapeHtml(row.exercises?.name || 'Esercizio')}</strong>${roleBadge}
-              <span style="color: var(--text-muted);"> — ${escapeHtml(row.sets_reps)} | Rest: ${escapeHtml(row.rest)} | RIR/@: ${escapeHtml(row.rir)}</span>
-              ${row.notes && row.notes !== '-' ? `<div style="color: var(--primary); font-size: 0.76rem; margin-top: 2px;">Note: ${escapeHtml(row.notes)}</div>` : ''}
+            <div class="exercise-item">
+              <div class="exercise-top">
+                <div class="item-photos">
+                  ${start ? (isSingle ? `
+                    <img src="${start}" class="item-img" style="width: 82px; object-fit: contain;">
+                  ` : `
+                    <img src="${start}" class="item-img">
+                    <img src="${end}" class="item-img">
+                  `) : ''}
+                </div>
+                <div class="item-details">
+                  <strong>${idx + 1}. ${escapeHtml(ex ? ex.name : 'Esercizio')}</strong> ${roleBadge}
+                  <div class="item-sub"><strong>${escapeHtml(row.sets_reps)}</strong> | Rest: ${escapeHtml(row.rest)} | RIR/@: ${escapeHtml(row.rir)}</div>
+                  ${row.notes && row.notes !== '-' ? `<div class="item-notes" style="white-space: pre-wrap;">Note: ${escapeHtml(row.notes)}</div>` : ''}
+                </div>
+              </div>
             </div>
           `;
 
@@ -324,49 +366,74 @@ window.viewClientWorkouts = async function(clientId, clientName) {
         });
 
         if (inCircuit) {
-          dayContent += `<div class="circuit-group-box"><div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitTitle)}</span><span>INIZIO CIRCUITO</span></div>${circuitBuffer}<div class="circuit-group-footer">🏁 Fine Circuito</div></div>`;
+          dayContent += `<div class="circuit-group-box" style="border-style: dashed;"><div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitTitle)}</span><span>INIZIO CIRCUITO</span></div>${circuitBuffer}<div class="circuit-group-footer">🏁 Fine Circuito</div></div>`;
         }
 
         return `
-          <div style="margin-top: 8px;">
-            <div class="day-badge" style="margin-bottom: 6px;">
-              📅 ${escapeHtml(dayName)}
+          <div class="day-group" style="margin-top: 8px;">
+            <div class="day-badge">
+              📅 ${escapeHtml(dayName)} (${dayItems.length} ESERCIZI)
             </div>
             ${dayContent}
           </div>
         `;
       }).join("");
 
+    const borderColor = isDraft ? 'var(--primary)' : isActive ? 'var(--success)' : 'var(--border)';
+    const badgeClass = isDraft ? 'status-expiring' : isActive ? 'status-active' : 'status-none';
+    const badgeLabel = isDraft
+      ? '📝 BOZZA IN LAVORAZIONE'
+      : isActive
+        ? '● SCHEDA ATTIVA'
+        : `ARCHIVIATA #${archivedList.length - archivedList.indexOf(w)}`;
+
+    const subInfo = isDraft
+      ? `Durata prevista: ${w.duration_weeks} sett. • Salvata il ${createdStr}`
+      : `Dal ${startStr} al ${endStr} (${w.duration_weeks} sett.)`;
+
+    const actionButtonsHtml = isDraft
+      ? `
+        <button class="btn btn-primary btn-sm" onclick="resumeDraft('${w.id}')">
+          ✏️ Riprendi nel Builder
+        </button>
+        <button class="btn btn-outline btn-sm" style="border-color: var(--danger); color: var(--danger);" onclick="deleteClientWorkout('${w.id}', '${clientId}', '${escapeHtml(clientName)}')">
+          🗑️ Elimina Bozza
+        </button>
+      `
+      : `
+        <button class="btn btn-outline btn-sm" onclick="cloneWorkoutToBuilder('${w.id}', '${clientId}', '${escapeHtml(clientName)}')">
+          📥 Carica nel Builder
+        </button>
+        <button class="btn btn-outline btn-sm" style="border-color: var(--danger); color: var(--danger);" onclick="deleteClientWorkout('${w.id}', '${clientId}', '${escapeHtml(clientName)}')">
+          🗑️ Elimina
+        </button>
+      `;
+
     const box = document.createElement("div");
-    box.style.cssText = `background: var(--subcard-bg); color: var(--text); border: 1.5px solid ${isActive ? 'var(--success)' : 'var(--border)'}; border-radius: 8px; padding: 12px; margin-bottom: 12px;`;
+    box.style.cssText = `background: var(--subcard-bg); color: var(--text); border: 1.5px solid ${borderColor}; border-radius: 8px; padding: 12px; margin-bottom: 12px;`;
 
     box.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap;">
         <div>
-          <span class="status-badge ${isActive ? 'status-active' : 'status-none'}" style="margin-top: 0; margin-bottom: 4px;">
-            ${isActive ? '● SCHEDA ATTIVA' : `ARCHIVIATA #${workouts.length - index}`}
+          <span class="status-badge ${badgeClass}" style="margin-top: 0; margin-bottom: 4px;">
+            ${badgeLabel}
           </span>
           <div style="font-size: 0.84rem; color: var(--text); font-weight: 700;">
-            Dal ${startStr} al ${endStr} (${w.duration_weeks} sett.)
+            ${subInfo}
           </div>
         </div>
         <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-          <button class="btn btn-outline btn-sm" onclick="cloneWorkoutToBuilder('${w.id}', '${clientId}', '${escapeHtml(clientName)}')">
-            📥 Carica nel Builder
-          </button>
-          <button class="btn btn-outline btn-sm" style="border-color: var(--danger); color: var(--danger);" onclick="deleteClientWorkout('${w.id}', '${clientId}', '${escapeHtml(clientName)}')">
-            🗑️ Elimina
-          </button>
+          ${actionButtonsHtml}
         </div>
       </div>
 
       ${w.general_notes ? `<div style="background: var(--notes-bg); color: var(--notes-text); border: 1px solid var(--border); padding: 7px 9px; border-radius: 6px; font-size: 0.8rem; margin-top: 8px; white-space: pre-wrap;"><strong>Note generali:</strong> ${escapeHtml(w.general_notes)}</div>` : ''}
 
-      <details ${isActive ? 'open' : ''} style="margin-top: 8px;">
+      <details ${isDraft || isActive ? 'open' : ''} style="margin-top: 8px;">
         <summary style="cursor: pointer; font-size: 0.82rem; color: var(--primary); font-weight: 700;">
           Mostra esercizi (${items.length})
         </summary>
-        <div style="margin-top: 6px;">
+        <div class="exercise-list" style="margin-top: 6px;">
           ${items.length > 0 ? daysHtml : '<span style="font-size: 0.8rem; color: var(--text-muted);">Nessun esercizio salvato.</span>'}
         </div>
       </details>
@@ -390,6 +457,10 @@ window.deleteClientWorkout = async function(workoutId, clientId, clientName) {
   if (error) {
     alert("Errore durante l'eliminazione della scheda: " + error.message);
     return;
+  }
+
+  if (typeof currentDraftId !== "undefined" && currentDraftId === workoutId) {
+    currentDraftId = null;
   }
 
   await viewClientWorkouts(clientId, clientName);
@@ -433,14 +504,12 @@ window.cloneWorkoutToBuilder = async function(workoutId, clientId, clientName) {
   renderList();
 };
 
-// VISTA PROGRESSI: Raggruppa per giorno (1 data per giorno) + Log serie-per-serie in Verde + Chat Coach in Rosso
 window.viewClientProgress = async function(clientId, clientName) {
   showTrainerView("trainerProgressView");
   document.getElementById("progressAthleteTitle").textContent = `📊 Progressi: ${clientName}`;
   const container = document.getElementById("progressLogsContainer");
   container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento scheda e riscontri atleta...</div>`;
 
-  // Marca come letti tutti i log non visti di questo atleta
   await supabaseClient
     .from('workout_logs')
     .update({ trainer_seen_at: new Date().toISOString() })
@@ -536,7 +605,7 @@ window.viewClientProgress = async function(clientId, clientName) {
                   const d = new Date(old.logged_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' });
                   const oldSummary = formatTrainerLogSummaryText(old, d);
                   const cd = old.coach_replied_at ? ` (${new Date(old.coach_replied_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' })})` : '';
-                  const nCoach = old.coach_notes ? `<div class="note-coach-box" style="margin-top:3px;">🔴 Coach${cd}: ${escapeHtml(old.coach_notes)}</div>` : '';
+                  const nCoach = old.coach_notes ? `<div class="note-coach-box" style="margin-top:3px; white-space: pre-wrap;">🔴 Coach${cd}: ${escapeHtml(old.coach_notes)}</div>` : '';
                   return `
                     <div style="border-top: 1px dashed var(--border); padding-top: 4px;">
                       <div class="note-athlete-box" style="margin-top:0; white-space: pre-wrap;">${oldSummary}</div>
@@ -553,12 +622,12 @@ window.viewClientProgress = async function(clientId, clientName) {
               <div class="note-athlete-box" style="margin-top:0; white-space: pre-wrap;">${latestSummary}</div>
 
               ${latest.coach_notes ? `
-                <div class="note-coach-box">🔴 Coach${coachDateStr}: ${escapeHtml(latest.coach_notes)}</div>
+                <div class="note-coach-box" style="white-space: pre-wrap;">🔴 Coach${coachDateStr}: ${escapeHtml(latest.coach_notes)}</div>
               ` : ''}
 
-              <div class="coach-reply-form">
-                <input type="text" id="coachReplyInput_${latest.id}" placeholder="🔴 Aggiungi messaggio del coach...">
-                <button type="button" class="btn btn-sm" style="background:#ef4444; color:#fff; width:auto; flex-shrink:0;" onclick="saveCoachNoteOnLog('${latest.id}', '${clientId}', '${escapeHtml(clientName)}')">Invia</button>
+              <div class="coach-reply-form" style="align-items: flex-end;">
+                <textarea id="coachReplyInput_${latest.id}" rows="2" placeholder="🔴 Aggiungi messaggio del coach (puoi andare a capo)..." style="flex: 1; min-height: 44px; font-size: 0.78rem; padding: 6px 8px; resize: vertical;"></textarea>
+                <button type="button" class="btn btn-sm" style="background:#ef4444; color:#fff; width:auto; flex-shrink:0; align-self: stretch;" onclick="saveCoachNoteOnLog('${latest.id}', '${clientId}', '${escapeHtml(clientName)}')">Invia</button>
               </div>
 
               ${olderHtml}
@@ -581,7 +650,7 @@ window.viewClientProgress = async function(clientId, clientName) {
                 <div class="item-details">
                   <strong>${idx + 1}. ${escapeHtml(ex ? ex.name : 'Esercizio')}</strong>
                   <div class="item-sub"><strong>${escapeHtml(row.sets_reps)}</strong> | Rest: ${escapeHtml(row.rest)} | Target RIR/@: ${escapeHtml(row.rir)}</div>
-                  ${row.notes && row.notes !== '-' ? `<div class="item-notes">Note: ${escapeHtml(row.notes)}</div>` : ''}
+                  ${row.notes && row.notes !== '-' ? `<div class="item-notes" style="white-space: pre-wrap;">Note: ${escapeHtml(row.notes)}</div>` : ''}
                 </div>
               </div>
               ${feedbackHtml}
@@ -597,7 +666,6 @@ window.viewClientProgress = async function(clientId, clientName) {
   container.innerHTML = html;
 };
 
-// Accoda il nuovo messaggio del Coach (in rosso) ai precedenti senza sovrascriverli
 window.saveCoachNoteOnLog = async function(logId, clientId, clientName) {
   const inputEl = document.getElementById(`coachReplyInput_${logId}`);
   if (!inputEl) return;
