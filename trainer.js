@@ -236,7 +236,7 @@ async function loadTrainerClients() {
   updateNotificationCenter(coachAlerts);
 }
 
-// Mostra Bozze (sia collegate per ID che per nome), Scheda Attiva e Storico Schede
+// Mostra Bozze (versione compatta), Scheda Attiva e Storico Schede
 window.viewClientWorkouts = async function(clientId, clientName) {
   showTrainerView("trainerWorkoutsView");
   document.getElementById("workoutsAthleteTitle").textContent = `📋 Schede: ${clientName}`;
@@ -284,10 +284,41 @@ window.viewClientWorkouts = async function(clientId, clientName) {
   sortedWorkouts.forEach((w) => {
     const isDraft = w.status === 'draft';
     const isActive = w.status === 'active';
-    const startStr = w.start_date ? new Date(w.start_date).toLocaleDateString('it-IT') : '-';
-    const endStr = w.end_date ? new Date(w.end_date).toLocaleDateString('it-IT') : '-';
     const createdStr = new Date(w.created_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
     const items = (w.workout_exercises || []).sort((a, b) => a.order_index - b.order_index);
+
+    const box = document.createElement("div");
+
+    // Se è una bozza: card compatta con solo badge, Riprendi, Cancella e riga durata/data
+    if (isDraft) {
+      box.style.cssText = `background: var(--subcard-bg); color: var(--text); border: 1.5px solid var(--primary); border-radius: 8px; padding: 12px; margin-bottom: 12px;`;
+      box.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap;">
+          <div>
+            <span class="status-badge status-expiring" style="margin-top: 0; margin-bottom: 4px;">
+              📝 BOZZA IN LAVORAZIONE
+            </span>
+            <div style="font-size: 0.84rem; color: var(--text); font-weight: 700;">
+              Durata prevista: ${w.duration_weeks} sett. • Salvata il ${createdStr}
+            </div>
+          </div>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <button class="btn btn-primary btn-sm" onclick="resumeDraft('${w.id}')">
+              ✏️ Riprendi
+            </button>
+            <button class="btn btn-outline btn-sm" style="border-color: var(--danger); color: var(--danger);" onclick="deleteClientWorkout('${w.id}', '${clientId}', '${escapeHtml(clientName)}')">
+              🗑️ Cancella
+            </button>
+          </div>
+        </div>
+      `;
+      container.appendChild(box);
+      return;
+    }
+
+    // Scheda Attiva o Archiviata
+    const startStr = w.start_date ? new Date(w.start_date).toLocaleDateString('it-IT') : '-';
+    const endStr = w.end_date ? new Date(w.end_date).toLocaleDateString('it-IT') : '-';
 
     const grouped = {};
     items.forEach(item => {
@@ -379,57 +410,31 @@ window.viewClientWorkouts = async function(clientId, clientName) {
         `;
       }).join("");
 
-    const borderColor = isDraft ? 'var(--primary)' : isActive ? 'var(--success)' : 'var(--border)';
-    const badgeClass = isDraft ? 'status-expiring' : isActive ? 'status-active' : 'status-none';
-    const badgeLabel = isDraft
-      ? '📝 BOZZA IN LAVORAZIONE'
-      : isActive
-        ? '● SCHEDA ATTIVA'
-        : `ARCHIVIATA #${archivedList.length - archivedList.indexOf(w)}`;
-
-    const subInfo = isDraft
-      ? `Durata prevista: ${w.duration_weeks} sett. • Salvata il ${createdStr}`
-      : `Dal ${startStr} al ${endStr} (${w.duration_weeks} sett.)`;
-
-    const actionButtonsHtml = isDraft
-      ? `
-        <button class="btn btn-primary btn-sm" onclick="resumeDraft('${w.id}')">
-          ✏️ Riprendi nel Builder
-        </button>
-        <button class="btn btn-outline btn-sm" style="border-color: var(--danger); color: var(--danger);" onclick="deleteClientWorkout('${w.id}', '${clientId}', '${escapeHtml(clientName)}')">
-          🗑️ Elimina Bozza
-        </button>
-      `
-      : `
-        <button class="btn btn-outline btn-sm" onclick="cloneWorkoutToBuilder('${w.id}', '${clientId}', '${escapeHtml(clientName)}')">
-          📥 Carica nel Builder
-        </button>
-        <button class="btn btn-outline btn-sm" style="border-color: var(--danger); color: var(--danger);" onclick="deleteClientWorkout('${w.id}', '${clientId}', '${escapeHtml(clientName)}')">
-          🗑️ Elimina
-        </button>
-      `;
-
-    const box = document.createElement("div");
-    box.style.cssText = `background: var(--subcard-bg); color: var(--text); border: 1.5px solid ${borderColor}; border-radius: 8px; padding: 12px; margin-bottom: 12px;`;
+    box.style.cssText = `background: var(--subcard-bg); color: var(--text); border: 1.5px solid ${isActive ? 'var(--success)' : 'var(--border)'}; border-radius: 8px; padding: 12px; margin-bottom: 12px;`;
 
     box.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap;">
         <div>
-          <span class="status-badge ${badgeClass}" style="margin-top: 0; margin-bottom: 4px;">
-            ${badgeLabel}
+          <span class="status-badge ${isActive ? 'status-active' : 'status-none'}" style="margin-top: 0; margin-bottom: 4px;">
+            ${isActive ? '● SCHEDA ATTIVA' : `ARCHIVIATA #${archivedList.length - archivedList.indexOf(w)}`}
           </span>
           <div style="font-size: 0.84rem; color: var(--text); font-weight: 700;">
-            ${subInfo}
+            Dal ${startStr} al ${endStr} (${w.duration_weeks} sett.)
           </div>
         </div>
         <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-          ${actionButtonsHtml}
+          <button class="btn btn-outline btn-sm" onclick="cloneWorkoutToBuilder('${w.id}', '${clientId}', '${escapeHtml(clientName)}')">
+            📥 Carica nel Builder
+          </button>
+          <button class="btn btn-outline btn-sm" style="border-color: var(--danger); color: var(--danger);" onclick="deleteClientWorkout('${w.id}', '${clientId}', '${escapeHtml(clientName)}')">
+            🗑️ Elimina
+          </button>
         </div>
       </div>
 
       ${w.general_notes ? `<div style="background: var(--notes-bg); color: var(--notes-text); border: 1px solid var(--border); padding: 7px 9px; border-radius: 6px; font-size: 0.8rem; margin-top: 8px; white-space: pre-wrap;"><strong>Note generali:</strong> ${escapeHtml(w.general_notes)}</div>` : ''}
 
-      <details ${isDraft || isActive ? 'open' : ''} style="margin-top: 8px;">
+      <details ${isActive ? 'open' : ''} style="margin-top: 8px;">
         <summary style="cursor: pointer; font-size: 0.82rem; color: var(--primary); font-weight: 700;">
           Mostra esercizi (${items.length})
         </summary>
