@@ -118,7 +118,8 @@ textarea { resize: vertical; min-height: 70px; font-size: 0.85rem; line-height: 
 .btn-del { background: transparent; border: none; color: var(--danger); font-size: 1.2rem; cursor: pointer; padding: 4px 6px; }
 
 /* Griglia 2x2 perfettamente allineata per i pulsanti del Builder */
-.builder-item-actions {
+.builder-item-actions,
+.item-actions {
   display: grid;
   grid-template-columns: repeat(2, 30px);
   gap: 4px;
@@ -129,7 +130,8 @@ textarea { resize: vertical; min-height: 70px; font-size: 0.85rem; line-height: 
   display: contents;
 }
 
-.btn-builder-act {
+.btn-builder-act,
+.btn-icon {
   width: 30px;
   height: 28px;
   padding: 0;
@@ -145,12 +147,14 @@ textarea { resize: vertical; min-height: 70px; font-size: 0.85rem; line-height: 
   line-height: 1;
 }
 
-.btn-builder-act:hover:not(:disabled) {
+.btn-builder-act:hover:not(:disabled),
+.btn-icon:hover:not(:disabled) {
   border-color: var(--primary);
   color: var(--primary);
 }
 
-.btn-builder-act:disabled {
+.btn-builder-act:disabled,
+.btn-icon:disabled {
   opacity: 0.3;
   cursor: default;
 }
@@ -227,25 +231,6 @@ textarea { resize: vertical; min-height: 70px; font-size: 0.85rem; line-height: 
 .past-logs-details { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); font-size: 0.74rem; color: var(--text-muted); }
 .past-logs-details summary { cursor: pointer; color: var(--primary); font-weight: 600; }
 .past-log-line { padding: 4px 0; border-bottom: 1px solid var(--border); white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
-
-/* PDF Layout (sempre sfondo bianco per stampa) */
-#pdfPreviewWrapper { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #ffffff; z-index: 99999; overflow-y: auto; }
-.pdf-sheet { background: #ffffff; color: #1e293b; padding: 18px 22px; width: 720px; margin: 0 auto; box-sizing: border-box; font-size: 11px; }
-.pdf-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #111827; padding-bottom: 8px; margin-bottom: 10px; }
-.pdf-header-left { display: flex; align-items: center; gap: 12px; }
-.pdf-logo { height: 50px; width: auto; max-width: 120px; object-fit: contain; }
-.pdf-header h2 { font-size: 18px; color: #111827; font-weight: 800; }
-.pdf-coach-tag { font-size: 10.5px; font-weight: 800; color: #111827; text-transform: uppercase; }
-.pdf-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: #f1f5f9; padding: 7px 10px; border-radius: 6px; margin-bottom: 8px; font-size: 10.5px; }
-.pdf-general-notes { background: #fffbeb; border-left: 3px solid #f59e0b; padding: 8px 10px; font-size: 10.5px; color: #78350f; margin-bottom: 10px; border-radius: 4px; display: none; line-height: 1.4; }
-.pdf-day-banner { background: #000000; color: #ffffff; font-size: 11px; font-weight: 800; padding: 6px 10px; border-radius: 4px; margin-top: 12px; margin-bottom: 4px; text-transform: uppercase; display: flex; justify-content: space-between; }
-.pdf-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
-.pdf-table th { background: #e2e8f0; color: #334155; text-align: left; padding: 5px 6px; font-size: 9.5px; text-transform: uppercase; }
-.pdf-table td { padding: 6px; border-bottom: 1px solid #cbd5e1; vertical-align: top; }
-.pdf-photos-wrap { display: flex; gap: 4px; align-items: center; justify-content: center; }
-.pdf-img { width: 44px; height: 44px; border-radius: 4px; object-fit: cover; border: 1px solid #94a3b8; }
-.pdf-notes-cell { font-size: 9.5px; color: #334155; white-space: pre-wrap; line-height: 1.25; }
-.pdf-footer { display: flex; justify-content: space-between; margin-top: 14px; padding-top: 8px; border-top: 1px solid #cbd5e1; font-size: 9.5px; color: #64748b; }
 
 /* Campanella Notifiche & Banner Scadenze */
 .notif-btn-wrap {
@@ -508,33 +493,6 @@ textarea { resize: vertical; min-height: 70px; font-size: 0.85rem; line-height: 
   margin-bottom: 0;
 }
 
-/* Evidenziazione Circuiti nel PDF */
-.pdf-circuit-banner {
-  background: #e0f2fe;
-  color: #0369a1;
-  font-weight: 800;
-  font-size: 10px;
-  padding: 4px 8px;
-  border-left: 4px solid #0284c7;
-  text-transform: uppercase;
-}
-
-.pdf-circuit-row td {
-  background-color: #f0f9ff !important;
-  border-left: 3px solid #0284c7;
-}
-
-.pdf-circuit-end {
-  background: #f0f9ff;
-  color: #0369a1;
-  font-weight: 700;
-  font-size: 9px;
-  text-align: right;
-  padding: 3px 8px;
-  border-left: 4px solid #0284c7;
-  border-bottom: 1.5px solid #0284c7;
-}
-
 /* Campo Password con icona SVG minimal */
 .password-input-wrap {
   position: relative;
@@ -659,77 +617,127 @@ body:not(.light-theme) .note-coach-box {
   color: var(--primary);
 }
 
-/* Fix dimensioni immagini e colonne nella generazione PDF */
-#pdfSheet {
-  width: 794px !important;
-  max-width: 794px !important;
-  box-sizing: border-box !important;
+/* =========================================================
+   PDF LAYOUT & FIX DEFINITIVO SAFARI iOS / DESKTOP
+   ========================================================= */
+#pdfPreviewWrapper {
+  display: block !important;
+  position: fixed !important;
+  top: 0 !important;
+  left: -10000px !important;
+  width: 740px !important;
+  height: auto !important;
+  background: #ffffff !important;
+  z-index: -1 !important;
+  overflow: visible !important;
 }
 
+.pdf-sheet {
+  background: #ffffff !important;
+  color: #1e293b !important;
+  padding: 16px 18px !important;
+  width: 720px !important;
+  max-width: 720px !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+  font-size: 11px;
+}
+
+.pdf-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #111827; padding-bottom: 8px; margin-bottom: 10px; }
+.pdf-header-left { display: flex; align-items: center; gap: 12px; }
+.pdf-logo { height: 50px; width: auto; max-width: 120px; object-fit: contain; }
+.pdf-header h2 { font-size: 18px; color: #111827; font-weight: 800; }
+.pdf-coach-tag { font-size: 10.5px; font-weight: 800; color: #111827; text-transform: uppercase; }
+.pdf-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: #f1f5f9; padding: 7px 10px; border-radius: 6px; margin-bottom: 8px; font-size: 10.5px; }
+.pdf-general-notes { background: #fffbeb; border-left: 3px solid #f59e0b; padding: 8px 10px; font-size: 10.5px; color: #78350f; margin-bottom: 10px; border-radius: 4px; display: none; line-height: 1.4; }
+.pdf-day-banner,
+.pdf-day-title {
+  background: #0f172a;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 6px 10px;
+  border-radius: 4px;
+  margin-top: 12px;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+.pdf-table,
 #pdfSheet table {
   width: 100% !important;
   table-layout: fixed !important;
   border-collapse: collapse !important;
+  margin-bottom: 8px;
 }
 
-#pdfSheet th,
-#pdfSheet td {
-  word-wrap: break-word !important;
-  overflow-wrap: break-word !important;
-  vertical-align: middle !important;
-}
+.pdf-table th { background: #e2e8f0; color: #334155; text-align: left; padding: 5px 6px; font-size: 9.5px; text-transform: uppercase; }
+.pdf-table td { padding: 6px; border-bottom: 1px solid #cbd5e1; vertical-align: middle !important; word-wrap: break-word !important; overflow-wrap: break-word !important; }
 
-/* Imposta larghezze fisse delle colonne della tabella PDF */
 #pdfSheet th:nth-child(1),
-#pdfSheet td:nth-child(1) {
-  width: 24px !important;
-  text-align: center !important;
-}
+#pdfSheet td:nth-child(1) { width: 24px !important; text-align: center !important; }
 
 #pdfSheet th:nth-child(2),
-#pdfSheet td:nth-child(2) {
-  width: 96px !important;
-  max-width: 96px !important;
-  text-align: center !important;
-}
+#pdfSheet td:nth-child(2) { width: 92px !important; max-width: 92px !important; text-align: center !important; }
 
 #pdfSheet th:nth-child(3),
-#pdfSheet td:nth-child(3) {
-  width: 150px !important;
-}
+#pdfSheet td:nth-child(3) { width: 155px !important; }
 
 #pdfSheet th:nth-child(4),
-#pdfSheet td:nth-child(4) {
-  width: 70px !important;
-}
+#pdfSheet td:nth-child(4) { width: 72px !important; }
 
 #pdfSheet th:nth-child(5),
-#pdfSheet td:nth-child(5) {
-  width: 55px !important;
-}
+#pdfSheet td:nth-child(5) { width: 52px !important; }
 
 #pdfSheet th:nth-child(6),
-#pdfSheet td:nth-child(6) {
-  width: 55px !important;
-}
+#pdfSheet td:nth-child(6) { width: 52px !important; }
 
-/* Blocca qualunque immagine dentro la cella Esecuzione (sia doppia sia singola) */
 #pdfSheet td:nth-child(2) img {
-  width: 42px !important;
-  max-width: 42px !important;
-  height: 42px !important;
-  max-height: 42px !important;
+  width: 40px !important;
+  max-width: 40px !important;
+  height: 40px !important;
+  max-height: 40px !important;
   object-fit: contain !important;
   display: inline-block !important;
   vertical-align: middle !important;
   margin: 1px !important;
+  border-radius: 4px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
 }
 
-/* Se c'è una sola immagine nella cella Esecuzione, può essere leggermente più larga ma mai oltre 84px */
 #pdfSheet td:nth-child(2) img:only-child {
-  width: 82px !important;
-  max-width: 82px !important;
-  height: 46px !important;
-  max-height: 46px !important;
+  width: 78px !important;
+  max-width: 78px !important;
+  height: 44px !important;
+  max-height: 44px !important;
 }
 
+/* Evidenziazione Circuiti nel PDF */
+.pdf-circuit-banner {
+  background: #e0f2fe;
+  color: #0369a1;
+  font-weight: 800;
+  font-size: 10px;
+  padding: 4px 8px;
+  border-left: 4px solid #0284c7;
+  text-transform: uppercase;
+}
+
+.pdf-circuit-row td {
+  background-color: #f0f9ff !important;
+  border-left: 3px solid #0284c7;
+}
+
+.pdf-circuit-end {
+  background: #f0f9ff;
+  color: #0369a1;
+  font-weight: 700;
+  font-size: 9px;
+  text-align: right;
+  padding: 3px 8px;
+  border-left: 4px solid #0284c7;
+  border-bottom: 1.5px solid #0284c7;
+}
+
+.pdf-footer { display: flex; justify-content: space-between; margin-top: 14px; padding-top: 8px; border-top: 1px solid #cbd5e1; font-size: 9.5px; color: #64748b; }
