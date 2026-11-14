@@ -9,6 +9,15 @@ const circuitLabelWrap = document.getElementById("circuitLabelWrap");
 const inCircuitLabel = document.getElementById("inCircuitLabel");
 
 let currentDraftId = null; // Tiene traccia se stiamo modificando una bozza salvata
+let searchDebounceTimer = null;
+
+// Disattiva il datalist nativo che manda in freeze iOS Safari durante la digitazione
+if (exerciseSearch) {
+  exerciseSearch.removeAttribute("list");
+}
+if (exerciseSuggestions) {
+  exerciseSuggestions.innerHTML = "";
+}
 
 // Verifica se nel giorno selezionato c'è attualmente un circuito aperto
 function hasOpenCircuitInDay(dayName) {
@@ -371,27 +380,26 @@ document.getElementById("btnClearBuilder").addEventListener("click", () => {
   loadTrainerDrafts();
 });
 
+// Filtra il menu esercizi in modo leggero (senza datalist per evitare freeze su iOS)
 function populateDropdown() {
   const filter = muscleFilter.value;
   const search = exerciseSearch.value.trim().toLowerCase();
 
-  const byMuscle = EXERCISE_DB.filter(ex => filter === "ALL" || ex.muscle === filter);
-  exerciseSuggestions.innerHTML = byMuscle.map(ex => `<option value="${ex.name}">`).join("");
+  const filtered = EXERCISE_DB.filter(ex => {
+    const matchMuscle = filter === "ALL" || ex.muscle === filter;
+    const matchSearch = !search || ex.name.toLowerCase().includes(search);
+    return matchMuscle && matchSearch;
+  });
 
-  const filtered = byMuscle.filter(ex => ex.name.toLowerCase().includes(search));
-
-  exerciseSelect.innerHTML = "";
   if (filtered.length === 0) {
     exerciseSelect.innerHTML = `<option value="">Nessun esercizio trovato</option>`;
     return;
   }
 
-  filtered.forEach(ex => {
-    const opt = document.createElement("option");
-    opt.value = ex.id;
-    opt.textContent = `${ex.name} (${ex.muscle})`;
-    exerciseSelect.appendChild(opt);
-  });
+  exerciseSelect.innerHTML = filtered
+    .map(ex => `<option value="${ex.id}">${escapeHtml(ex.name)} (${escapeHtml(ex.muscle)})</option>`)
+    .join("");
+
   updatePreview();
 }
 
@@ -426,7 +434,12 @@ function updatePreview() {
 }
 
 muscleFilter.addEventListener("change", populateDropdown);
-exerciseSearch.addEventListener("input", populateDropdown);
+
+exerciseSearch.addEventListener("input", () => {
+  clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(populateDropdown, 120);
+});
+
 exerciseSelect.addEventListener("change", updatePreview);
 
 // Aggiunta esercizio alla scheda (con gestione Circuito)
@@ -885,7 +898,6 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
     },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
     pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.pdf-day-title', '.pdf-header', '.pdf-general-notes'] }
-
   };
 
   try {
