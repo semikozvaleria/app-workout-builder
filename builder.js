@@ -884,7 +884,8 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
       windowWidth: 740
     },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+    pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.pdf-day-title', '.pdf-header', '.pdf-general-notes'] }
+
   };
 
   try {
