@@ -44,7 +44,6 @@ document.getElementById("btnLinkCoach").addEventListener("click", async () => {
   }
 });
 
-// Segna come viste dall'atleta la scheda e le note del coach
 window.markAthleteUpdatesAsSeen = async function(workoutId) {
   const nowIso = new Date().toISOString();
   await Promise.all([
@@ -73,7 +72,6 @@ function getLocalDayKey(isoStr) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// Estrae il numero di serie prescritte dal coach (es. "4x8/10" -> 4, min 1, max 12)
 function parsePrescribedSetsCount(setsRepsStr) {
   if (!setsRepsStr) return 1;
   const match = String(setsRepsStr).trim().match(/^(\d+)\s*[xX×*]/);
@@ -84,7 +82,6 @@ function parsePrescribedSetsCount(setsRepsStr) {
   return 1;
 }
 
-// Decodifica la stringa delle serie salvate (es. "S1: 60kg × 10 (RIR 2) | S2: 62.5kg × 9")
 function parseSeriesBreakdown(log) {
   if (!log) return [];
   const raw = (log.reps_done || "").trim();
@@ -102,7 +99,6 @@ function parseSeriesBreakdown(log) {
     }).filter(Boolean);
   }
 
-  // Retrocompatibilità con log salvati prima del formato serie-per-serie
   if (log.weight_kg !== null || (raw && raw !== '-') || log.rir !== null) {
     return [{
       setNum: 1,
@@ -115,7 +111,6 @@ function parseSeriesBreakdown(log) {
   return [];
 }
 
-// Formatta il riepilogo di un log giornaliero (serie su righe separate + nota esercizio)
 function formatLogSummaryText(entry, dateStr) {
   const rirFallback = (entry.rir !== null && entry.rir !== undefined) ? ` • RIR ${entry.rir}` : '';
   const noteLine = entry.athlete_notes ? `\n📝 ${escapeHtml(entry.athlete_notes)}` : '';
@@ -133,7 +128,6 @@ function formatLogSummaryText(entry, dateStr) {
   return `🟢 ${dateStr} — ${kgStr} × ${repsStr}${rirFallback}${noteLine}`;
 }
 
-// Unisce tutte le modifiche dello stesso giorno in un unico oggetto giornaliero con una sola data
 function consolidateLogsByDay(logs) {
   if (!logs || logs.length === 0) return [];
   const sorted = [...logs].sort((a, b) => new Date(b.logged_at) - new Date(a.logged_at));
@@ -205,7 +199,6 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
     roleTag = `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 BLOCCO CIRCUITO</span>`;
   }
 
-  // Genera una riga di input (Kg, Reps, RIR) per ogni serie prescritta dal coach
   let seriesRowsHtml = "";
   for (let s = 1; s <= setsCount; s++) {
     const prevSet = parsedSeries.find(item => item.setNum === s) || {};
@@ -227,7 +220,7 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
 
     const coachDateStr = latestLog.coach_replied_at ? ` (${formatShortDate(latestLog.coach_replied_at)})` : '';
     const coachBoxHtml = latestLog.coach_notes
-      ? `<div class="note-coach-box">🔴 Coach${coachDateStr}: ${escapeHtml(latestLog.coach_notes)}</div>`
+      ? `<div class="note-coach-box" style="white-space: pre-wrap;">🔴 Coach${coachDateStr}: ${escapeHtml(latestLog.coach_notes)}</div>`
       : "";
 
     const olderHtml = dailyLogs.length > 1 ? `
@@ -239,7 +232,7 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
             const oldSummary = formatLogSummaryText(old, od);
             const ocd = old.coach_replied_at ? ` (${formatShortDate(old.coach_replied_at)})` : '';
             const ocoach = old.coach_notes
-              ? `<div class="note-coach-box" style="margin-top:3px;">🔴 Coach${ocd}: ${escapeHtml(old.coach_notes)}</div>`
+              ? `<div class="note-coach-box" style="margin-top:3px; white-space: pre-wrap;">🔴 Coach${ocd}: ${escapeHtml(old.coach_notes)}</div>`
               : '';
             return `
               <div style="border-top: 1px dashed var(--border); padding-top: 4px;">
@@ -273,18 +266,18 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
         <div class="item-details">
           <strong>${idx + 1}. ${escapeHtml(ex ? ex.name : 'Esercizio')}</strong> ${roleTag}
           <div class="item-sub"><strong>${escapeHtml(row.sets_reps)}</strong> | Rest: ${escapeHtml(row.rest)} | RIR/@: ${escapeHtml(row.rir)}</div>
-          ${row.notes && row.notes !== '-' ? `<div class="item-notes">Note: ${escapeHtml(row.notes)}</div>` : ''}
+          ${row.notes && row.notes !== '-' ? `<div class="item-notes" style="white-space: pre-wrap;">Note: ${escapeHtml(row.notes)}</div>` : ''}
         </div>
       </div>
 
-      <!-- Log Serie per Serie + Nota unica per esercizio -->
+      <!-- Log Serie per Serie + Textarea Note multilinea per esercizio -->
       <div class="athlete-log-bar" style="flex-direction: column; align-items: stretch; gap: 6px;">
         <div style="display: flex; flex-direction: column; gap: 5px;">
           ${seriesRowsHtml}
         </div>
-        <div style="display: flex; gap: 6px; align-items: center;">
-          <input type="text" id="logNote_${row.id}" placeholder="🟢 Note generali per questo esercizio..." style="flex: 1; font-size: 0.78rem; padding: 6px 8px; border-color: rgba(16, 185, 129, 0.45);">
-          <button type="button" class="btn btn-success btn-sm" style="width: auto; flex-shrink: 0;" onclick="saveWorkoutLog('${row.id}', ${setsCount})">Salva</button>
+        <div style="display: flex; gap: 6px; align-items: flex-end;">
+          <textarea id="logNote_${row.id}" rows="2" placeholder="🟢 Note generali per questo esercizio (puoi andare a capo)..." style="flex: 1; min-height: 44px; font-size: 0.78rem; padding: 6px 8px; border-color: rgba(16, 185, 129, 0.45); resize: vertical;"></textarea>
+          <button type="button" class="btn btn-success btn-sm" style="width: auto; flex-shrink: 0; align-self: stretch;" onclick="saveWorkoutLog('${row.id}', ${setsCount})">Salva</button>
         </div>
         ${latestBoxesHtml}
       </div>
@@ -497,7 +490,6 @@ async function loadAthleteWorkout() {
   });
 }
 
-// Salva o aggiorna tutte le serie inserite + nota esercizio in un unico record giornaliero
 window.saveWorkoutLog = async function(workoutExerciseId, setsCount = 1) {
   const seriesParts = [];
   let maxWeight = null;
