@@ -9,6 +9,7 @@ const circuitLabelWrap = document.getElementById("circuitLabelWrap");
 const inCircuitLabel = document.getElementById("inCircuitLabel");
 
 let currentDraftId = null;
+let editingItemUid = null;
 let searchDebounceTimer = null;
 
 if (exerciseSearch) {
@@ -164,6 +165,7 @@ window.resumeDraft = async function(draftId) {
 
   showTrainerView("trainerBuilderView");
   currentDraftId = workout.id;
+  editingItemUid = null;
 
   const selectEl = document.getElementById("builderAthleteSelect");
   const loadBtn = document.getElementById("btnLoadExistingWorkout");
@@ -342,6 +344,7 @@ document.getElementById("btnLoadExistingWorkout").addEventListener("click", asyn
   }
 
   currentDraftId = null;
+  editingItemUid = null;
   document.getElementById("durationWeeks").value = workout.duration_weeks || 4;
   document.getElementById("generalNotes").value = workout.general_notes || "";
 
@@ -370,6 +373,7 @@ document.getElementById("btnClearBuilder").addEventListener("click", () => {
   if (!confirm("Vuoi rimuovere tutti gli esercizi inseriti in questa scheda?")) return;
   currentWorkout = [];
   currentDraftId = null;
+  editingItemUid = null;
   renderList();
   loadTrainerDrafts();
 });
@@ -475,6 +479,7 @@ document.getElementById("btnAddEx").addEventListener("click", () => {
 
 function buildBuilderItemHtml(item, idx, totalInDay) {
   const isSingle = item.imgStart === item.imgEnd;
+  const isEditing = editingItemUid === item.uid;
   let roleTag = "";
   if (item.circuitRole === "start") {
     roleTag = `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 INIZIO CIRCUITO</span>`;
@@ -484,8 +489,35 @@ function buildBuilderItemHtml(item, idx, totalInDay) {
     roleTag = `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 BLOCCO CIRCUITO</span>`;
   }
 
+  const editFormHtml = isEditing ? `
+    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); display: flex; flex-direction: column; gap: 6px;">
+      <div class="grid-3">
+        <div class="field" style="margin:0;">
+          <label style="font-size:0.72rem;">Serie e Reps</label>
+          <input type="text" id="editSets_${item.uid}" value="${item.setsReps === '-' ? '' : escapeHtml(item.setsReps)}" placeholder="es. 4x8-10">
+        </div>
+        <div class="field" style="margin:0;">
+          <label style="font-size:0.72rem;">Rest</label>
+          <input type="text" id="editRest_${item.uid}" value="${item.rest === '-' ? '' : escapeHtml(item.rest)}" placeholder="es. 90''">
+        </div>
+        <div class="field" style="margin:0;">
+          <label style="font-size:0.72rem;">RIR / @</label>
+          <input type="text" id="editRir_${item.uid}" value="${item.rir === '-' ? '' : escapeHtml(item.rir)}" placeholder="es. RIR 1">
+        </div>
+      </div>
+      <div class="field" style="margin:0;">
+        <label style="font-size:0.72rem;">Note Esercizio</label>
+        <textarea id="editNotes_${item.uid}" rows="2" style="min-height: 54px; font-size: 0.8rem;" placeholder="Note tecniche per questo esercizio...">${item.notes === '-' ? '' : escapeHtml(item.notes)}</textarea>
+      </div>
+      <div style="display: flex; gap: 6px; justify-content: flex-end;">
+        <button type="button" class="btn btn-outline btn-sm" style="width:auto;" onclick="cancelEditItem()">Annulla</button>
+        <button type="button" class="btn btn-success btn-sm" style="width:auto;" onclick="saveEditedItem(${item.uid})">💾 Salva Modifiche</button>
+      </div>
+    </div>
+  ` : "";
+
   return `
-    <div class="exercise-item">
+    <div class="exercise-item" style="${isEditing ? 'border-color: var(--primary);' : ''}">
       <div class="exercise-top">
         <div class="item-photos">
           ${isSingle ? `
@@ -498,7 +530,7 @@ function buildBuilderItemHtml(item, idx, totalInDay) {
         <div class="item-details">
           <strong>${idx + 1}. ${escapeHtml(item.name)}</strong> ${roleTag}
           <div class="item-sub"><strong>${escapeHtml(item.setsReps)}</strong> | Rest: ${escapeHtml(item.rest)} | RIR/@: ${escapeHtml(item.rir)}</div>
-          ${item.notes !== '-' ? `<div class="item-notes">Note: ${escapeHtml(item.notes)}</div>` : ''}
+          ${item.notes !== '-' ? `<div class="item-notes" style="white-space: pre-wrap;">Note: ${escapeHtml(item.notes)}</div>` : ''}
         </div>
         <div class="item-actions">
           <button class="btn-icon" title="Sposta su" onclick="moveItem(${item.uid}, -1)" ${idx === 0 ? 'disabled' : ''}>▲</button>
@@ -507,6 +539,7 @@ function buildBuilderItemHtml(item, idx, totalInDay) {
           <button class="btn-icon" title="Rimuovi" style="color:var(--danger);" onclick="removeItem(${item.uid})">✖</button>
         </div>
       </div>
+      ${editFormHtml}
     </div>
   `;
 }
@@ -617,24 +650,32 @@ function renderList() {
   });
 }
 
+// Apre/chiude il pannello di modifica inline con tutti i campi visibili insieme
 window.editItem = function(uid) {
+  editingItemUid = (editingItemUid === uid) ? null : uid;
+  renderList();
+};
+
+window.cancelEditItem = function() {
+  editingItemUid = null;
+  renderList();
+};
+
+window.saveEditedItem = function(uid) {
   const index = currentWorkout.findIndex(item => item.uid === uid);
   if (index === -1) return;
   const item = currentWorkout[index];
 
-  const newSets = prompt(`Serie e Reps per "${item.name}":`, item.setsReps === "-" ? "" : item.setsReps);
-  if (newSets === null) return;
-  const newRest = prompt(`Recupero (Rest) per "${item.name}":`, item.rest === "-" ? "" : item.rest);
-  if (newRest === null) return;
-  const newRir = prompt(`RIR / @ per "${item.name}":`, item.rir === "-" ? "" : item.rir);
-  if (newRir === null) return;
-  const newNotes = prompt(`Note esercizio per "${item.name}":`, item.notes === "-" ? "" : item.notes);
-  if (newNotes === null) return;
+  const newSets = document.getElementById(`editSets_${uid}`).value.trim();
+  const newRest = document.getElementById(`editRest_${uid}`).value.trim();
+  const newRir = document.getElementById(`editRir_${uid}`).value.trim();
+  const newNotes = document.getElementById(`editNotes_${uid}`).value.trim();
 
-  item.setsReps = newSets.trim() || "-";
-  item.rest = newRest.trim() || "-";
-  item.rir = newRir.trim() || "-";
-  item.notes = newNotes.trim() || "-";
+  item.setsReps = newSets || "-";
+  item.rest = newRest || "-";
+  item.rir = newRir || "-";
+  item.notes = newNotes || "-";
+  editingItemUid = null;
   renderList();
 };
 
@@ -658,6 +699,7 @@ window.moveItem = function(uid, direction) {
 };
 
 window.removeItem = function(uid) {
+  if (editingItemUid === uid) editingItemUid = null;
   currentWorkout = currentWorkout.filter(item => item.uid !== uid);
   renderList();
 };
@@ -743,6 +785,7 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
 
     alert("✅ Scheda salvata e inviata! L'atleta la vedrà immediatamente aprendo la sua app.");
     currentWorkout = [];
+    editingItemUid = null;
     renderList();
     showTrainerView("trainerClientsView");
     loadTrainerClients();
@@ -864,7 +907,6 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
 
   const sourceSheet = document.getElementById("pdfSheet");
 
-  // Crea un contenitore pulito attaccato direttamente al body all'origine esatta (0,0)
   const printHost = document.createElement("div");
   printHost.style.cssText = "position: absolute; top: 0; left: 0; width: 740px; margin: 0; padding: 0; background: #ffffff; z-index: 999999;";
 
