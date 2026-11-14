@@ -47,6 +47,22 @@ function getTrainerDayKey(isoStr) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// Formatta il log giornaliero dell'atleta (supporta sia il formato serie-per-serie sia il vecchio formato)
+function formatTrainerLogSummaryText(entry, dateStr) {
+  const rirTxt = (entry.rir !== null && entry.rir !== undefined) ? ` • RIR/@: ${entry.rir}` : '';
+  const athNoteLine = entry.athlete_notes ? `\n📝 ${escapeHtml(entry.athlete_notes)}` : '';
+
+  if (entry.reps_done && entry.reps_done.includes("S1:")) {
+    const lines = entry.reps_done
+      .split("|")
+      .map(s => `• ${escapeHtml(s.trim())}`)
+      .join("\n");
+    return `🟢 ${dateStr}\n${lines}${athNoteLine}`;
+  }
+
+  return `🟢 ${dateStr} — ${entry.weight_kg ?? '-'} kg × ${escapeHtml(entry.reps_done || '-')}${rirTxt}${athNoteLine}`;
+}
+
 // Unisce tutte le modifiche dello stesso giorno in un unico messaggio con data singola
 function consolidateTrainerLogsByDay(logs) {
   if (!logs || logs.length === 0) return [];
@@ -417,7 +433,7 @@ window.cloneWorkoutToBuilder = async function(workoutId, clientId, clientName) {
   renderList();
 };
 
-// VISTA PROGRESSI: Raggruppa per giorno (1 data per giorno) + Note Atleta in Verde + Chat continua Coach in Rosso
+// VISTA PROGRESSI: Raggruppa per giorno (1 data per giorno) + Log serie-per-serie in Verde + Chat Coach in Rosso
 window.viewClientProgress = async function(clientId, clientName) {
   showTrainerView("trainerProgressView");
   document.getElementById("progressAthleteTitle").textContent = `📊 Progressi: ${clientName}`;
@@ -507,8 +523,7 @@ window.viewClientProgress = async function(clientId, clientName) {
           `;
         } else {
           const latestDate = new Date(latest.logged_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' });
-          const rirTxt = (latest.rir !== null && latest.rir !== undefined) ? ` • RIR/@: ${latest.rir}` : '';
-          const athNoteLine = latest.athlete_notes ? `\n${escapeHtml(latest.athlete_notes)}` : '';
+          const latestSummary = formatTrainerLogSummaryText(latest, latestDate);
           const coachDateStr = latest.coach_replied_at
             ? ` (${new Date(latest.coach_replied_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' })})`
             : '';
@@ -519,13 +534,12 @@ window.viewClientProgress = async function(clientId, clientName) {
               <div style="margin-top: 5px; display: flex; flex-direction: column; gap: 5px;">
                 ${dailyLogs.slice(1).map(old => {
                   const d = new Date(old.logged_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' });
-                  const r = (old.rir !== null && old.rir !== undefined) ? ` • RIR: ${old.rir}` : '';
-                  const nAth = old.athlete_notes ? `\n${escapeHtml(old.athlete_notes)}` : '';
+                  const oldSummary = formatTrainerLogSummaryText(old, d);
                   const cd = old.coach_replied_at ? ` (${new Date(old.coach_replied_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' })})` : '';
                   const nCoach = old.coach_notes ? `<div class="note-coach-box" style="margin-top:3px;">🔴 Coach${cd}: ${escapeHtml(old.coach_notes)}</div>` : '';
                   return `
                     <div style="border-top: 1px dashed var(--border); padding-top: 4px;">
-                      <div class="note-athlete-box" style="margin-top:0;">🟢 ${d} — ${old.weight_kg ?? '-'} kg × ${escapeHtml(old.reps_done || '-')}${r}${nAth}</div>
+                      <div class="note-athlete-box" style="margin-top:0; white-space: pre-wrap;">${oldSummary}</div>
                       ${nCoach}
                     </div>
                   `;
@@ -536,7 +550,7 @@ window.viewClientProgress = async function(clientId, clientName) {
 
           feedbackHtml = `
             <div class="athlete-feedback-box">
-              <div class="note-athlete-box" style="margin-top:0;">🟢 ${latestDate} — ${latest.weight_kg ?? '-'} kg × ${escapeHtml(latest.reps_done || '-')}${rirTxt}${athNoteLine}</div>
+              <div class="note-athlete-box" style="margin-top:0; white-space: pre-wrap;">${latestSummary}</div>
 
               ${latest.coach_notes ? `
                 <div class="note-coach-box">🔴 Coach${coachDateStr}: ${escapeHtml(latest.coach_notes)}</div>
@@ -594,7 +608,6 @@ window.saveCoachNoteOnLog = async function(logId, clientId, clientName) {
     return;
   }
 
-  // Recupera le eventuali note del coach già presenti su questo log
   const { data: currentLog, error: fetchErr } = await supabaseClient
     .from('workout_logs')
     .select('coach_notes')
