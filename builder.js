@@ -762,7 +762,7 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   }
 });
 
-// Generazione PDF Stampabile con Circuiti evidenziati (compatibile iOS Safari)
+// Generazione PDF Stampabile con Circuiti evidenziati (compatibile Desktop e iOS Safari)
 document.getElementById("btnPdf").addEventListener("click", async () => {
   if (currentWorkout.length === 0) {
     alert("Inserisci almeno un esercizio prima di generare il PDF!");
@@ -878,9 +878,23 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
   const wrapper = document.getElementById("pdfPreviewWrapper");
   const element = document.getElementById("pdfSheet");
 
-  // Porta in primo piano per Safari iOS e attendi il rendering completo
+  // Salva lo scroll attuale e porta la pagina in alto a sinistra
+  const prevScrollX = window.scrollX;
+  const prevScrollY = window.scrollY;
+  window.scrollTo(0, 0);
+
+  // Ancora il wrapper esattamente all'origine (0,0) senza offset laterali
+  wrapper.style.setProperty("position", "fixed", "important");
+  wrapper.style.setProperty("top", "0px", "important");
   wrapper.style.setProperty("left", "0px", "important");
+  wrapper.style.setProperty("width", "740px", "important");
+  wrapper.style.setProperty("margin", "0", "important");
+  wrapper.style.setProperty("padding", "0", "important");
   wrapper.style.setProperty("z-index", "99999", "important");
+
+  element.style.setProperty("width", "740px", "important");
+  element.style.setProperty("max-width", "740px", "important");
+  element.style.setProperty("margin", "0", "important");
 
   await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 250)));
 
@@ -892,9 +906,11 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
       scale: 2,
       useCORS: true,
       allowTaint: true,
+      x: 0,
+      y: 0,
+      width: 740,
       scrollX: 0,
-      scrollY: 0,
-      windowWidth: 740
+      scrollY: 0
     },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
     pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.pdf-day-title', '.pdf-header', '.pdf-general-notes'] }
@@ -905,6 +921,7 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
   } finally {
     wrapper.style.setProperty("left", "-10000px", "important");
     wrapper.style.setProperty("z-index", "-1", "important");
+    window.scrollTo(prevScrollX, prevScrollY);
     btn.disabled = false;
     btn.textContent = "📄 Scarica PDF";
   }
