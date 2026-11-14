@@ -73,6 +73,66 @@ function getLocalDayKey(isoStr) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// Estrae il numero di serie prescritte dal coach (es. "4x8/10" -> 4, min 1, max 12)
+function parsePrescribedSetsCount(setsRepsStr) {
+  if (!setsRepsStr) return 1;
+  const match = String(setsRepsStr).trim().match(/^(\d+)\s*[xX×*]/);
+  if (match) {
+    const n = parseInt(match[1], 10);
+    if (n >= 1 && n <= 12) return n;
+  }
+  return 1;
+}
+
+// Decodifica la stringa delle serie salvate (es. "S1: 60kg × 10 (RIR 2) | S2: 62.5kg × 9")
+function parseSeriesBreakdown(log) {
+  if (!log) return [];
+  const raw = (log.reps_done || "").trim();
+
+  if (raw.includes("S1:")) {
+    return raw.split("|").map(part => {
+      const m = part.trim().match(/^S(\d+):\s*(?:([0-9.,]+)\s*kg)?\s*(?:×|x)?\s*([^(|]+?)?(?:\s*\(RIR\s*([0-9.,]+)\))?$/i);
+      if (!m) return null;
+      return {
+        setNum: parseInt(m[1], 10),
+        kg: m[2] ? m[2].replace(',', '.') : "",
+        reps: m[3] && m[3].trim() !== '-' ? m[3].trim() : "",
+        rir: m[4] ? m[4].replace(',', '.') : ""
+      };
+    }).filter(Boolean);
+  }
+
+  // Retrocompatibilità con log salvati prima del formato serie-per-serie
+  if (log.weight_kg !== null || (raw && raw !== '-') || log.rir !== null) {
+    return [{
+      setNum: 1,
+      kg: log.weight_kg !== null && log.weight_kg !== undefined ? String(log.weight_kg) : "",
+      reps: raw && raw !== '-' ? raw : "",
+      rir: log.rir !== null && log.rir !== undefined ? String(log.rir) : ""
+    }];
+  }
+
+  return [];
+}
+
+// Formatta il riepilogo di un log giornaliero (serie su righe separate + nota esercizio)
+function formatLogSummaryText(entry, dateStr) {
+  const rirFallback = (entry.rir !== null && entry.rir !== undefined) ? ` • RIR ${entry.rir}` : '';
+  const noteLine = entry.athlete_notes ? `\n📝 ${escapeHtml(entry.athlete_notes)}` : '';
+
+  if (entry.reps_done && entry.reps_done.includes("S1:")) {
+    const lines = entry.reps_done
+      .split("|")
+      .map(s => `• ${escapeHtml(s.trim())}`)
+      .join("\n");
+    return `🟢 ${dateStr}\n${lines}${noteLine}`;
+  }
+
+  const kgStr = (entry.weight_kg !== null && entry.weight_kg !== undefined) ? `${entry.weight_kg} kg` : '-';
+  const repsStr = escapeHtml(entry.reps_done || '-');
+  return `🟢 ${dateStr} — ${kgStr} × ${repsStr}${rirFallback}${noteLine}`;
+}
+
 // Unisce tutte le modifiche dello stesso giorno in un unico oggetto giornaliero con una sola data
 function consolidateLogsByDay(logs) {
   if (!logs || logs.length === 0) return [];
@@ -106,7 +166,7 @@ function consolidateLogsByDay(logs) {
       if (log.athlete_notes) {
         const clean = log.athlete_notes.trim();
         if (clean && !entry.notesList.includes(clean)) {
-          entry.notesList.unshift(clean); // ordine cronologico nella giornata
+          entry.notesList.unshift(clean);
         }
       }
       if (log.coach_notes) {
@@ -133,6 +193,8 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
 
   const dailyLogs = consolidateLogsByDay(rawLogs);
   const latestLog = dailyLogs.length > 0 ? dailyLogs[0] : null;
+  const setsCount = parsePrescribedSetsCount(row.sets_reps);
+  const parsedSeries = parseSeriesBreakdown(latestLog);
 
   let roleTag = "";
   if (row.circuit_role === "start") {
@@ -143,14 +205,25 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
     roleTag = `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 BLOCCO CIRCUITO</span>`;
   }
 
+  // Genera una riga di input (Kg, Reps, RIR) per ogni serie prescritta dal coach
+  let seriesRowsHtml = "";
+  for (let s = 1; s <= setsCount; s++) {
+    const prevSet = parsedSeries.find(item => item.setNum === s) || {};
+    seriesRowsHtml += `
+      <div class="athlete-inputs-row" style="align-items: center;">
+        <span style="font-size: 0.75rem; font-weight: 800; color: var(--primary); min-width: 26px; text-align: center;">S${s}</span>
+        <input type="number" step="0.5" placeholder="Kg" id="logKg_${row.id}_${s}" class="inp-kg" value="${escapeHtml(prevSet.kg || '')}" title="Serie ${s} - Carico (Kg)">
+        <input type="text" placeholder="Reps" id="logReps_${row.id}_${s}" class="inp-reps" value="${escapeHtml(prevSet.reps || '')}" title="Serie ${s} - Ripetizioni">
+        <input type="number" step="0.5" placeholder="RIR" id="logRir_${row.id}_${s}" class="inp-rir" value="${escapeHtml(prevSet.rir || '')}" title="Serie ${s} - RIR">
+      </div>
+    `;
+  }
+
   let latestBoxesHtml = `<div style="font-size: 0.74rem; color: var(--text-muted); margin-top: 2px;">Nessun carico ancora registrato</div>`;
 
   if (latestLog) {
     const dStr = formatShortDate(latestLog.logged_at);
-    const kgStr = latestLog.weight_kg !== null && latestLog.weight_kg !== undefined ? `${latestLog.weight_kg} kg` : '-';
-    const repsStr = escapeHtml(latestLog.reps_done || '-');
-    const rirStr = latestLog.rir !== null && latestLog.rir !== undefined ? ` • RIR ${latestLog.rir}` : '';
-    const noteLine = latestLog.athlete_notes ? `\n${escapeHtml(latestLog.athlete_notes)}` : '';
+    const mainSummary = formatLogSummaryText(latestLog, dStr);
 
     const coachDateStr = latestLog.coach_replied_at ? ` (${formatShortDate(latestLog.coach_replied_at)})` : '';
     const coachBoxHtml = latestLog.coach_notes
@@ -163,16 +236,14 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
         <div style="margin-top: 5px; display: flex; flex-direction: column; gap: 5px;">
           ${dailyLogs.slice(1).map(old => {
             const od = formatShortDate(old.logged_at);
-            const okg = old.weight_kg !== null && old.weight_kg !== undefined ? `${old.weight_kg} kg` : '-';
-            const orir = old.rir !== null && old.rir !== undefined ? ` • RIR ${old.rir}` : '';
-            const onote = old.athlete_notes ? `\n${escapeHtml(old.athlete_notes)}` : '';
+            const oldSummary = formatLogSummaryText(old, od);
             const ocd = old.coach_replied_at ? ` (${formatShortDate(old.coach_replied_at)})` : '';
             const ocoach = old.coach_notes
               ? `<div class="note-coach-box" style="margin-top:3px;">🔴 Coach${ocd}: ${escapeHtml(old.coach_notes)}</div>`
               : '';
             return `
               <div style="border-top: 1px dashed var(--border); padding-top: 4px;">
-                <div class="note-athlete-box" style="margin-top:0;">🟢 ${od} — ${okg} × ${escapeHtml(old.reps_done || '-')}${orir}${onote}</div>
+                <div class="note-athlete-box" style="margin-top:0; white-space: pre-wrap;">${oldSummary}</div>
                 ${ocoach}
               </div>
             `;
@@ -182,7 +253,7 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
     ` : "";
 
     latestBoxesHtml = `
-      <div class="note-athlete-box">🟢 ${dStr} — ${kgStr} × ${repsStr}${rirStr}${noteLine}</div>
+      <div class="note-athlete-box" style="white-space: pre-wrap;">${mainSummary}</div>
       ${coachBoxHtml}
       ${olderHtml}
     `;
@@ -206,15 +277,15 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
         </div>
       </div>
 
-      <!-- Barra Diario Carichi compatta + Riquadri Verde (Atleta) e Rosso (Coach) raggruppati per giorno -->
+      <!-- Log Serie per Serie + Nota unica per esercizio -->
       <div class="athlete-log-bar" style="flex-direction: column; align-items: stretch; gap: 6px;">
-        <div class="athlete-inputs-row">
-          <input type="number" step="0.5" placeholder="Kg" id="logKg_${row.id}" class="inp-kg" value="${latestLog?.weight_kg ?? ''}" title="Carico usato (Kg)">
-          <input type="text" placeholder="Reps (es. 10-9-8)" id="logReps_${row.id}" class="inp-reps" value="${latestLog?.reps_done && latestLog.reps_done !== '-' ? escapeHtml(latestLog.reps_done) : ''}" title="Ripetizioni eseguite">
-          <input type="number" step="0.5" placeholder="RIR" id="logRir_${row.id}" class="inp-rir" value="${latestLog?.rir ?? ''}" title="RIR percepito">
-          <button type="button" class="btn btn-success btn-sm" onclick="saveWorkoutLog('${row.id}')">Salva</button>
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+          ${seriesRowsHtml}
         </div>
-        <input type="text" id="logNote_${row.id}" placeholder="🟢 Scrivi una nota per la sessione di oggi (sensazioni, fatica, dolore)..." style="font-size: 0.78rem; padding: 6px 8px; border-color: rgba(16, 185, 129, 0.45);">
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <input type="text" id="logNote_${row.id}" placeholder="🟢 Note generali per questo esercizio..." style="flex: 1; font-size: 0.78rem; padding: 6px 8px; border-color: rgba(16, 185, 129, 0.45);">
+          <button type="button" class="btn btn-success btn-sm" style="width: auto; flex-shrink: 0;" onclick="saveWorkoutLog('${row.id}', ${setsCount})">Salva</button>
+        </div>
         ${latestBoxesHtml}
       </div>
     </div>
@@ -426,23 +497,55 @@ async function loadAthleteWorkout() {
   });
 }
 
-// Salva o aggiorna l'unico record di oggi per questo esercizio (tutte le modifiche dello stesso giorno in un unico messaggio)
-window.saveWorkoutLog = async function(workoutExerciseId) {
-  const kgVal = document.getElementById(`logKg_${workoutExerciseId}`).value;
-  const repsVal = document.getElementById(`logReps_${workoutExerciseId}`).value.trim();
-  const rirVal = document.getElementById(`logRir_${workoutExerciseId}`).value;
+// Salva o aggiorna tutte le serie inserite + nota esercizio in un unico record giornaliero
+window.saveWorkoutLog = async function(workoutExerciseId, setsCount = 1) {
+  const seriesParts = [];
+  let maxWeight = null;
+  let rirSum = 0;
+  let rirCount = 0;
+
+  for (let s = 1; s <= setsCount; s++) {
+    const kgEl = document.getElementById(`logKg_${workoutExerciseId}_${s}`);
+    const repsEl = document.getElementById(`logReps_${workoutExerciseId}_${s}`);
+    const rirEl = document.getElementById(`logRir_${workoutExerciseId}_${s}`);
+
+    const kgVal = kgEl ? kgEl.value.trim() : "";
+    const repsVal = repsEl ? repsEl.value.trim() : "";
+    const rirVal = rirEl ? rirEl.value.trim() : "";
+
+    if (kgVal || repsVal || rirVal) {
+      const kgNum = kgVal ? parseFloat(kgVal) : null;
+      const rirNum = rirVal ? parseFloat(rirVal) : null;
+
+      if (kgNum !== null && !isNaN(kgNum)) {
+        if (maxWeight === null || kgNum > maxWeight) maxWeight = kgNum;
+      }
+      if (rirNum !== null && !isNaN(rirNum)) {
+        rirSum += rirNum;
+        rirCount++;
+      }
+
+      const kgTxt = kgVal ? `${kgVal} kg` : "-";
+      const repsTxt = repsVal || "-";
+      const rirTxt = rirVal ? ` (RIR ${rirVal})` : "";
+      seriesParts.push(`S${s}: ${kgTxt} × ${repsTxt}${rirTxt}`);
+    }
+  }
+
   const noteVal = document.getElementById(`logNote_${workoutExerciseId}`).value.trim();
 
-  if (!kgVal && !repsVal && !noteVal) {
-    alert("Inserisci almeno il peso usato, le ripetizioni o una nota.");
+  if (seriesParts.length === 0 && !noteVal) {
+    alert("Compila almeno una serie (Kg, Reps o RIR) oppure inserisci una nota.");
     return;
   }
+
+  const formattedSeriesStr = seriesParts.length > 0 ? seriesParts.join(" | ") : null;
+  const avgRir = rirCount > 0 ? Math.round((rirSum / rirCount) * 10) / 10 : null;
 
   const now = new Date();
   const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0).toISOString();
   const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
 
-  // Cerca se esiste già un salvataggio nella giornata di oggi per questo esercizio
   const { data: todayLogs } = await supabaseClient
     .from('workout_logs')
     .select('*')
@@ -468,9 +571,9 @@ window.saveWorkoutLog = async function(workoutExerciseId) {
     const res = await supabaseClient
       .from('workout_logs')
       .update({
-        weight_kg: kgVal ? parseFloat(kgVal) : primaryLog.weight_kg,
-        reps_done: repsVal || primaryLog.reps_done || "-",
-        rir: rirVal ? parseFloat(rirVal) : primaryLog.rir,
+        weight_kg: maxWeight !== null ? maxWeight : primaryLog.weight_kg,
+        reps_done: formattedSeriesStr || primaryLog.reps_done || "-",
+        rir: avgRir !== null ? avgRir : primaryLog.rir,
         athlete_notes: existingNotes.length > 0 ? existingNotes.join("\n") : null,
         logged_at: now.toISOString(),
         trainer_seen_at: null,
@@ -485,9 +588,9 @@ window.saveWorkoutLog = async function(workoutExerciseId) {
       .insert({
         workout_exercise_id: workoutExerciseId,
         athlete_id: currentProfile.id,
-        weight_kg: kgVal ? parseFloat(kgVal) : null,
-        reps_done: repsVal || "-",
-        rir: rirVal ? parseFloat(rirVal) : null,
+        weight_kg: maxWeight,
+        reps_done: formattedSeriesStr || "-",
+        rir: avgRir,
         athlete_notes: noteVal || null,
         trainer_seen_at: null,
         athlete_seen_at: now.toISOString()
