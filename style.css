@@ -675,7 +675,14 @@ body:not(.light-theme) .note-coach-box {
 .pdf-table td { padding: 6px; border-bottom: 1px solid #cbd5e1; vertical-align: middle !important; word-wrap: break-word !important; overflow-wrap: break-word !important; }
 
 #pdfSheet th:nth-child(1),
-#pdfSheet td:nth-child(1) { width: 24px !important; text-align: center !important; }
+#pdfSheet td:nth-child(1) {
+  width: 34px !important;
+  min-width: 34px !important;
+  padding-left: 3px !important;
+  padding-right: 3px !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+}
 
 #pdfSheet th:nth-child(2),
 #pdfSheet td:nth-child(2) { width: 92px !important; max-width: 92px !important; text-align: center !important; }
