@@ -51,6 +51,12 @@ window.markTrainerNotificationSeen = async function(notifId) {
   await loadTrainerClients();
 };
 
+function getTrainerFirstName(fullName, fallback = "") {
+  if (!fullName) return fallback;
+  const parts = String(fullName).trim().split(/\s+/);
+  return parts[0] || fallback;
+}
+
 function getTrainerDayKey(isoStr) {
   if (!isoStr) return "";
   const d = new Date(isoStr);
@@ -83,8 +89,8 @@ function getOlderCoachPinkBoxStyle() {
 function buildTrainerCoachNoteHtml(entry, extraMarginTop = "") {
   if (!entry || !entry.coach_notes) return "";
   const isFresh = isFreshOrTodayCoachReply(entry);
-  const coachFullName = (currentProfile && currentProfile.full_name) ? currentProfile.full_name.trim() : "";
-  const coachLabel = coachFullName ? `Coach ${escapeHtml(coachFullName)}` : "Coach";
+  const coachFirstName = getTrainerFirstName(currentProfile && currentProfile.full_name, "");
+  const coachLabel = coachFirstName ? `Coach ${escapeHtml(coachFirstName)}` : "Coach";
   const coachDateStr = entry.coach_replied_at
     ? ` (${new Date(entry.coach_replied_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' })})`
     : '';
@@ -96,7 +102,7 @@ function buildTrainerCoachNoteHtml(entry, extraMarginTop = "") {
 }
 
 function formatTrainerLogSummaryHtml(entry, dateStr, athleteName = "Atleta") {
-  const safeName = escapeHtml((athleteName || "Atleta").trim());
+  const safeName = escapeHtml(getTrainerFirstName(athleteName, "Atleta"));
   const rirTxt = (entry.rir !== null && entry.rir !== undefined) ? ` • RIR/@: ${entry.rir}` : '';
   const athNoteLine = entry.athlete_notes ? `\n📝 ${escapeHtml(entry.athlete_notes)}` : '';
 
