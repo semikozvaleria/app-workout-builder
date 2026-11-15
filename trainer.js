@@ -57,7 +57,19 @@ function getTrainerDayKey(isoStr) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function formatTrainerLogSummaryText(entry, dateStr) {
+function isFreshOrTodayLog(entry) {
+  if (!entry) return false;
+  if (entry.hasUnseen) return true;
+  const todayKey = getTrainerDayKey(new Date().toISOString());
+  return getTrainerDayKey(entry.logged_at) === todayKey;
+}
+
+function getOlderYellowBoxStyle() {
+  return "background: rgba(245, 158, 11, 0.14); border: 1px solid rgba(245, 158, 11, 0.45); color: #f59e0b;";
+}
+
+function formatTrainerLogSummaryText(entry, dateStr, isFresh = true) {
+  const dotIcon = isFresh ? "🟢" : "🟡";
   const rirTxt = (entry.rir !== null && entry.rir !== undefined) ? ` • RIR/@: ${entry.rir}` : '';
   const athNoteLine = entry.athlete_notes ? `\n📝 ${escapeHtml(entry.athlete_notes)}` : '';
 
@@ -66,19 +78,21 @@ function formatTrainerLogSummaryText(entry, dateStr) {
       .split("|")
       .map(s => `• ${escapeHtml(s.trim())}`)
       .join("\n");
-    return `🟢 ${dateStr}\n${lines}${athNoteLine}`;
+    return `${dotIcon} ${dateStr}\n${lines}${athNoteLine}`;
   }
 
-  return `🟢 ${dateStr} — ${entry.weight_kg ?? '-'} kg × ${escapeHtml(entry.reps_done || '-')}${rirTxt}${athNoteLine}`;
+  return `${dotIcon} ${dateStr} — ${entry.weight_kg ?? '-'} kg × ${escapeHtml(entry.reps_done || '-')}${rirTxt}${athNoteLine}`;
 }
 
-function consolidateTrainerLogsByDay(logs) {
+function consolidateTrainerLogsByDay(logs, unseenIdsSet = new Set()) {
   if (!logs || logs.length === 0) return [];
   const sorted = [...logs].sort((a, b) => new Date(b.logged_at) - new Date(a.logged_at));
   const byDay = new Map();
 
   sorted.forEach(log => {
     const dayKey = getTrainerDayKey(log.logged_at);
+    const logIsUnseen = unseenIdsSet.has(log.id) || !log.trainer_seen_at;
+
     if (!byDay.has(dayKey)) {
       byDay.set(dayKey, {
         id: log.id,
@@ -86,12 +100,14 @@ function consolidateTrainerLogsByDay(logs) {
         weight_kg: log.weight_kg,
         reps_done: log.reps_done,
         rir: log.rir,
+        hasUnseen: logIsUnseen,
         notesList: log.athlete_notes ? [log.athlete_notes.trim()] : [],
         coachNotesList: log.coach_notes ? [log.coach_notes.trim()] : [],
         coach_replied_at: log.coach_replied_at
       });
     } else {
       const entry = byDay.get(dayKey);
+      if (logIsUnseen) entry.hasUnseen = true;
       if ((entry.weight_kg === null || entry.weight_kg === undefined) && log.weight_kg !== null && log.weight_kg !== undefined) {
         entry.weight_kg = log.weight_kg;
       }
@@ -540,41 +556,46 @@ window.viewClientProgress = async function(clientId, clientName) {
   const container = document.getElementById("progressLogsContainer");
   container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento scheda e riscontri atleta...</div>`;
 
-  await supabaseClient
-    .from('workout_logs')
-    .update({ trainer_seen_at: new Date().toISOString() })
-    .eq('athlete_id', clientId)
-    .is('trainer_seen_at', null);
-
-  loadTrainerClients();
-
-  const { data: workout } = await supabaseClient
-    .from('workouts')
-    .select('*')
-    .eq('trainer_id', currentProfile.id)
-    .eq('athlete_id', clientId)
-    .eq('status', 'active')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
-
-  if (!workout) {
-    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">Nessuna scheda attiva trovata per ${escapeHtml(clientName)}.</div>`;
-    return;
-  }
-
-  const [{ data: items }, { data: logs }] = await Promise.all([
+  const [{ data: workout }, { data: logs }] = await Promise.all([
     supabaseClient
-      .from('workout_exercises')
-      .select('*, exercises(*)')
-      .eq('workout_id', workout.id)
-      .order('order_index', { ascending: true }),
+      .from('workouts')
+      .select('*')
+      .eq('trainer_id', currentProfile.id)
+      .eq('athlete_id', clientId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single(),
     supabaseClient
       .from('workout_logs')
       .select('*')
       .eq('athlete_id', clientId)
       .order('logged_at', { ascending: false })
   ]);
+
+  // Memorizza quali log erano appena arrivati (non ancora visti) prima di marcarli letti
+  const unseenIdsSet = new Set((logs || []).filter(l => !l.trainer_seen_at).map(l => l.id));
+
+  if (unseenIdsSet.size > 0) {
+    await supabaseClient
+      .from('workout_logs')
+      .update({ trainer_seen_at: new Date().toISOString() })
+      .eq('athlete_id', clientId)
+      .is('trainer_seen_at', null);
+
+    loadTrainerClients();
+  }
+
+  if (!workout) {
+    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">Nessuna scheda attiva trovata per ${escapeHtml(clientName)}.</div>`;
+    return;
+  }
+
+  const { data: items } = await supabaseClient
+    .from('workout_exercises')
+    .select('*, exercises(*)')
+    .eq('workout_id', workout.id)
+    .order('order_index', { ascending: true });
 
   if (!items || items.length === 0) {
     container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">La scheda attiva non contiene esercizi.</div>`;
@@ -610,7 +631,7 @@ window.viewClientProgress = async function(clientId, clientName) {
         const start = ex ? ex.img_start : "";
         const end = ex ? (ex.img_end || ex.img_start) : "";
         const rawExLogs = (logs || []).filter(l => l.workout_exercise_id === row.id);
-        const dailyLogs = consolidateTrainerLogsByDay(rawExLogs);
+        const dailyLogs = consolidateTrainerLogsByDay(rawExLogs, unseenIdsSet);
         const latest = dailyLogs[0];
 
         let feedbackHtml = "";
@@ -621,8 +642,12 @@ window.viewClientProgress = async function(clientId, clientName) {
             </div>
           `;
         } else {
+          const latestFresh = isFreshOrTodayLog(latest);
           const latestDate = new Date(latest.logged_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' });
-          const latestSummary = formatTrainerLogSummaryText(latest, latestDate);
+          const latestSummary = formatTrainerLogSummaryText(latest, latestDate, latestFresh);
+          const latestBoxExtraStyle = latestFresh ? "margin-top:0; white-space: pre-wrap;" : `margin-top:0; white-space: pre-wrap; ${getOlderYellowBoxStyle()}`;
+          const outerBorderStyle = latestFresh ? "" : "border-left-color: #f59e0b;";
+
           const coachDateStr = latest.coach_replied_at
             ? ` (${new Date(latest.coach_replied_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' })})`
             : '';
@@ -632,13 +657,15 @@ window.viewClientProgress = async function(clientId, clientName) {
               <summary>Vedi giorni precedenti (${dailyLogs.length - 1})</summary>
               <div style="margin-top: 5px; display: flex; flex-direction: column; gap: 5px;">
                 ${dailyLogs.slice(1).map(old => {
+                  const oldFresh = isFreshOrTodayLog(old);
                   const d = new Date(old.logged_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' });
-                  const oldSummary = formatTrainerLogSummaryText(old, d);
+                  const oldSummary = formatTrainerLogSummaryText(old, d, oldFresh);
+                  const oldStyle = oldFresh ? "margin-top:0; white-space: pre-wrap;" : `margin-top:0; white-space: pre-wrap; ${getOlderYellowBoxStyle()}`;
                   const cd = old.coach_replied_at ? ` (${new Date(old.coach_replied_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' })})` : '';
                   const nCoach = old.coach_notes ? `<div class="note-coach-box" style="margin-top:3px; white-space: pre-wrap;">🔴 Coach${cd}: ${escapeHtml(old.coach_notes)}</div>` : '';
                   return `
                     <div style="border-top: 1px dashed var(--border); padding-top: 4px;">
-                      <div class="note-athlete-box" style="margin-top:0; white-space: pre-wrap;">${oldSummary}</div>
+                      <div class="note-athlete-box" style="${oldStyle}">${oldSummary}</div>
                       ${nCoach}
                     </div>
                   `;
@@ -648,8 +675,8 @@ window.viewClientProgress = async function(clientId, clientName) {
           ` : "";
 
           feedbackHtml = `
-            <div class="athlete-feedback-box">
-              <div class="note-athlete-box" style="margin-top:0; white-space: pre-wrap;">${latestSummary}</div>
+            <div class="athlete-feedback-box" style="${outerBorderStyle}">
+              <div class="note-athlete-box" style="${latestBoxExtraStyle}">${latestSummary}</div>
 
               ${latest.coach_notes ? `
                 <div class="note-coach-box" style="white-space: pre-wrap;">🔴 Coach${coachDateStr}: ${escapeHtml(latest.coach_notes)}</div>
