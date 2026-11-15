@@ -791,7 +791,7 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   }
 });
 
-// Helper condiviso per paginazione A4 anti-taglio righe su Desktop e iOS Safari
+// Helper condiviso per paginazione A4 anti-taglio righe e anti-orfani (Titoli e Banner Circuito)
 window.exportPaginatedWorkoutPdf = async function({
   athleteName,
   durationWeeks,
@@ -859,6 +859,7 @@ window.exportPaginatedWorkoutPdf = async function({
         inCircuit = true;
         const label = item.circuitLabel ? item.circuitLabel : "CIRCUITO";
         const bannerTr = document.createElement("tr");
+        bannerTr.dataset.keepWithNext = "true";
         bannerTr.innerHTML = `<td colspan="7" class="pdf-circuit-banner">🔄 INIZIO ${escapeHtml(label)}</td>`;
         tbody.appendChild(bannerTr);
       }
@@ -913,7 +914,6 @@ window.exportPaginatedWorkoutPdf = async function({
   const prevScrollY = window.scrollY;
   window.scrollTo(0, 0);
 
-  // Attende il caricamento completo delle immagini prima di calcolare le altezze
   const imgs = Array.from(clonedSheet.querySelectorAll("img"));
   await Promise.all(imgs.map(img => {
     if (img.complete) return Promise.resolve();
@@ -924,7 +924,6 @@ window.exportPaginatedWorkoutPdf = async function({
   }));
   await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 120)));
 
-  // Altezza esatta di una pagina A4 in pixel su larghezza 740px con margine 5mm (200mm largh. x 287mm alt. -> 740 * 287 / 200 = 1061.9px)
   const PAGE_HEIGHT_PX = 1054;
   const daySections = Array.from(clonedSheet.querySelectorAll(".pdf-day-section"));
 
@@ -938,19 +937,23 @@ window.exportPaginatedWorkoutPdf = async function({
     const allRows = Array.from(firstTable.querySelectorAll("tbody tr"));
     if (allRows.length === 0) return;
 
-    // 1. Verifica che Titolo Giorno + Thead + Prima riga stiano nella pagina corrente
+    // 1. Verifica che Titolo Giorno + Thead + Prima riga (e se è un banner, anche l'esercizio subito sotto) stiano nella pagina corrente
     const sheetTop = clonedSheet.getBoundingClientRect().top;
     const titleRect = titleEl.getBoundingClientRect();
-    const firstRowHeight = allRows[0].getBoundingClientRect().height;
-    const titleOffsetInPage = (titleRect.top - sheetTop) % PAGE_HEIGHT_PX;
-
-    if (titleOffsetInPage + titleRect.height + theadHeight + firstRowHeight > PAGE_HEIGHT_PX - 6) {
-      const gap = Math.ceil(PAGE_HEIGHT_PX - titleOffsetInPage);
-      titleEl.style.marginTop = `${gap}px`;
+    let initialBlockHeight = allRows[0].getBoundingClientRect().height;
+    if (allRows[0].dataset.keepWithNext === "true" && allRows[1]) {
+      initialBlockHeight += allRows[1].getBoundingClientRect().height;
     }
 
-    // 2. Scorre tutte le righe sequenzialmente: se una riga sfora la pagina corrente,
-    //    la sposta in una nuova tabella all'inizio esatto della pagina successiva
+    const titleOffsetInPage = (titleRect.top - sheetTop) % PAGE_HEIGHT_PX;
+    if (titleOffsetInPage + titleRect.height + theadHeight + initialBlockHeight > PAGE_HEIGHT_PX - 6) {
+      const gap = Math.ceil(PAGE_HEIGHT_PX - titleOffsetInPage);
+      const spacer = document.createElement("div");
+      spacer.style.cssText = `height: ${gap}px; width: 100%; background: #ffffff;`;
+      section.insertBefore(spacer, titleEl);
+    }
+
+    // 2. Scorre tutte le righe sequenzialmente evitando di spezzare righe o lasciare banner "INIZIO CIRCUITO/SUPERSET" orfani
     let activeTable = firstTable;
     let activeTbody = firstTable.querySelector("tbody");
 
@@ -963,17 +966,26 @@ window.exportPaginatedWorkoutPdf = async function({
       const currentSheetTop = clonedSheet.getBoundingClientRect().top;
       const trRect = tr.getBoundingClientRect();
       const topInPage = (trRect.top - currentSheetTop) % PAGE_HEIGHT_PX;
-      const bottomInPage = topInPage + trRect.height;
 
-      if (bottomInPage > PAGE_HEIGHT_PX - 6) {
+      let requiredHeight = trRect.height;
+      // Se è un banner "INIZIO CIRCUITO/SUPERSET", deve starci insieme all'esercizio successivo
+      if (tr.dataset.keepWithNext === "true" && allRows[i + 1]) {
+        requiredHeight += allRows[i + 1].getBoundingClientRect().height;
+      }
+
+      if (topInPage + requiredHeight > PAGE_HEIGHT_PX - 6) {
         const gapToNextPage = Math.ceil(PAGE_HEIGHT_PX - topInPage);
+
+        const pageSpacer = document.createElement("div");
+        pageSpacer.style.cssText = `height: ${gapToNextPage}px; width: 100%; background: #ffffff;`;
+        activeTable.parentNode.insertBefore(pageSpacer, activeTable.nextSibling);
 
         const nextTable = document.createElement("table");
         nextTable.className = "pdf-table";
-        nextTable.style.marginTop = `${gapToNextPage}px`;
+        nextTable.style.marginTop = "0";
         nextTable.innerHTML = `${theadHtml}<tbody></tbody>`;
 
-        activeTable.parentNode.insertBefore(nextTable, activeTable.nextSibling);
+        pageSpacer.parentNode.insertBefore(nextTable, pageSpacer.nextSibling);
         activeTable = nextTable;
         activeTbody = nextTable.querySelector("tbody");
         activeTbody.appendChild(tr);
