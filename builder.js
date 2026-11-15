@@ -19,6 +19,10 @@ if (exerciseSuggestions) {
   exerciseSuggestions.innerHTML = "";
 }
 
+function getSafeTrainerClients() {
+  return (typeof trainerClients !== "undefined" && Array.isArray(trainerClients)) ? trainerClients : [];
+}
+
 function hasOpenCircuitInDay(dayName) {
   const dayItems = currentWorkout.filter(item => item.day === dayName);
   let open = false;
@@ -129,8 +133,10 @@ async function loadTrainerDrafts() {
   card.classList.remove("hidden");
   countEl.textContent = `${drafts.length} ${drafts.length === 1 ? 'bozza' : 'bozze'}`;
 
+  const clientsList = getSafeTrainerClients();
+
   listEl.innerHTML = drafts.map(d => {
-    const client = trainerClients.find(c => c.id === d.athlete_id);
+    const client = clientsList.find(c => c.id === d.athlete_id);
     const labelName = client ? client.full_name : (d.title || "Bozza senza atleta");
     const exCount = d.workout_exercises?.[0]?.count ?? 0;
     const dateStr = new Date(d.created_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -152,57 +158,75 @@ async function loadTrainerDrafts() {
 }
 
 window.resumeDraft = async function(draftId) {
-  const { data: workout, error } = await supabaseClient
-    .from('workouts')
-    .select('*, workout_exercises(*, exercises(*))')
-    .eq('id', draftId)
-    .single();
+  try {
+    const { data: workout, error } = await supabaseClient
+      .from('workouts')
+      .select('*, workout_exercises(*, exercises(*))')
+      .eq('id', draftId)
+      .single();
 
-  if (error || !workout) {
-    alert("Errore nel caricamento della bozza.");
-    return;
+    if (error || !workout) {
+      alert("Errore nel caricamento della bozza: " + (error ? error.message : "non trovata"));
+      return;
+    }
+
+    if (typeof showTrainerView === "function") {
+      showTrainerView("trainerBuilderView");
+    }
+    currentDraftId = workout.id;
+    editingItemUid = null;
+
+    const selectEl = document.getElementById("builderAthleteSelect");
+    const loadBtn = document.getElementById("btnLoadExistingWorkout");
+    const clientsList = getSafeTrainerClients();
+
+    if (workout.athlete_id) {
+      if (selectEl) selectEl.value = workout.athlete_id;
+      const found = clientsList.find(c => c.id === workout.athlete_id);
+      let resolvedName = found ? found.full_name : "";
+      if (!resolvedName && selectEl && selectEl.selectedOptions && selectEl.selectedOptions[0]) {
+        resolvedName = selectEl.selectedOptions[0].textContent.split(" (")[0].trim();
+      }
+      if (!resolvedName && workout.title && workout.title !== "Bozza Scheda") {
+        resolvedName = workout.title;
+      }
+      document.getElementById("athleteName").value = resolvedName;
+      if (loadBtn) loadBtn.classList.remove("hidden");
+    } else {
+      if (selectEl) selectEl.value = "";
+      document.getElementById("athleteName").value = (workout.title && workout.title !== "Bozza Scheda") ? workout.title : "";
+      if (loadBtn) loadBtn.classList.add("hidden");
+    }
+
+    document.getElementById("durationWeeks").value = workout.duration_weeks || 4;
+    document.getElementById("generalNotes").value = workout.general_notes || "";
+
+    const sortedItems = (workout.workout_exercises || []).sort((a, b) => a.order_index - b.order_index);
+    currentWorkout = sortedItems.map((row, idx) => {
+      const exFromDb = row.exercises || (typeof EXERCISE_DB !== "undefined" ? EXERCISE_DB.find(e => e.id === row.exercise_id) : null);
+      return {
+        uid: Date.now() + idx,
+        id: row.exercise_id,
+        day: row.day_name,
+        name: exFromDb ? exFromDb.name : "Esercizio",
+        muscle: exFromDb ? exFromDb.muscle : "",
+        imgStart: exFromDb ? exFromDb.img_start : "",
+        imgEnd: exFromDb ? (exFromDb.img_end || exFromDb.img_start) : "",
+        setsReps: row.sets_reps,
+        rest: row.rest,
+        rir: row.rir,
+        notes: row.notes,
+        circuitRole: row.circuit_role || null,
+        circuitLabel: row.circuit_label || ""
+      };
+    });
+
+    renderList();
+    await loadTrainerDrafts();
+  } catch (err) {
+    console.error("Errore resumeDraft:", err);
+    alert("Impossibile riprendere la bozza: " + err.message);
   }
-
-  showTrainerView("trainerBuilderView");
-  currentDraftId = workout.id;
-  editingItemUid = null;
-
-  const selectEl = document.getElementById("builderAthleteSelect");
-  const loadBtn = document.getElementById("btnLoadExistingWorkout");
-
-  if (workout.athlete_id) {
-    selectEl.value = workout.athlete_id;
-    const found = trainerClients.find(c => c.id === workout.athlete_id);
-    document.getElementById("athleteName").value = found ? found.full_name : "";
-    loadBtn.classList.remove("hidden");
-  } else {
-    selectEl.value = "";
-    document.getElementById("athleteName").value = workout.title && workout.title !== "Bozza Scheda" ? workout.title : "";
-    loadBtn.classList.add("hidden");
-  }
-
-  document.getElementById("durationWeeks").value = workout.duration_weeks || 4;
-  document.getElementById("generalNotes").value = workout.general_notes || "";
-
-  const sortedItems = (workout.workout_exercises || []).sort((a, b) => a.order_index - b.order_index);
-  currentWorkout = sortedItems.map((row, idx) => ({
-    uid: Date.now() + idx,
-    id: row.exercise_id,
-    day: row.day_name,
-    name: row.exercises ? row.exercises.name : "Esercizio",
-    muscle: row.exercises ? row.exercises.muscle : "",
-    imgStart: row.exercises ? row.exercises.img_start : "",
-    imgEnd: row.exercises ? (row.exercises.img_end || row.exercises.img_start) : "",
-    setsReps: row.sets_reps,
-    rest: row.rest,
-    rir: row.rir,
-    notes: row.notes,
-    circuitRole: row.circuit_role || null,
-    circuitLabel: row.circuit_label || ""
-  }));
-
-  renderList();
-  loadTrainerDrafts();
 };
 
 window.deleteDraft = async function(draftId) {
@@ -309,7 +333,7 @@ document.getElementById("builderAthleteSelect").addEventListener("change", (e) =
   const athleteId = e.target.value;
   const loadBtn = document.getElementById("btnLoadExistingWorkout");
   if (athleteId) {
-    const found = trainerClients.find(c => c.id === athleteId);
+    const found = getSafeTrainerClients().find(c => c.id === athleteId);
     if (found) document.getElementById("athleteName").value = found.full_name;
     loadBtn.classList.remove("hidden");
   } else {
@@ -924,11 +948,8 @@ window.exportPaginatedWorkoutPdf = async function({
   }));
   await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 120)));
 
-  // Altezza reale stampabile di una pagina A4 (210x297mm con margin: 5mm -> 200x287mm)
-  // Su larghezza 740px: 740 * (287 / 200) = 1061.9px. Usiamo 1036px (25px margine sicurezza)
   const MAX_PAGE_HEIGHT = 1036;
 
-  // Misura esattamente l'altezza iniziale occupata su Pagina 1 (header + meta + note generali)
   const tablesTop = clonedSheet.querySelector("#pdfTablesContainer").getBoundingClientRect().top;
   const sheetTop = clonedSheet.getBoundingClientRect().top;
   let usedOnPage = Math.max(0, tablesTop - sheetTop);
@@ -950,7 +971,6 @@ window.exportPaginatedWorkoutPdf = async function({
     const titleMarginBottom = parseFloat(titleStyle.marginBottom) || 0;
     const titleTotalHeight = titleEl.getBoundingClientRect().height + titleMarginTop + titleMarginBottom;
 
-    // Altezza minima necessaria per iniziare il giorno (titolo + thead + 1° esercizio + eventuale banner)
     let firstBlockHeight = allRows[0].getBoundingClientRect().height;
     if (allRows[0].dataset.keepWithNext === "true" && allRows[1]) {
       firstBlockHeight += allRows[1].getBoundingClientRect().height;
@@ -996,7 +1016,6 @@ window.exportPaginatedWorkoutPdf = async function({
     }
   });
 
-  // Lascia spazio per il footer finale
   const footerEl = clonedSheet.querySelector(".pdf-footer");
   if (footerEl) {
     const footerHeight = footerEl.getBoundingClientRect().height + 16;
