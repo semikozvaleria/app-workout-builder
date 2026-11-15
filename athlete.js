@@ -78,7 +78,7 @@ function syncAthleteCleanViewButton() {
   }
 }
 
-// Export PDF A4 Centrato per l'Atleta
+// Export PDF A4 Centrato con paginazione anti-taglio righe per l'Atleta
 const btnAthletePdf = document.getElementById("btnAthleteDownloadPdf");
 if (btnAthletePdf) {
   btnAthletePdf.addEventListener("click", async () => {
@@ -96,149 +96,34 @@ if (btnAthletePdf) {
     const generalNotes = (workout.general_notes || "").trim();
     const coachDisplay = currentAthleteCoachName || "Coach";
 
-    document.getElementById("pdfAthlete").textContent = athleteName;
-    document.getElementById("pdfDuration").textContent = `${durationWeeks} Settimane`;
-    document.getElementById("pdfCount").textContent = items.length;
-    document.getElementById("pdfDate").textContent = new Date().toLocaleDateString('it-IT');
-    document.getElementById("pdfCoachTag").textContent = `COACH: ${coachDisplay.toUpperCase()}`;
-    document.getElementById("pdfFooterCoach").textContent = `Preparatore: ${coachDisplay}`;
-
-    const notesBox = document.getElementById("pdfGeneralNotesBox");
-    if (generalNotes) {
-      notesBox.style.display = "block";
-      document.getElementById("pdfGeneralNotesText").textContent = generalNotes;
-    } else {
-      notesBox.style.display = "none";
-    }
-
-    const tablesContainer = document.getElementById("pdfTablesContainer");
-    tablesContainer.innerHTML = "";
-
     const grouped = {};
-    items.forEach(item => {
-      if (!grouped[item.day_name]) grouped[item.day_name] = [];
-      grouped[item.day_name].push(item);
-    });
-
-    Object.keys(grouped).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(dayName => {
-      const dayTitle = document.createElement("div");
-      dayTitle.className = "pdf-day-title";
-      dayTitle.textContent = dayName;
-      tablesContainer.appendChild(dayTitle);
-
-      const table = document.createElement("table");
-      table.className = "pdf-table";
-      table.innerHTML = `
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Esecuzione</th>
-            <th>Esercizio</th>
-            <th>Serie/Reps</th>
-            <th>Rest</th>
-            <th>RIR / @</th>
-            <th>Note</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      `;
-
-      const tbody = table.querySelector("tbody");
-      let inCircuit = false;
-
-      grouped[dayName].forEach((row, index) => {
-        const ex = row.exercises;
-        const imgStart = ex ? ex.img_start : "";
-        const imgEnd = ex ? (ex.img_end || ex.img_start) : "";
-        const muscle = ex ? (ex.muscle || "") : "";
-        const exName = ex ? ex.name : "Esercizio";
-        const isSingle = imgStart === imgEnd;
-        const isCircuitStart = row.circuit_role === "start" || row.circuit_role === "single";
-        const isCircuitEnd = row.circuit_role === "end" || row.circuit_role === "single";
-
-        if (isCircuitStart) {
-          inCircuit = true;
-          const label = row.circuit_label ? row.circuit_label : "CIRCUITO";
-          const bannerTr = document.createElement("tr");
-          bannerTr.innerHTML = `<td colspan="7" class="pdf-circuit-banner">🔄 INIZIO ${escapeHtml(label)}</td>`;
-          tbody.appendChild(bannerTr);
-        }
-
-        const tr = document.createElement("tr");
-        if (inCircuit) tr.className = "pdf-circuit-row";
-
-        tr.innerHTML = `
-          <td><strong>${index + 1}</strong></td>
-          <td style="white-space: nowrap;">
-            ${imgStart ? (isSingle ? `
-              <img src="${imgStart}" class="pdf-thumb">
-            ` : `
-              <img src="${imgStart}" class="pdf-thumb">
-              <img src="${imgEnd}" class="pdf-thumb">
-            `) : '-'}
-          </td>
-          <td>
-            <strong>${escapeHtml(exName)}</strong><br>
-            <span style="font-size: 9px; color: #64748b;">${escapeHtml(muscle)}</span>
-          </td>
-          <td><strong>${escapeHtml(row.sets_reps)}</strong></td>
-          <td>${escapeHtml(row.rest)}</td>
-          <td>${escapeHtml(row.rir)}</td>
-          <td style="font-size: 9.5px; white-space: pre-wrap;">${escapeHtml(row.notes || "-")}</td>
-        `;
-        tbody.appendChild(tr);
-
-        if (isCircuitEnd && inCircuit) {
-          const endTr = document.createElement("tr");
-          endTr.innerHTML = `<td colspan="7" class="pdf-circuit-end">🏁 FINE CIRCUITO</td>`;
-          tbody.appendChild(endTr);
-          inCircuit = false;
-        }
+    items.forEach(row => {
+      if (!grouped[row.day_name]) grouped[row.day_name] = [];
+      const ex = row.exercises;
+      grouped[row.day_name].push({
+        name: ex ? ex.name : "Esercizio",
+        muscle: ex ? (ex.muscle || "") : "",
+        imgStart: ex ? ex.img_start : "",
+        imgEnd: ex ? (ex.img_end || ex.img_start) : "",
+        setsReps: row.sets_reps,
+        rest: row.rest,
+        rir: row.rir,
+        notes: row.notes || "-",
+        circuitRole: row.circuit_role,
+        circuitLabel: row.circuit_label
       });
-
-      tablesContainer.appendChild(table);
     });
-
-    const sourceSheet = document.getElementById("pdfSheet");
-
-    const printHost = document.createElement("div");
-    printHost.style.cssText = "position: absolute; top: 0; left: 0; width: 740px; margin: 0; padding: 0; background: #ffffff; z-index: 999999;";
-
-    const clonedSheet = sourceSheet.cloneNode(true);
-    clonedSheet.style.cssText = "width: 740px; max-width: 740px; margin: 0; box-sizing: border-box; background: #ffffff; color: #0f172a;";
-    printHost.appendChild(clonedSheet);
-    document.body.appendChild(printHost);
-
-    const prevScrollX = window.scrollX;
-    const prevScrollY = window.scrollY;
-    window.scrollTo(0, 0);
-
-    await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 250)));
-
-    const opt = {
-      margin: 5,
-      filename: `Scheda_${athleteName.replace(/\s+/g, '_')}.pdf`,
-      image: { type: 'jpeg', quality: 0.95 },
-      html2canvas: {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        x: 0,
-        y: 0,
-        width: 740,
-        scrollX: 0,
-        scrollY: 0,
-        windowWidth: 740
-      },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.pdf-day-title', '.pdf-header', '.pdf-general-notes'] }
-    };
 
     try {
-      await html2pdf().set(opt).from(clonedSheet).save();
+      await window.exportPaginatedWorkoutPdf({
+        athleteName,
+        durationWeeks,
+        generalNotes,
+        coachName: coachDisplay,
+        groupedDays: grouped,
+        fileName: `Scheda_${athleteName.replace(/\s+/g, '_')}.pdf`
+      });
     } finally {
-      document.body.removeChild(printHost);
-      window.scrollTo(prevScrollX, prevScrollY);
       btnAthletePdf.disabled = false;
       btnAthletePdf.textContent = "📄 Scarica PDF";
     }
@@ -438,7 +323,6 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
     roleTag = `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 BLOCCO CIRCUITO</span>`;
   }
 
-  // Modalità "Scheda Pulita": solo esercizi, foto, parametri e note tecniche del coach
   if (isAthleteCleanView) {
     return `
       <div class="exercise-item">
