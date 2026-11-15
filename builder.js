@@ -826,10 +826,10 @@ window.exportPaginatedWorkoutPdf = async function({
         <th style="width: 24px;">#</th>
         <th style="width: 112px;">Esecuzione</th>
         <th>Esercizio</th>
-        <th style="width: 72px;">Serie/Reps</th>
-        <th style="width: 52px;">Rest</th>
+        <th style="width: 82px;">Serie/Reps</th>
+        <th style="width: 50px;">Rest</th>
         <th style="width: 56px;">RIR / @</th>
-        <th style="width: 175px;">Note</th>
+        <th style="width: 170px;">Note</th>
       </tr>
     </thead>
   `;
@@ -859,13 +859,11 @@ window.exportPaginatedWorkoutPdf = async function({
         inCircuit = true;
         const label = item.circuitLabel ? item.circuitLabel : "CIRCUITO";
         const bannerTr = document.createElement("tr");
-        bannerTr.style.cssText = "break-inside: avoid; page-break-inside: avoid;";
         bannerTr.innerHTML = `<td colspan="7" class="pdf-circuit-banner">🔄 INIZIO ${escapeHtml(label)}</td>`;
         tbody.appendChild(bannerTr);
       }
 
       const tr = document.createElement("tr");
-      tr.style.cssText = "break-inside: avoid; page-break-inside: avoid;";
       if (inCircuit) tr.className = "pdf-circuit-row";
 
       tr.innerHTML = `
@@ -891,7 +889,6 @@ window.exportPaginatedWorkoutPdf = async function({
 
       if (isCircuitEnd && inCircuit) {
         const endTr = document.createElement("tr");
-        endTr.style.cssText = "break-inside: avoid; page-break-inside: avoid;";
         endTr.innerHTML = `<td colspan="7" class="pdf-circuit-end">🏁 FINE CIRCUITO</td>`;
         tbody.appendChild(endTr);
         inCircuit = false;
@@ -908,7 +905,7 @@ window.exportPaginatedWorkoutPdf = async function({
   printHost.style.cssText = "position: absolute; top: 0; left: 0; width: 740px; margin: 0; padding: 0; background: #ffffff; z-index: 999999;";
 
   const clonedSheet = sourceSheet.cloneNode(true);
-  clonedSheet.style.cssText = "width: 740px; max-width: 740px; margin: 0; box-sizing: border-box; background: #ffffff; color: #0f172a;";
+  clonedSheet.style.cssText = "width: 740px; max-width: 740px; margin: 0; padding: 0; box-sizing: border-box; background: #ffffff; color: #0f172a;";
   printHost.appendChild(clonedSheet);
   document.body.appendChild(printHost);
 
@@ -916,7 +913,7 @@ window.exportPaginatedWorkoutPdf = async function({
   const prevScrollY = window.scrollY;
   window.scrollTo(0, 0);
 
-  // Attende il caricamento completo delle immagini prima di calcolare le altezze riga
+  // Attende il caricamento completo delle immagini prima di calcolare le altezze
   const imgs = Array.from(clonedSheet.querySelectorAll("img"));
   await Promise.all(imgs.map(img => {
     if (img.complete) return Promise.resolve();
@@ -927,65 +924,61 @@ window.exportPaginatedWorkoutPdf = async function({
   }));
   await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 120)));
 
-  // Calcolo esatto dell'altezza utile di una pagina A4 (740px largh. -> ~1025px alt. utile con margine 5mm)
-  // Spezza in tabelle separate con ripetizione intestazione quando una riga sta per attraversare il bordo pagina
-  const PAGE_HEIGHT_PX = 1020;
-  const sheetRect = clonedSheet.getBoundingClientRect();
+  // Altezza esatta di una pagina A4 in pixel su larghezza 740px con margine 5mm (200mm largh. x 287mm alt. -> 740 * 287 / 200 = 1061.9px)
+  const PAGE_HEIGHT_PX = 1054;
   const daySections = Array.from(clonedSheet.querySelectorAll(".pdf-day-section"));
 
   daySections.forEach(section => {
     const titleEl = section.querySelector(".pdf-day-title");
-    const origTable = section.querySelector(".pdf-table");
-    if (!origTable) return;
+    const firstTable = section.querySelector(".pdf-table");
+    if (!firstTable || !titleEl) return;
 
-    const thead = origTable.querySelector("thead");
-    const theadHeight = thead ? thead.getBoundingClientRect().height : 28;
-    const rows = Array.from(origTable.querySelectorAll("tbody tr"));
-    if (rows.length === 0) return;
+    const theadEl = firstTable.querySelector("thead");
+    const theadHeight = theadEl ? theadEl.getBoundingClientRect().height : 26;
+    const allRows = Array.from(firstTable.querySelectorAll("tbody tr"));
+    if (allRows.length === 0) return;
 
-    // Se il titolo del giorno + thead + prima riga non entrano nello spazio residuo, sposta tutto il giorno a pagina nuova
+    // 1. Verifica che Titolo Giorno + Thead + Prima riga stiano nella pagina corrente
+    const sheetTop = clonedSheet.getBoundingClientRect().top;
     const titleRect = titleEl.getBoundingClientRect();
-    const firstRowHeight = rows[0].getBoundingClientRect().height;
-    const titleTopInPage = (titleRect.top - sheetRect.top) % PAGE_HEIGHT_PX;
-    if (titleTopInPage + titleRect.height + theadHeight + firstRowHeight > PAGE_HEIGHT_PX - 12) {
-      const pushDown = PAGE_HEIGHT_PX - titleTopInPage;
-      const spacer = document.createElement("div");
-      spacer.style.height = `${pushDown}px`;
-      section.insertBefore(spacer, titleEl);
+    const firstRowHeight = allRows[0].getBoundingClientRect().height;
+    const titleOffsetInPage = (titleRect.top - sheetTop) % PAGE_HEIGHT_PX;
+
+    if (titleOffsetInPage + titleRect.height + theadHeight + firstRowHeight > PAGE_HEIGHT_PX - 6) {
+      const gap = Math.ceil(PAGE_HEIGHT_PX - titleOffsetInPage);
+      titleEl.style.marginTop = `${gap}px`;
     }
 
-    // Controlla ogni singola riga: se sfora la pagina corrente, chiude la tabella e ne apre una nuova sulla pagina successiva
-    let currentTable = origTable;
-    let currentTbody = origTable.querySelector("tbody");
+    // 2. Scorre tutte le righe sequenzialmente: se una riga sfora la pagina corrente,
+    //    la sposta in una nuova tabella all'inizio esatto della pagina successiva
+    let activeTable = firstTable;
+    let activeTbody = firstTable.querySelector("tbody");
 
-    rows.forEach((tr, rIdx) => {
-      if (rIdx === 0) return;
+    for (let i = 1; i < allRows.length; i++) {
+      const tr = allRows[i];
+      if (tr.parentNode !== activeTbody) {
+        activeTbody.appendChild(tr);
+      }
+
+      const currentSheetTop = clonedSheet.getBoundingClientRect().top;
       const trRect = tr.getBoundingClientRect();
-      const topInPage = (trRect.top - sheetRect.top) % PAGE_HEIGHT_PX;
+      const topInPage = (trRect.top - currentSheetTop) % PAGE_HEIGHT_PX;
       const bottomInPage = topInPage + trRect.height;
 
-      if (bottomInPage > PAGE_HEIGHT_PX - 10) {
-        const pushDown = PAGE_HEIGHT_PX - topInPage;
-        const pageBreakSpacer = document.createElement("div");
-        pageBreakSpacer.style.height = `${pushDown}px`;
-        currentTable.parentNode.insertBefore(pageBreakSpacer, currentTable.nextSibling);
+      if (bottomInPage > PAGE_HEIGHT_PX - 6) {
+        const gapToNextPage = Math.ceil(PAGE_HEIGHT_PX - topInPage);
 
         const nextTable = document.createElement("table");
         nextTable.className = "pdf-table";
-        nextTable.style.marginTop = "0";
+        nextTable.style.marginTop = `${gapToNextPage}px`;
         nextTable.innerHTML = `${theadHtml}<tbody></tbody>`;
-        const nextTbody = nextTable.querySelector("tbody");
 
-        pageBreakSpacer.parentNode.insertBefore(nextTable, pageBreakSpacer.nextSibling);
-
-        // Sposta questa riga e le successive nella nuova tabella
-        nextTbody.appendChild(tr);
-        currentTable = nextTable;
-        currentTbody = nextTbody;
-      } else if (currentTbody !== tr.parentNode) {
-        currentTbody.appendChild(tr);
+        activeTable.parentNode.insertBefore(nextTable, activeTable.nextSibling);
+        activeTable = nextTable;
+        activeTbody = nextTable.querySelector("tbody");
+        activeTbody.appendChild(tr);
       }
-    });
+    }
   });
 
   await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 100)));
