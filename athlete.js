@@ -78,8 +78,32 @@ function isAthleteTodayLog(entry) {
   return getLocalDayKey(entry.logged_at) === todayKey;
 }
 
+function isFreshOrTodayCoachReplyForAthlete(entry) {
+  if (!entry || !entry.coach_notes) return false;
+  if (entry.hasUnseenCoachReply) return true;
+  if (!entry.coach_replied_at) return false;
+  const todayKey = getLocalDayKey(new Date().toISOString());
+  return getLocalDayKey(entry.coach_replied_at) === todayKey;
+}
+
 function getAthleteOlderYellowBoxStyle() {
   return "background: rgba(245, 158, 11, 0.14); border: 1px solid rgba(245, 158, 11, 0.45); color: #f59e0b;";
+}
+
+function getAthleteOlderCoachPinkBoxStyle() {
+  return "background: rgba(236, 72, 153, 0.14); border: 1px solid rgba(236, 72, 153, 0.45); color: #f472b6;";
+}
+
+function buildAthleteCoachNoteHtml(entry, extraMarginTop = "") {
+  if (!entry || !entry.coach_notes) return "";
+  const isFresh = isFreshOrTodayCoachReplyForAthlete(entry);
+  const dotIcon = isFresh ? "🔴" : "🩷";
+  const coachDateStr = entry.coach_replied_at ? ` (${formatShortDate(entry.coach_replied_at)})` : '';
+  const styleParts = ["white-space: pre-wrap;"];
+  if (extraMarginTop) styleParts.push(`margin-top: ${extraMarginTop};`);
+  if (!isFresh) styleParts.push(getAthleteOlderCoachPinkBoxStyle());
+
+  return `<div class="note-coach-box" style="${styleParts.join(" ")}">${dotIcon} Coach${coachDateStr}: ${escapeHtml(entry.coach_notes)}</div>`;
 }
 
 function parsePrescribedSetsCount(setsRepsStr) {
@@ -146,6 +170,8 @@ function consolidateLogsByDay(logs) {
 
   sorted.forEach(log => {
     const dayKey = getLocalDayKey(log.logged_at);
+    const coachReplyIsUnseen = Boolean(log.coach_notes && !log.athlete_seen_at);
+
     if (!byDay.has(dayKey)) {
       byDay.set(dayKey, {
         id: log.id,
@@ -153,12 +179,17 @@ function consolidateLogsByDay(logs) {
         weight_kg: log.weight_kg,
         reps_done: log.reps_done,
         rir: log.rir,
+        hasUnseenCoachReply: coachReplyIsUnseen,
         notesList: log.athlete_notes ? [log.athlete_notes.trim()] : [],
         coachNotesList: log.coach_notes ? [log.coach_notes.trim()] : [],
-        coach_replied_at: log.coach_replied_at
+        coach_replied_at: log.coach_replied_at || null
       });
     } else {
       const entry = byDay.get(dayKey);
+      if (coachReplyIsUnseen) entry.hasUnseenCoachReply = true;
+      if (log.coach_replied_at && (!entry.coach_replied_at || new Date(log.coach_replied_at) > new Date(entry.coach_replied_at))) {
+        entry.coach_replied_at = log.coach_replied_at;
+      }
       if ((entry.weight_kg === null || entry.weight_kg === undefined) && log.weight_kg !== null && log.weight_kg !== undefined) {
         entry.weight_kg = log.weight_kg;
       }
@@ -230,11 +261,7 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
     const dStr = formatShortDate(latestLog.logged_at);
     const mainSummary = formatLogSummaryText(latestLog, dStr, isToday);
     const mainBoxStyle = isToday ? "white-space: pre-wrap;" : `white-space: pre-wrap; ${getAthleteOlderYellowBoxStyle()}`;
-
-    const coachDateStr = latestLog.coach_replied_at ? ` (${formatShortDate(latestLog.coach_replied_at)})` : '';
-    const coachBoxHtml = latestLog.coach_notes
-      ? `<div class="note-coach-box" style="white-space: pre-wrap;">🔴 Coach${coachDateStr}: ${escapeHtml(latestLog.coach_notes)}</div>`
-      : "";
+    const coachBoxHtml = buildAthleteCoachNoteHtml(latestLog);
 
     const olderHtml = dailyLogs.length > 1 ? `
       <details class="past-logs-details" style="margin-top: 6px;">
@@ -245,10 +272,7 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
             const od = formatShortDate(old.logged_at);
             const oldSummary = formatLogSummaryText(old, od, oldToday);
             const oldStyle = oldToday ? "margin-top:0; white-space: pre-wrap;" : `margin-top:0; white-space: pre-wrap; ${getAthleteOlderYellowBoxStyle()}`;
-            const ocd = old.coach_replied_at ? ` (${formatShortDate(old.coach_replied_at)})` : '';
-            const ocoach = old.coach_notes
-              ? `<div class="note-coach-box" style="margin-top:3px; white-space: pre-wrap;">🔴 Coach${ocd}: ${escapeHtml(old.coach_notes)}</div>`
-              : '';
+            const ocoach = buildAthleteCoachNoteHtml(old, "3px");
             return `
               <div style="border-top: 1px dashed var(--border); padding-top: 4px;">
                 <div class="note-athlete-box" style="${oldStyle}">${oldSummary}</div>
