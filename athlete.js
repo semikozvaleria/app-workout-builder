@@ -1,3 +1,5 @@
+let currentAthleteCoachName = "";
+
 async function initAthleteArea() {
   if (!currentProfile.trainer_id) {
     document.getElementById("athleteLinkCoachCard").classList.remove("hidden");
@@ -97,13 +99,13 @@ function getAthleteOlderCoachPinkBoxStyle() {
 function buildAthleteCoachNoteHtml(entry, extraMarginTop = "") {
   if (!entry || !entry.coach_notes) return "";
   const isFresh = isFreshOrTodayCoachReplyForAthlete(entry);
-  const dotIcon = isFresh ? "🔴" : "🩷";
+  const coachLabel = currentAthleteCoachName ? `Coach ${escapeHtml(currentAthleteCoachName)}` : "Coach";
   const coachDateStr = entry.coach_replied_at ? ` (${formatShortDate(entry.coach_replied_at)})` : '';
   const styleParts = ["white-space: pre-wrap;"];
   if (extraMarginTop) styleParts.push(`margin-top: ${extraMarginTop};`);
   if (!isFresh) styleParts.push(getAthleteOlderCoachPinkBoxStyle());
 
-  return `<div class="note-coach-box" style="${styleParts.join(" ")}">${dotIcon} Coach${coachDateStr}: ${escapeHtml(entry.coach_notes)}</div>`;
+  return `<div class="note-coach-box" style="${styleParts.join(" ")}"><strong>${coachLabel}</strong>${coachDateStr}: ${escapeHtml(entry.coach_notes)}</div>`;
 }
 
 function parsePrescribedSetsCount(setsRepsStr) {
@@ -145,8 +147,9 @@ function parseSeriesBreakdown(log) {
   return [];
 }
 
-function formatLogSummaryText(entry, dateStr, isToday = true) {
-  const dotIcon = isToday ? "🟢" : "🟡";
+function formatLogSummaryHtml(entry, dateStr) {
+  const athleteFullName = (currentProfile && currentProfile.full_name) ? currentProfile.full_name.trim() : "Atleta";
+  const safeName = escapeHtml(athleteFullName);
   const rirFallback = (entry.rir !== null && entry.rir !== undefined) ? ` • RIR ${entry.rir}` : '';
   const noteLine = entry.athlete_notes ? `\n📝 ${escapeHtml(entry.athlete_notes)}` : '';
 
@@ -155,12 +158,12 @@ function formatLogSummaryText(entry, dateStr, isToday = true) {
       .split("|")
       .map(s => `• ${escapeHtml(s.trim())}`)
       .join("\n");
-    return `${dotIcon} ${dateStr}\n${lines}${noteLine}`;
+    return `<strong>${safeName}</strong> (${dateStr})\n${lines}${noteLine}`;
   }
 
   const kgStr = (entry.weight_kg !== null && entry.weight_kg !== undefined) ? `${entry.weight_kg} kg` : '-';
   const repsStr = escapeHtml(entry.reps_done || '-');
-  return `${dotIcon} ${dateStr} — ${kgStr} × ${repsStr}${rirFallback}${noteLine}`;
+  return `<strong>${safeName}</strong> (${dateStr}) — ${kgStr} × ${repsStr}${rirFallback}${noteLine}`;
 }
 
 function consolidateLogsByDay(logs) {
@@ -259,7 +262,7 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
   if (latestLog) {
     const isToday = isAthleteTodayLog(latestLog);
     const dStr = formatShortDate(latestLog.logged_at);
-    const mainSummary = formatLogSummaryText(latestLog, dStr, isToday);
+    const mainSummary = formatLogSummaryHtml(latestLog, dStr);
     const mainBoxStyle = isToday ? "white-space: pre-wrap;" : `white-space: pre-wrap; ${getAthleteOlderYellowBoxStyle()}`;
     const coachBoxHtml = buildAthleteCoachNoteHtml(latestLog);
 
@@ -270,7 +273,7 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
           ${dailyLogs.slice(1).map(old => {
             const oldToday = isAthleteTodayLog(old);
             const od = formatShortDate(old.logged_at);
-            const oldSummary = formatLogSummaryText(old, od, oldToday);
+            const oldSummary = formatLogSummaryHtml(old, od);
             const oldStyle = oldToday ? "margin-top:0; white-space: pre-wrap;" : `margin-top:0; white-space: pre-wrap; ${getAthleteOlderYellowBoxStyle()}`;
             const ocoach = buildAthleteCoachNoteHtml(old, "3px");
             return `
@@ -314,7 +317,7 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
           ${seriesRowsHtml}
         </div>
         <div style="display: flex; gap: 6px; align-items: flex-end;">
-          <textarea id="logNote_${row.id}" rows="2" placeholder="🟢 Note generali per questo esercizio..." style="flex: 1; min-height: 44px; font-size: 0.78rem; padding: 6px 8px; border-color: rgba(16, 185, 129, 0.45); resize: vertical;"></textarea>
+          <textarea id="logNote_${row.id}" rows="2" placeholder="Note generali per questo esercizio..." style="flex: 1; min-height: 44px; font-size: 0.78rem; padding: 6px 8px; border-color: rgba(16, 185, 129, 0.45); resize: vertical;"></textarea>
           <button type="button" class="btn btn-success btn-sm" style="width: auto; flex-shrink: 0; align-self: stretch;" onclick="saveWorkoutLog('${row.id}', ${setsCount})">Salva</button>
         </div>
         ${latestBoxesHtml}
@@ -331,6 +334,7 @@ async function loadAthleteWorkout() {
     .single();
 
   if (coach) {
+    currentAthleteCoachName = coach.full_name || "";
     document.getElementById("athleteCoachName").textContent = `Coach: ${coach.full_name}`;
     applyBrandLogo(coach.logo_url);
   }
@@ -416,14 +420,14 @@ async function loadAthleteWorkout() {
   if (hasNewWorkout || hasUnreadCoachComment) {
     let msg = "Il tuo coach ha aggiornato la tua scheda di allenamento.";
     if (hasNewWorkout && hasUnreadCoachComment) {
-      msg = "Hai una nuova scheda assegnata e nuove indicazioni in rosso dal tuo coach.";
+      msg = "Hai una nuova scheda assegnata e nuove indicazioni dal tuo coach.";
     } else if (hasUnreadCoachComment) {
-      msg = "Il tuo coach ha lasciato un commento in rosso sui tuoi esercizi.";
+      msg = "Il tuo coach ha lasciato un commento sui tuoi esercizi.";
     }
 
     athleteAlerts.unshift({
       level: "info",
-      title: "🔴 Novità dal tuo Coach",
+      title: "Novità dal tuo Coach",
       message: msg,
       actionHtml: `<button class="btn btn-primary btn-sm" onclick="markAthleteUpdatesAsSeen('${workout.id}')">Segna come letto</button>`
     });
