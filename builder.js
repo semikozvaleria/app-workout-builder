@@ -791,7 +791,7 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   }
 });
 
-// Helper condiviso per paginazione A4 anti-taglio righe e anti-orfani (Titoli e Banner Circuito)
+// Helper condiviso per paginazione A4 esplicita tramite html2pdf pagebreak (.pdf-page-break)
 window.exportPaginatedWorkoutPdf = async function({
   athleteName,
   durationWeeks,
@@ -924,7 +924,11 @@ window.exportPaginatedWorkoutPdf = async function({
   }));
   await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 120)));
 
-  const PAGE_HEIGHT_PX = 1054;
+  // Altezza conservativa della pagina A4 (995px su 740px di larghezza -> ~15px di margine di sicurezza
+  // rispetto ai 1012px reali di jsPDF con margin: 6mm, così nessuna riga tocca mai il taglio pagina)
+  const MAX_PAGE_CONTENT_PX = 995;
+  let currentPageStartY = clonedSheet.getBoundingClientRect().top;
+
   const daySections = Array.from(clonedSheet.querySelectorAll(".pdf-day-section"));
 
   daySections.forEach(section => {
@@ -937,23 +941,20 @@ window.exportPaginatedWorkoutPdf = async function({
     const allRows = Array.from(firstTable.querySelectorAll("tbody tr"));
     if (allRows.length === 0) return;
 
-    // 1. Verifica che Titolo Giorno + Thead + Prima riga (e se è un banner, anche l'esercizio subito sotto) stiano nella pagina corrente
-    const sheetTop = clonedSheet.getBoundingClientRect().top;
+    // 1. Verifica che Titolo Giorno + Thead + Prima riga (e banner se presente) entrino nella pagina corrente
     const titleRect = titleEl.getBoundingClientRect();
     let initialBlockHeight = allRows[0].getBoundingClientRect().height;
     if (allRows[0].dataset.keepWithNext === "true" && allRows[1]) {
       initialBlockHeight += allRows[1].getBoundingClientRect().height;
     }
 
-    const titleOffsetInPage = (titleRect.top - sheetTop) % PAGE_HEIGHT_PX;
-    if (titleOffsetInPage + titleRect.height + theadHeight + initialBlockHeight > PAGE_HEIGHT_PX - 6) {
-      const gap = Math.ceil(PAGE_HEIGHT_PX - titleOffsetInPage);
-      const spacer = document.createElement("div");
-      spacer.style.cssText = `height: ${gap}px; width: 100%; background: #ffffff;`;
-      section.insertBefore(spacer, titleEl);
+    const usedOnPageBeforeTitle = titleRect.top - currentPageStartY;
+    if (usedOnPageBeforeTitle > 40 && (usedOnPageBeforeTitle + titleRect.height + theadHeight + initialBlockHeight > MAX_PAGE_CONTENT_PX)) {
+      titleEl.classList.add("pdf-page-break");
+      currentPageStartY = titleEl.getBoundingClientRect().top;
     }
 
-    // 2. Scorre tutte le righe sequenzialmente evitando di spezzare righe o lasciare banner "INIZIO CIRCUITO/SUPERSET" orfani
+    // 2. Scorre ogni riga sequenzialmente e inserisce un page-break nativo CSS (.pdf-page-break) prima della riga che sforerebbe
     let activeTable = firstTable;
     let activeTbody = firstTable.querySelector("tbody");
 
@@ -963,32 +964,27 @@ window.exportPaginatedWorkoutPdf = async function({
         activeTbody.appendChild(tr);
       }
 
-      const currentSheetTop = clonedSheet.getBoundingClientRect().top;
       const trRect = tr.getBoundingClientRect();
-      const topInPage = (trRect.top - currentSheetTop) % PAGE_HEIGHT_PX;
+      const usedOnCurrentPage = trRect.top - currentPageStartY;
 
       let requiredHeight = trRect.height;
-      // Se è un banner "INIZIO CIRCUITO/SUPERSET", deve starci insieme all'esercizio successivo
       if (tr.dataset.keepWithNext === "true" && allRows[i + 1]) {
         requiredHeight += allRows[i + 1].getBoundingClientRect().height;
       }
 
-      if (topInPage + requiredHeight > PAGE_HEIGHT_PX - 6) {
-        const gapToNextPage = Math.ceil(PAGE_HEIGHT_PX - topInPage);
-
-        const pageSpacer = document.createElement("div");
-        pageSpacer.style.cssText = `height: ${gapToNextPage}px; width: 100%; background: #ffffff;`;
-        activeTable.parentNode.insertBefore(pageSpacer, activeTable.nextSibling);
-
+      if (usedOnCurrentPage > 60 && (usedOnCurrentPage + requiredHeight > MAX_PAGE_CONTENT_PX)) {
         const nextTable = document.createElement("table");
-        nextTable.className = "pdf-table";
+        nextTable.className = "pdf-table pdf-page-break";
         nextTable.style.marginTop = "0";
         nextTable.innerHTML = `${theadHtml}<tbody></tbody>`;
 
-        pageSpacer.parentNode.insertBefore(nextTable, pageSpacer.nextSibling);
+        activeTable.parentNode.insertBefore(nextTable, activeTable.nextSibling);
         activeTable = nextTable;
         activeTbody = nextTable.querySelector("tbody");
         activeTbody.appendChild(tr);
+
+        // La nuova pagina comincia esattamente dall'inizio di nextTable
+        currentPageStartY = nextTable.getBoundingClientRect().top;
       }
     }
   });
@@ -996,7 +992,7 @@ window.exportPaginatedWorkoutPdf = async function({
   await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 100)));
 
   const opt = {
-    margin: 5,
+    margin: 6,
     filename: fileName,
     image: { type: 'jpeg', quality: 0.95 },
     html2canvas: {
@@ -1010,7 +1006,8 @@ window.exportPaginatedWorkoutPdf = async function({
       scrollY: 0,
       windowWidth: 740
     },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    pagebreak: { mode: ['css'], before: '.pdf-page-break' }
   };
 
   try {
