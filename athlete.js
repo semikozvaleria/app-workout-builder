@@ -72,6 +72,16 @@ function getLocalDayKey(isoStr) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function isAthleteTodayLog(entry) {
+  if (!entry) return false;
+  const todayKey = getLocalDayKey(new Date().toISOString());
+  return getLocalDayKey(entry.logged_at) === todayKey;
+}
+
+function getAthleteOlderYellowBoxStyle() {
+  return "background: rgba(245, 158, 11, 0.14); border: 1px solid rgba(245, 158, 11, 0.45); color: #f59e0b;";
+}
+
 function parsePrescribedSetsCount(setsRepsStr) {
   if (!setsRepsStr) return 1;
   const match = String(setsRepsStr).trim().match(/^(\d+)\s*[xX×*]/);
@@ -111,7 +121,8 @@ function parseSeriesBreakdown(log) {
   return [];
 }
 
-function formatLogSummaryText(entry, dateStr) {
+function formatLogSummaryText(entry, dateStr, isToday = true) {
+  const dotIcon = isToday ? "🟢" : "🟡";
   const rirFallback = (entry.rir !== null && entry.rir !== undefined) ? ` • RIR ${entry.rir}` : '';
   const noteLine = entry.athlete_notes ? `\n📝 ${escapeHtml(entry.athlete_notes)}` : '';
 
@@ -120,12 +131,12 @@ function formatLogSummaryText(entry, dateStr) {
       .split("|")
       .map(s => `• ${escapeHtml(s.trim())}`)
       .join("\n");
-    return `🟢 ${dateStr}\n${lines}${noteLine}`;
+    return `${dotIcon} ${dateStr}\n${lines}${noteLine}`;
   }
 
   const kgStr = (entry.weight_kg !== null && entry.weight_kg !== undefined) ? `${entry.weight_kg} kg` : '-';
   const repsStr = escapeHtml(entry.reps_done || '-');
-  return `🟢 ${dateStr} — ${kgStr} × ${repsStr}${rirFallback}${noteLine}`;
+  return `${dotIcon} ${dateStr} — ${kgStr} × ${repsStr}${rirFallback}${noteLine}`;
 }
 
 function consolidateLogsByDay(logs) {
@@ -215,8 +226,10 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
   let latestBoxesHtml = `<div style="font-size: 0.74rem; color: var(--text-muted); margin-top: 2px;">Nessun carico ancora registrato</div>`;
 
   if (latestLog) {
+    const isToday = isAthleteTodayLog(latestLog);
     const dStr = formatShortDate(latestLog.logged_at);
-    const mainSummary = formatLogSummaryText(latestLog, dStr);
+    const mainSummary = formatLogSummaryText(latestLog, dStr, isToday);
+    const mainBoxStyle = isToday ? "white-space: pre-wrap;" : `white-space: pre-wrap; ${getAthleteOlderYellowBoxStyle()}`;
 
     const coachDateStr = latestLog.coach_replied_at ? ` (${formatShortDate(latestLog.coach_replied_at)})` : '';
     const coachBoxHtml = latestLog.coach_notes
@@ -228,15 +241,17 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
         <summary>Vedi giorni precedenti (${dailyLogs.length - 1})</summary>
         <div style="margin-top: 5px; display: flex; flex-direction: column; gap: 5px;">
           ${dailyLogs.slice(1).map(old => {
+            const oldToday = isAthleteTodayLog(old);
             const od = formatShortDate(old.logged_at);
-            const oldSummary = formatLogSummaryText(old, od);
+            const oldSummary = formatLogSummaryText(old, od, oldToday);
+            const oldStyle = oldToday ? "margin-top:0; white-space: pre-wrap;" : `margin-top:0; white-space: pre-wrap; ${getAthleteOlderYellowBoxStyle()}`;
             const ocd = old.coach_replied_at ? ` (${formatShortDate(old.coach_replied_at)})` : '';
             const ocoach = old.coach_notes
               ? `<div class="note-coach-box" style="margin-top:3px; white-space: pre-wrap;">🔴 Coach${ocd}: ${escapeHtml(old.coach_notes)}</div>`
               : '';
             return `
               <div style="border-top: 1px dashed var(--border); padding-top: 4px;">
-                <div class="note-athlete-box" style="margin-top:0; white-space: pre-wrap;">${oldSummary}</div>
+                <div class="note-athlete-box" style="${oldStyle}">${oldSummary}</div>
                 ${ocoach}
               </div>
             `;
@@ -246,7 +261,7 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
     ` : "";
 
     latestBoxesHtml = `
-      <div class="note-athlete-box" style="white-space: pre-wrap;">${mainSummary}</div>
+      <div class="note-athlete-box" style="${mainBoxStyle}">${mainSummary}</div>
       ${coachBoxHtml}
       ${olderHtml}
     `;
@@ -270,13 +285,12 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
         </div>
       </div>
 
-      <!-- Log Serie per Serie + Textarea Note multilinea per esercizio -->
       <div class="athlete-log-bar" style="flex-direction: column; align-items: stretch; gap: 6px;">
         <div style="display: flex; flex-direction: column; gap: 5px;">
           ${seriesRowsHtml}
         </div>
         <div style="display: flex; gap: 6px; align-items: flex-end;">
-          <textarea id="logNote_${row.id}" rows="2" placeholder="🟢 Note generali per questo esercizio" style="flex: 1; min-height: 44px; font-size: 0.78rem; padding: 6px 8px; border-color: rgba(16, 185, 129, 0.45); resize: vertical;"></textarea>
+          <textarea id="logNote_${row.id}" rows="2" placeholder="🟢 Note generali per questo esercizio..." style="flex: 1; min-height: 44px; font-size: 0.78rem; padding: 6px 8px; border-color: rgba(16, 185, 129, 0.45); resize: vertical;"></textarea>
           <button type="button" class="btn btn-success btn-sm" style="width: auto; flex-shrink: 0; align-self: stretch;" onclick="saveWorkoutLog('${row.id}', ${setsCount})">Salva</button>
         </div>
         ${latestBoxesHtml}
