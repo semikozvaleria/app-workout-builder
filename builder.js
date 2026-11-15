@@ -791,7 +791,7 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   }
 });
 
-// Helper condiviso per paginazione A4 esplicita tramite html2pdf pagebreak (.pdf-page-break)
+// Helper condiviso per paginazione A4 esplicita con tracciamento altezza reale per singola pagina
 window.exportPaginatedWorkoutPdf = async function({
   athleteName,
   durationWeeks,
@@ -924,10 +924,14 @@ window.exportPaginatedWorkoutPdf = async function({
   }));
   await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 120)));
 
-  // Altezza conservativa della pagina A4 (995px su 740px di larghezza -> ~15px di margine di sicurezza
-  // rispetto ai 1012px reali di jsPDF con margin: 6mm, così nessuna riga tocca mai il taglio pagina)
-  const MAX_PAGE_CONTENT_PX = 995;
-  let currentPageStartY = clonedSheet.getBoundingClientRect().top;
+  // Altezza reale stampabile di una pagina A4 (210x297mm con margin: 5mm -> 200x287mm)
+  // Su larghezza 740px: 740 * (287 / 200) = 1061.9px. Usiamo 1036px (25px margine sicurezza)
+  const MAX_PAGE_HEIGHT = 1036;
+
+  // Misura esattamente l'altezza iniziale occupata su Pagina 1 (header + meta + note generali)
+  const tablesTop = clonedSheet.querySelector("#pdfTablesContainer").getBoundingClientRect().top;
+  const sheetTop = clonedSheet.getBoundingClientRect().top;
+  let usedOnPage = Math.max(0, tablesTop - sheetTop);
 
   const daySections = Array.from(clonedSheet.querySelectorAll(".pdf-day-section"));
 
@@ -941,38 +945,40 @@ window.exportPaginatedWorkoutPdf = async function({
     const allRows = Array.from(firstTable.querySelectorAll("tbody tr"));
     if (allRows.length === 0) return;
 
-    // 1. Verifica che Titolo Giorno + Thead + Prima riga (e banner se presente) entrino nella pagina corrente
-    const titleRect = titleEl.getBoundingClientRect();
-    let initialBlockHeight = allRows[0].getBoundingClientRect().height;
+    const titleStyle = window.getComputedStyle(titleEl);
+    const titleMarginTop = parseFloat(titleStyle.marginTop) || 0;
+    const titleMarginBottom = parseFloat(titleStyle.marginBottom) || 0;
+    const titleTotalHeight = titleEl.getBoundingClientRect().height + titleMarginTop + titleMarginBottom;
+
+    // Altezza minima necessaria per iniziare il giorno (titolo + thead + 1° esercizio + eventuale banner)
+    let firstBlockHeight = allRows[0].getBoundingClientRect().height;
     if (allRows[0].dataset.keepWithNext === "true" && allRows[1]) {
-      initialBlockHeight += allRows[1].getBoundingClientRect().height;
+      firstBlockHeight += allRows[1].getBoundingClientRect().height;
     }
 
-    const usedOnPageBeforeTitle = titleRect.top - currentPageStartY;
-    if (usedOnPageBeforeTitle > 40 && (usedOnPageBeforeTitle + titleRect.height + theadHeight + initialBlockHeight > MAX_PAGE_CONTENT_PX)) {
+    if (usedOnPage > 40 && (usedOnPage + titleTotalHeight + theadHeight + firstBlockHeight > MAX_PAGE_HEIGHT)) {
       titleEl.classList.add("pdf-page-break");
-      currentPageStartY = titleEl.getBoundingClientRect().top;
+      usedOnPage = titleEl.getBoundingClientRect().height + titleMarginBottom + theadHeight;
+    } else {
+      usedOnPage += titleTotalHeight + theadHeight;
     }
 
-    // 2. Scorre ogni riga sequenzialmente e inserisce un page-break nativo CSS (.pdf-page-break) prima della riga che sforerebbe
     let activeTable = firstTable;
     let activeTbody = firstTable.querySelector("tbody");
 
-    for (let i = 1; i < allRows.length; i++) {
+    for (let i = 0; i < allRows.length; i++) {
       const tr = allRows[i];
       if (tr.parentNode !== activeTbody) {
         activeTbody.appendChild(tr);
       }
 
-      const trRect = tr.getBoundingClientRect();
-      const usedOnCurrentPage = trRect.top - currentPageStartY;
-
-      let requiredHeight = trRect.height;
+      const rowHeight = tr.getBoundingClientRect().height;
+      let neededHeight = rowHeight;
       if (tr.dataset.keepWithNext === "true" && allRows[i + 1]) {
-        requiredHeight += allRows[i + 1].getBoundingClientRect().height;
+        neededHeight += allRows[i + 1].getBoundingClientRect().height;
       }
 
-      if (usedOnCurrentPage > 60 && (usedOnCurrentPage + requiredHeight > MAX_PAGE_CONTENT_PX)) {
+      if (i > 0 && usedOnPage > 60 && (usedOnPage + neededHeight > MAX_PAGE_HEIGHT)) {
         const nextTable = document.createElement("table");
         nextTable.className = "pdf-table pdf-page-break";
         nextTable.style.marginTop = "0";
@@ -983,16 +989,26 @@ window.exportPaginatedWorkoutPdf = async function({
         activeTbody = nextTable.querySelector("tbody");
         activeTbody.appendChild(tr);
 
-        // La nuova pagina comincia esattamente dall'inizio di nextTable
-        currentPageStartY = nextTable.getBoundingClientRect().top;
+        usedOnPage = theadHeight + rowHeight;
+      } else {
+        usedOnPage += rowHeight;
       }
     }
   });
 
+  // Lascia spazio per il footer finale
+  const footerEl = clonedSheet.querySelector(".pdf-footer");
+  if (footerEl) {
+    const footerHeight = footerEl.getBoundingClientRect().height + 16;
+    if (usedOnPage + footerHeight > MAX_PAGE_HEIGHT) {
+      footerEl.classList.add("pdf-page-break");
+    }
+  }
+
   await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 100)));
 
   const opt = {
-    margin: 6,
+    margin: 5,
     filename: fileName,
     image: { type: 'jpeg', quality: 0.95 },
     html2canvas: {
