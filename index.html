@@ -387,6 +387,13 @@
           <span id="athleteCoachName" style="font-size: 0.78rem; color: var(--text-muted);"></span>
         </div>
         <div id="athleteWorkoutMeta" style="font-size: 0.8rem; color: var(--primary); margin-bottom: 10px;"></div>
+
+        <!-- Barra Azioni Rapide Atleta (Vista Pulita + PDF) -->
+        <div id="athleteWorkoutActionsBar" class="grid-2 hidden" style="margin-bottom: 12px;">
+          <button type="button" class="btn btn-outline btn-sm" id="btnToggleAthleteCleanView" style="width: 100%;">👁️ Scheda Pulita</button>
+          <button type="button" class="btn btn-outline btn-sm" id="btnAthleteDownloadPdf" style="width: 100%;">📄 Scarica PDF</button>
+        </div>
+
         <div id="athleteGeneralNotes" style="background: var(--notes-bg); color: var(--notes-text); border: 1px solid var(--border); padding: 10px; border-radius: 8px; font-size: 0.82rem; margin-bottom: 12px; white-space: pre-wrap;"></div>
         
         <div class="exercise-list" id="athleteExercisesContainer"></div>
