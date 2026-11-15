@@ -1,5 +1,11 @@
 let currentAthleteCoachName = "";
 
+function getAthleteFirstName(fullName, fallback = "") {
+  if (!fullName) return fallback;
+  const parts = String(fullName).trim().split(/\s+/);
+  return parts[0] || fallback;
+}
+
 async function initAthleteArea() {
   if (!currentProfile.trainer_id) {
     document.getElementById("athleteLinkCoachCard").classList.remove("hidden");
@@ -99,7 +105,8 @@ function getAthleteOlderCoachPinkBoxStyle() {
 function buildAthleteCoachNoteHtml(entry, extraMarginTop = "") {
   if (!entry || !entry.coach_notes) return "";
   const isFresh = isFreshOrTodayCoachReplyForAthlete(entry);
-  const coachLabel = currentAthleteCoachName ? `Coach ${escapeHtml(currentAthleteCoachName)}` : "Coach";
+  const coachFirstName = getAthleteFirstName(currentAthleteCoachName, "");
+  const coachLabel = coachFirstName ? `Coach ${escapeHtml(coachFirstName)}` : "Coach";
   const coachDateStr = entry.coach_replied_at ? ` (${formatShortDate(entry.coach_replied_at)})` : '';
   const styleParts = ["white-space: pre-wrap;"];
   if (extraMarginTop) styleParts.push(`margin-top: ${extraMarginTop};`);
@@ -148,8 +155,7 @@ function parseSeriesBreakdown(log) {
 }
 
 function formatLogSummaryHtml(entry, dateStr) {
-  const athleteFullName = (currentProfile && currentProfile.full_name) ? currentProfile.full_name.trim() : "Atleta";
-  const safeName = escapeHtml(athleteFullName);
+  const safeName = escapeHtml(getAthleteFirstName(currentProfile && currentProfile.full_name, "Atleta"));
   const rirFallback = (entry.rir !== null && entry.rir !== undefined) ? ` • RIR ${entry.rir}` : '';
   const noteLine = entry.athlete_notes ? `\n📝 ${escapeHtml(entry.athlete_notes)}` : '';
 
