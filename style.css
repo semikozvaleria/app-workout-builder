@@ -763,3 +763,23 @@ body:not(.light-theme) .note-coach-box {
   page-break-after: avoid !important;
 }
 
+/* Protezione extra anti-taglio righe nel PDF */
+.pdf-day-section {
+  display: block;
+}
+
+.pdf-table tr,
+.pdf-table td,
+.pdf-table th {
+  break-inside: avoid !important;
+  page-break-inside: avoid !important;
+}
+
+.pdf-day-title,
+.pdf-general-notes,
+.pdf-header {
+  break-inside: avoid !important;
+  page-break-inside: avoid !important;
+  break-after: avoid !important;
+  page-break-after: avoid !important;
+}
