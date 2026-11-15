@@ -17,6 +17,13 @@ function resetPasswordVisibility() {
 
 function resetUIOnSignOut() {
   currentProfile = null;
+  if (typeof trainerClients !== "undefined") trainerClients = [];
+  if (typeof trainerAnamnesisList !== "undefined") trainerAnamnesisList = [];
+  if (typeof currentWorkout !== "undefined") currentWorkout = [];
+  if (typeof currentDraftId !== "undefined") currentDraftId = null;
+  if (typeof editingItemUid !== "undefined") editingItemUid = null;
+  if (typeof currentAthleteWorkoutData !== "undefined") currentAthleteWorkoutData = null;
+
   resetPasswordVisibility();
   if (typeof applyBrandLogo === "function") applyBrandLogo(null);
   if (typeof updateTrainerLogoSettingsVisibility === "function") updateTrainerLogoSettingsVisibility();
@@ -127,8 +134,13 @@ btnAuthSubmit.addEventListener("click", async () => {
 });
 
 document.getElementById("btnLogout").addEventListener("click", async () => {
-  await supabaseClient.auth.signOut();
+  const btn = document.getElementById("btnLogout");
+  btn.disabled = true;
+  btn.textContent = "Uscita...";
+
+  await supabaseClient.auth.signOut().catch(() => {});
   resetUIOnSignOut();
+  window.location.reload();
 });
 
 // Eliminazione definitiva account (Atleta o Coach) con doppia conferma
@@ -165,6 +177,7 @@ document.getElementById("btnDeleteAccount").addEventListener("click", async () =
   await supabaseClient.auth.signOut().catch(() => {});
   resetUIOnSignOut();
   alert("✅ Il tuo account e tutti i dati associati sono stati eliminati definitivamente.");
+  window.location.reload();
 });
 
 async function checkSession() {
