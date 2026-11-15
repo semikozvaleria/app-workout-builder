@@ -83,7 +83,8 @@ function getOlderCoachPinkBoxStyle() {
 function buildTrainerCoachNoteHtml(entry, extraMarginTop = "") {
   if (!entry || !entry.coach_notes) return "";
   const isFresh = isFreshOrTodayCoachReply(entry);
-  const dotIcon = isFresh ? "🔴" : "🩷";
+  const coachFullName = (currentProfile && currentProfile.full_name) ? currentProfile.full_name.trim() : "";
+  const coachLabel = coachFullName ? `Coach ${escapeHtml(coachFullName)}` : "Coach";
   const coachDateStr = entry.coach_replied_at
     ? ` (${new Date(entry.coach_replied_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' })})`
     : '';
@@ -91,11 +92,11 @@ function buildTrainerCoachNoteHtml(entry, extraMarginTop = "") {
   if (extraMarginTop) styleParts.push(`margin-top: ${extraMarginTop};`);
   if (!isFresh) styleParts.push(getOlderCoachPinkBoxStyle());
 
-  return `<div class="note-coach-box" style="${styleParts.join(" ")}">${dotIcon} Coach${coachDateStr}: ${escapeHtml(entry.coach_notes)}</div>`;
+  return `<div class="note-coach-box" style="${styleParts.join(" ")}"><strong>${coachLabel}</strong>${coachDateStr}: ${escapeHtml(entry.coach_notes)}</div>`;
 }
 
-function formatTrainerLogSummaryText(entry, dateStr, isFresh = true) {
-  const dotIcon = isFresh ? "🟢" : "🟡";
+function formatTrainerLogSummaryHtml(entry, dateStr, athleteName = "Atleta") {
+  const safeName = escapeHtml((athleteName || "Atleta").trim());
   const rirTxt = (entry.rir !== null && entry.rir !== undefined) ? ` • RIR/@: ${entry.rir}` : '';
   const athNoteLine = entry.athlete_notes ? `\n📝 ${escapeHtml(entry.athlete_notes)}` : '';
 
@@ -104,10 +105,10 @@ function formatTrainerLogSummaryText(entry, dateStr, isFresh = true) {
       .split("|")
       .map(s => `• ${escapeHtml(s.trim())}`)
       .join("\n");
-    return `${dotIcon} ${dateStr}\n${lines}${athNoteLine}`;
+    return `<strong>${safeName}</strong> (${dateStr})\n${lines}${athNoteLine}`;
   }
 
-  return `${dotIcon} ${dateStr} — ${entry.weight_kg ?? '-'} kg × ${escapeHtml(entry.reps_done || '-')}${rirTxt}${athNoteLine}`;
+  return `<strong>${safeName}</strong> (${dateStr}) — ${entry.weight_kg ?? '-'} kg × ${escapeHtml(entry.reps_done || '-')}${rirTxt}${athNoteLine}`;
 }
 
 function consolidateTrainerLogsByDay(logs, unseenIdsSet = new Set()) {
@@ -276,7 +277,7 @@ async function loadTrainerClients() {
       const hasNotes = clientUnreadLogs.some(l => l.athlete_notes);
       coachAlerts.push({
         level: "info",
-        title: `🟢 Nuove modifiche da ${escapeHtml(client.full_name)}`,
+        title: `Nuove modifiche da ${escapeHtml(client.full_name)}`,
         message: `L'atleta ha aggiornato la scheda${hasNotes ? ' e inserito nuove note' : ''}.`,
         actionHtml: `<button class="btn btn-primary btn-sm" onclick="document.getElementById('notificationsSection').classList.add('hidden'); viewClientProgress('${client.id}', '${escapeHtml(client.full_name)}')">Apri e Segna Letto</button>`
       });
@@ -675,7 +676,7 @@ window.viewClientProgress = async function(clientId, clientName) {
         } else {
           const latestFresh = isFreshOrTodayLog(latest);
           const latestDate = new Date(latest.logged_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' });
-          const latestSummary = formatTrainerLogSummaryText(latest, latestDate, latestFresh);
+          const latestSummary = formatTrainerLogSummaryHtml(latest, latestDate, clientName);
           const latestBoxExtraStyle = latestFresh ? "margin-top:0; white-space: pre-wrap;" : `margin-top:0; white-space: pre-wrap; ${getOlderYellowBoxStyle()}`;
           const outerBorderStyle = latestFresh ? "" : "border-left-color: #f59e0b;";
           const latestCoachHtml = buildTrainerCoachNoteHtml(latest);
@@ -687,7 +688,7 @@ window.viewClientProgress = async function(clientId, clientName) {
                 ${dailyLogs.slice(1).map(old => {
                   const oldFresh = isFreshOrTodayLog(old);
                   const d = new Date(old.logged_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' });
-                  const oldSummary = formatTrainerLogSummaryText(old, d, oldFresh);
+                  const oldSummary = formatTrainerLogSummaryHtml(old, d, clientName);
                   const oldStyle = oldFresh ? "margin-top:0; white-space: pre-wrap;" : `margin-top:0; white-space: pre-wrap; ${getOlderYellowBoxStyle()}`;
                   const nCoach = buildTrainerCoachNoteHtml(old, "3px");
                   return `
@@ -708,7 +709,7 @@ window.viewClientProgress = async function(clientId, clientName) {
               ${latestCoachHtml}
 
               <div class="coach-reply-form" style="align-items: flex-end;">
-                <textarea id="coachReplyInput_${latest.id}" rows="2" placeholder="🔴 Aggiungi messaggio del coach..." style="flex: 1; min-height: 44px; font-size: 0.78rem; padding: 6px 8px; resize: vertical;"></textarea>
+                <textarea id="coachReplyInput_${latest.id}" rows="2" placeholder="Aggiungi messaggio del coach..." style="flex: 1; min-height: 44px; font-size: 0.78rem; padding: 6px 8px; resize: vertical;"></textarea>
                 <button type="button" class="btn btn-sm" style="background:#ef4444; color:#fff; width:auto; flex-shrink:0; align-self: stretch;" onclick="saveCoachNoteOnLog('${latest.id}', '${clientId}', '${escapeHtml(clientName)}')">Invia</button>
               </div>
 
