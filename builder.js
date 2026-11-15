@@ -650,7 +650,6 @@ function renderList() {
   });
 }
 
-// Apre/chiude il pannello di modifica inline con tutti i campi visibili insieme
 window.editItem = function(uid) {
   editingItemUid = (editingItemUid === uid) ? null : uid;
   renderList();
@@ -792,27 +791,23 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   }
 });
 
-// Generazione PDF Stampabile centrata su qualsiasi schermo (Desktop e iOS Safari)
-document.getElementById("btnPdf").addEventListener("click", async () => {
-  if (currentWorkout.length === 0) {
-    alert("Inserisci almeno un esercizio prima di generare il PDF!");
-    return;
-  }
-
-  const btn = document.getElementById("btnPdf");
-  btn.disabled = true;
-  btn.textContent = "⏳ Creazione PDF...";
-
-  const athleteName = document.getElementById("athleteName").value.trim() || "Atleta";
-  const durationWeeks = document.getElementById("durationWeeks").value || "4";
-  const generalNotes = document.getElementById("generalNotes").value.trim();
+// Helper condiviso per paginazione A4 anti-taglio righe su Desktop e iOS Safari
+window.exportPaginatedWorkoutPdf = async function({
+  athleteName,
+  durationWeeks,
+  generalNotes,
+  coachName,
+  groupedDays,
+  fileName
+}) {
+  const totalExercises = Object.values(groupedDays).reduce((acc, arr) => acc + arr.length, 0);
 
   document.getElementById("pdfAthlete").textContent = athleteName;
   document.getElementById("pdfDuration").textContent = `${durationWeeks} Settimane`;
-  document.getElementById("pdfCount").textContent = currentWorkout.length;
+  document.getElementById("pdfCount").textContent = totalExercises;
   document.getElementById("pdfDate").textContent = new Date().toLocaleDateString('it-IT');
-  document.getElementById("pdfCoachTag").textContent = currentProfile ? `COACH: ${currentProfile.full_name.toUpperCase()}` : "COACH";
-  document.getElementById("pdfFooterCoach").textContent = currentProfile ? `Preparatore: ${currentProfile.full_name}` : "Workout Builder";
+  document.getElementById("pdfCoachTag").textContent = coachName ? `COACH: ${coachName.toUpperCase()}` : "COACH";
+  document.getElementById("pdfFooterCoach").textContent = coachName ? `Preparatore: ${coachName}` : "Workout Builder";
 
   const notesBox = document.getElementById("pdfGeneralNotesBox");
   if (generalNotes) {
@@ -825,39 +820,37 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
   const tablesContainer = document.getElementById("pdfTablesContainer");
   tablesContainer.innerHTML = "";
 
-  const grouped = {};
-  currentWorkout.forEach(item => {
-    if (!grouped[item.day]) grouped[item.day] = [];
-    grouped[item.day].push(item);
-  });
+  const theadHtml = `
+    <thead>
+      <tr>
+        <th style="width: 24px;">#</th>
+        <th style="width: 112px;">Esecuzione</th>
+        <th>Esercizio</th>
+        <th style="width: 72px;">Serie/Reps</th>
+        <th style="width: 52px;">Rest</th>
+        <th style="width: 56px;">RIR / @</th>
+        <th style="width: 175px;">Note</th>
+      </tr>
+    </thead>
+  `;
 
-  Object.keys(grouped).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(dayName => {
+  Object.keys(groupedDays).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(dayName => {
+    const daySection = document.createElement("div");
+    daySection.className = "pdf-day-section";
+
     const dayTitle = document.createElement("div");
     dayTitle.className = "pdf-day-title";
     dayTitle.textContent = dayName;
-    tablesContainer.appendChild(dayTitle);
+    daySection.appendChild(dayTitle);
 
     const table = document.createElement("table");
     table.className = "pdf-table";
-    table.innerHTML = `
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Esecuzione</th>
-          <th>Esercizio</th>
-          <th>Serie/Reps</th>
-          <th>Rest</th>
-          <th>RIR / @</th>
-          <th>Note</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    `;
+    table.innerHTML = `${theadHtml}<tbody></tbody>`;
 
     const tbody = table.querySelector("tbody");
     let inCircuit = false;
 
-    grouped[dayName].forEach((item, index) => {
+    groupedDays[dayName].forEach((item, index) => {
       const isSingle = item.imgStart === item.imgEnd;
       const isCircuitStart = item.circuitRole === "start" || item.circuitRole === "single";
       const isCircuitEnd = item.circuitRole === "end" || item.circuitRole === "single";
@@ -866,43 +859,47 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
         inCircuit = true;
         const label = item.circuitLabel ? item.circuitLabel : "CIRCUITO";
         const bannerTr = document.createElement("tr");
+        bannerTr.style.cssText = "break-inside: avoid; page-break-inside: avoid;";
         bannerTr.innerHTML = `<td colspan="7" class="pdf-circuit-banner">🔄 INIZIO ${escapeHtml(label)}</td>`;
         tbody.appendChild(bannerTr);
       }
 
       const tr = document.createElement("tr");
+      tr.style.cssText = "break-inside: avoid; page-break-inside: avoid;";
       if (inCircuit) tr.className = "pdf-circuit-row";
 
       tr.innerHTML = `
         <td><strong>${index + 1}</strong></td>
         <td style="white-space: nowrap;">
-          ${isSingle ? `
+          ${item.imgStart ? (isSingle ? `
             <img src="${item.imgStart}" class="pdf-thumb">
           ` : `
             <img src="${item.imgStart}" class="pdf-thumb">
             <img src="${item.imgEnd}" class="pdf-thumb">
-          `}
+          `) : '-'}
         </td>
         <td>
           <strong>${escapeHtml(item.name)}</strong><br>
-          <span style="font-size: 9px; color: #64748b;">${escapeHtml(item.muscle)}</span>
+          <span style="font-size: 9px; color: #64748b;">${escapeHtml(item.muscle || "")}</span>
         </td>
-        <td><strong>${escapeHtml(item.setsReps)}</strong></td>
-        <td>${escapeHtml(item.rest)}</td>
-        <td>${escapeHtml(item.rir)}</td>
-        <td style="font-size: 9.5px; white-space: pre-wrap;">${escapeHtml(item.notes)}</td>
+        <td><strong>${escapeHtml(item.setsReps || "-")}</strong></td>
+        <td>${escapeHtml(item.rest || "-")}</td>
+        <td>${escapeHtml(item.rir || "-")}</td>
+        <td style="font-size: 9.5px; white-space: pre-wrap;">${escapeHtml(item.notes || "-")}</td>
       `;
       tbody.appendChild(tr);
 
       if (isCircuitEnd && inCircuit) {
         const endTr = document.createElement("tr");
+        endTr.style.cssText = "break-inside: avoid; page-break-inside: avoid;";
         endTr.innerHTML = `<td colspan="7" class="pdf-circuit-end">🏁 FINE CIRCUITO</td>`;
         tbody.appendChild(endTr);
         inCircuit = false;
       }
     });
 
-    tablesContainer.appendChild(table);
+    daySection.appendChild(table);
+    tablesContainer.appendChild(daySection);
   });
 
   const sourceSheet = document.getElementById("pdfSheet");
@@ -919,11 +916,83 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
   const prevScrollY = window.scrollY;
   window.scrollTo(0, 0);
 
-  await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 250)));
+  // Attende il caricamento completo delle immagini prima di calcolare le altezze riga
+  const imgs = Array.from(clonedSheet.querySelectorAll("img"));
+  await Promise.all(imgs.map(img => {
+    if (img.complete) return Promise.resolve();
+    return new Promise(res => {
+      img.onload = res;
+      img.onerror = res;
+    });
+  }));
+  await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 120)));
+
+  // Calcolo esatto dell'altezza utile di una pagina A4 (740px largh. -> ~1025px alt. utile con margine 5mm)
+  // Spezza in tabelle separate con ripetizione intestazione quando una riga sta per attraversare il bordo pagina
+  const PAGE_HEIGHT_PX = 1020;
+  const sheetRect = clonedSheet.getBoundingClientRect();
+  const daySections = Array.from(clonedSheet.querySelectorAll(".pdf-day-section"));
+
+  daySections.forEach(section => {
+    const titleEl = section.querySelector(".pdf-day-title");
+    const origTable = section.querySelector(".pdf-table");
+    if (!origTable) return;
+
+    const thead = origTable.querySelector("thead");
+    const theadHeight = thead ? thead.getBoundingClientRect().height : 28;
+    const rows = Array.from(origTable.querySelectorAll("tbody tr"));
+    if (rows.length === 0) return;
+
+    // Se il titolo del giorno + thead + prima riga non entrano nello spazio residuo, sposta tutto il giorno a pagina nuova
+    const titleRect = titleEl.getBoundingClientRect();
+    const firstRowHeight = rows[0].getBoundingClientRect().height;
+    const titleTopInPage = (titleRect.top - sheetRect.top) % PAGE_HEIGHT_PX;
+    if (titleTopInPage + titleRect.height + theadHeight + firstRowHeight > PAGE_HEIGHT_PX - 12) {
+      const pushDown = PAGE_HEIGHT_PX - titleTopInPage;
+      const spacer = document.createElement("div");
+      spacer.style.height = `${pushDown}px`;
+      section.insertBefore(spacer, titleEl);
+    }
+
+    // Controlla ogni singola riga: se sfora la pagina corrente, chiude la tabella e ne apre una nuova sulla pagina successiva
+    let currentTable = origTable;
+    let currentTbody = origTable.querySelector("tbody");
+
+    rows.forEach((tr, rIdx) => {
+      if (rIdx === 0) return;
+      const trRect = tr.getBoundingClientRect();
+      const topInPage = (trRect.top - sheetRect.top) % PAGE_HEIGHT_PX;
+      const bottomInPage = topInPage + trRect.height;
+
+      if (bottomInPage > PAGE_HEIGHT_PX - 10) {
+        const pushDown = PAGE_HEIGHT_PX - topInPage;
+        const pageBreakSpacer = document.createElement("div");
+        pageBreakSpacer.style.height = `${pushDown}px`;
+        currentTable.parentNode.insertBefore(pageBreakSpacer, currentTable.nextSibling);
+
+        const nextTable = document.createElement("table");
+        nextTable.className = "pdf-table";
+        nextTable.style.marginTop = "0";
+        nextTable.innerHTML = `${theadHtml}<tbody></tbody>`;
+        const nextTbody = nextTable.querySelector("tbody");
+
+        pageBreakSpacer.parentNode.insertBefore(nextTable, pageBreakSpacer.nextSibling);
+
+        // Sposta questa riga e le successive nella nuova tabella
+        nextTbody.appendChild(tr);
+        currentTable = nextTable;
+        currentTbody = nextTbody;
+      } else if (currentTbody !== tr.parentNode) {
+        currentTbody.appendChild(tr);
+      }
+    });
+  });
+
+  await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 100)));
 
   const opt = {
     margin: 5,
-    filename: `Scheda_${athleteName.replace(/\s+/g, '_')}.pdf`,
+    filename: fileName,
     image: { type: 'jpeg', quality: 0.95 },
     html2canvas: {
       scale: 2,
@@ -936,8 +1005,7 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
       scrollY: 0,
       windowWidth: 740
     },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-    pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.pdf-day-title', '.pdf-header', '.pdf-general-notes'] }
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
   };
 
   try {
@@ -945,6 +1013,51 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
   } finally {
     document.body.removeChild(printHost);
     window.scrollTo(prevScrollX, prevScrollY);
+  }
+};
+
+// Generazione PDF Stampabile centrata su qualsiasi schermo (Desktop e iOS Safari)
+document.getElementById("btnPdf").addEventListener("click", async () => {
+  if (currentWorkout.length === 0) {
+    alert("Inserisci almeno un esercizio prima di generare il PDF!");
+    return;
+  }
+
+  const btn = document.getElementById("btnPdf");
+  btn.disabled = true;
+  btn.textContent = "⏳ Creazione PDF...";
+
+  const athleteName = document.getElementById("athleteName").value.trim() || "Atleta";
+  const durationWeeks = document.getElementById("durationWeeks").value || "4";
+  const generalNotes = document.getElementById("generalNotes").value.trim();
+
+  const grouped = {};
+  currentWorkout.forEach(item => {
+    if (!grouped[item.day]) grouped[item.day] = [];
+    grouped[item.day].push({
+      name: item.name,
+      muscle: item.muscle,
+      imgStart: item.imgStart,
+      imgEnd: item.imgEnd,
+      setsReps: item.setsReps,
+      rest: item.rest,
+      rir: item.rir,
+      notes: item.notes,
+      circuitRole: item.circuitRole,
+      circuitLabel: item.circuitLabel
+    });
+  });
+
+  try {
+    await window.exportPaginatedWorkoutPdf({
+      athleteName,
+      durationWeeks,
+      generalNotes,
+      coachName: currentProfile ? currentProfile.full_name : "",
+      groupedDays: grouped,
+      fileName: `Scheda_${athleteName.replace(/\s+/g, '_')}.pdf`
+    });
+  } finally {
     btn.disabled = false;
     btn.textContent = "📄 Scarica PDF";
   }
