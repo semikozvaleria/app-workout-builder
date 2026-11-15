@@ -64,8 +64,34 @@ function isFreshOrTodayLog(entry) {
   return getTrainerDayKey(entry.logged_at) === todayKey;
 }
 
+function isFreshOrTodayCoachReply(entry) {
+  if (!entry || !entry.coach_notes) return false;
+  if (entry.hasUnseenCoachReply) return true;
+  if (!entry.coach_replied_at) return false;
+  const todayKey = getTrainerDayKey(new Date().toISOString());
+  return getTrainerDayKey(entry.coach_replied_at) === todayKey;
+}
+
 function getOlderYellowBoxStyle() {
   return "background: rgba(245, 158, 11, 0.14); border: 1px solid rgba(245, 158, 11, 0.45); color: #f59e0b;";
+}
+
+function getOlderCoachPinkBoxStyle() {
+  return "background: rgba(236, 72, 153, 0.14); border: 1px solid rgba(236, 72, 153, 0.45); color: #f472b6;";
+}
+
+function buildTrainerCoachNoteHtml(entry, extraMarginTop = "") {
+  if (!entry || !entry.coach_notes) return "";
+  const isFresh = isFreshOrTodayCoachReply(entry);
+  const dotIcon = isFresh ? "🔴" : "🩷";
+  const coachDateStr = entry.coach_replied_at
+    ? ` (${new Date(entry.coach_replied_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' })})`
+    : '';
+  const styleParts = ["white-space: pre-wrap;"];
+  if (extraMarginTop) styleParts.push(`margin-top: ${extraMarginTop};`);
+  if (!isFresh) styleParts.push(getOlderCoachPinkBoxStyle());
+
+  return `<div class="note-coach-box" style="${styleParts.join(" ")}">${dotIcon} Coach${coachDateStr}: ${escapeHtml(entry.coach_notes)}</div>`;
 }
 
 function formatTrainerLogSummaryText(entry, dateStr, isFresh = true) {
@@ -92,6 +118,7 @@ function consolidateTrainerLogsByDay(logs, unseenIdsSet = new Set()) {
   sorted.forEach(log => {
     const dayKey = getTrainerDayKey(log.logged_at);
     const logIsUnseen = unseenIdsSet.has(log.id) || !log.trainer_seen_at;
+    const coachReplyIsUnseen = Boolean(log.coach_notes && !log.athlete_seen_at);
 
     if (!byDay.has(dayKey)) {
       byDay.set(dayKey, {
@@ -101,13 +128,18 @@ function consolidateTrainerLogsByDay(logs, unseenIdsSet = new Set()) {
         reps_done: log.reps_done,
         rir: log.rir,
         hasUnseen: logIsUnseen,
+        hasUnseenCoachReply: coachReplyIsUnseen,
         notesList: log.athlete_notes ? [log.athlete_notes.trim()] : [],
         coachNotesList: log.coach_notes ? [log.coach_notes.trim()] : [],
-        coach_replied_at: log.coach_replied_at
+        coach_replied_at: log.coach_replied_at || null
       });
     } else {
       const entry = byDay.get(dayKey);
       if (logIsUnseen) entry.hasUnseen = true;
+      if (coachReplyIsUnseen) entry.hasUnseenCoachReply = true;
+      if (log.coach_replied_at && (!entry.coach_replied_at || new Date(log.coach_replied_at) > new Date(entry.coach_replied_at))) {
+        entry.coach_replied_at = log.coach_replied_at;
+      }
       if ((entry.weight_kg === null || entry.weight_kg === undefined) && log.weight_kg !== null && log.weight_kg !== undefined) {
         entry.weight_kg = log.weight_kg;
       }
@@ -573,7 +605,6 @@ window.viewClientProgress = async function(clientId, clientName) {
       .order('logged_at', { ascending: false })
   ]);
 
-  // Memorizza quali log erano appena arrivati (non ancora visti) prima di marcarli letti
   const unseenIdsSet = new Set((logs || []).filter(l => !l.trainer_seen_at).map(l => l.id));
 
   if (unseenIdsSet.size > 0) {
@@ -647,10 +678,7 @@ window.viewClientProgress = async function(clientId, clientName) {
           const latestSummary = formatTrainerLogSummaryText(latest, latestDate, latestFresh);
           const latestBoxExtraStyle = latestFresh ? "margin-top:0; white-space: pre-wrap;" : `margin-top:0; white-space: pre-wrap; ${getOlderYellowBoxStyle()}`;
           const outerBorderStyle = latestFresh ? "" : "border-left-color: #f59e0b;";
-
-          const coachDateStr = latest.coach_replied_at
-            ? ` (${new Date(latest.coach_replied_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' })})`
-            : '';
+          const latestCoachHtml = buildTrainerCoachNoteHtml(latest);
 
           const olderHtml = dailyLogs.length > 1 ? `
             <details class="past-logs-details">
@@ -661,8 +689,7 @@ window.viewClientProgress = async function(clientId, clientName) {
                   const d = new Date(old.logged_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' });
                   const oldSummary = formatTrainerLogSummaryText(old, d, oldFresh);
                   const oldStyle = oldFresh ? "margin-top:0; white-space: pre-wrap;" : `margin-top:0; white-space: pre-wrap; ${getOlderYellowBoxStyle()}`;
-                  const cd = old.coach_replied_at ? ` (${new Date(old.coach_replied_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' })})` : '';
-                  const nCoach = old.coach_notes ? `<div class="note-coach-box" style="margin-top:3px; white-space: pre-wrap;">🔴 Coach${cd}: ${escapeHtml(old.coach_notes)}</div>` : '';
+                  const nCoach = buildTrainerCoachNoteHtml(old, "3px");
                   return `
                     <div style="border-top: 1px dashed var(--border); padding-top: 4px;">
                       <div class="note-athlete-box" style="${oldStyle}">${oldSummary}</div>
@@ -678,9 +705,7 @@ window.viewClientProgress = async function(clientId, clientName) {
             <div class="athlete-feedback-box" style="${outerBorderStyle}">
               <div class="note-athlete-box" style="${latestBoxExtraStyle}">${latestSummary}</div>
 
-              ${latest.coach_notes ? `
-                <div class="note-coach-box" style="white-space: pre-wrap;">🔴 Coach${coachDateStr}: ${escapeHtml(latest.coach_notes)}</div>
-              ` : ''}
+              ${latestCoachHtml}
 
               <div class="coach-reply-form" style="align-items: flex-end;">
                 <textarea id="coachReplyInput_${latest.id}" rows="2" placeholder="🔴 Aggiungi messaggio del coach..." style="flex: 1; min-height: 44px; font-size: 0.78rem; padding: 6px 8px; resize: vertical;"></textarea>
