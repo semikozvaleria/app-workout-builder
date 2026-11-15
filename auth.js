@@ -15,6 +15,26 @@ function resetPasswordVisibility() {
   if (iconClosed) iconClosed.classList.add("hidden");
 }
 
+function resetUIOnSignOut() {
+  currentProfile = null;
+  resetPasswordVisibility();
+  if (typeof applyBrandLogo === "function") applyBrandLogo(null);
+  if (typeof updateTrainerLogoSettingsVisibility === "function") updateTrainerLogoSettingsVisibility();
+
+  const deleteBox = document.getElementById("deleteAccountSettingsBox");
+  if (deleteBox) deleteBox.classList.add("hidden");
+
+  document.getElementById("settingsSection").classList.add("hidden");
+  document.getElementById("authSection").classList.remove("hidden");
+  document.getElementById("trainerSection").classList.add("hidden");
+  document.getElementById("athleteSection").classList.add("hidden");
+  document.getElementById("btnLogout").classList.add("hidden");
+  document.getElementById("btnOpenNotifications").classList.add("hidden");
+  document.getElementById("notifCountBadge").classList.add("hidden");
+  document.getElementById("notificationsSection").classList.add("hidden");
+  document.getElementById("userRoleBadge").textContent = "Cloud Coaching System";
+}
+
 document.getElementById("btnTogglePassword").addEventListener("click", () => {
   const pwdInput = document.getElementById("authPassword");
   const iconOpen = document.getElementById("iconEyeOpen");
@@ -108,18 +128,43 @@ btnAuthSubmit.addEventListener("click", async () => {
 
 document.getElementById("btnLogout").addEventListener("click", async () => {
   await supabaseClient.auth.signOut();
-  currentProfile = null;
-  resetPasswordVisibility();
-  if (typeof applyBrandLogo === "function") applyBrandLogo(null);
-  if (typeof updateTrainerLogoSettingsVisibility === "function") updateTrainerLogoSettingsVisibility();
-  document.getElementById("authSection").classList.remove("hidden");
-  document.getElementById("trainerSection").classList.add("hidden");
-  document.getElementById("athleteSection").classList.add("hidden");
-  document.getElementById("btnLogout").classList.add("hidden");
-  document.getElementById("btnOpenNotifications").classList.add("hidden");
-  document.getElementById("notifCountBadge").classList.add("hidden");
-  document.getElementById("notificationsSection").classList.add("hidden");
-  document.getElementById("userRoleBadge").textContent = "Cloud Coaching System";
+  resetUIOnSignOut();
+});
+
+// Eliminazione definitiva account (Atleta o Coach) con doppia conferma
+document.getElementById("btnDeleteAccount").addEventListener("click", async () => {
+  if (!currentProfile) return;
+
+  const isTrainer = currentProfile.role === 'trainer';
+  const warningMsg = isTrainer
+    ? "⚠️ ATTENZIONE: Stai per eliminare definitivamente il tuo account Personal Trainer.\n\nVerranno cancellati in modo irreversibile:\n- Il tuo profilo e il tuo logo\n- Tutte le schede e le bozze create\n- Il collegamento con i tuoi atleti\n\nVuoi procedere?"
+    : "⚠️ ATTENZIONE: Stai per eliminare definitivamente il tuo account Atleta.\n\nVerranno cancellati in modo irreversibile:\n- Il tuo profilo\n- Tutte le tue schede e lo storico dei carichi\n\nVuoi procedere?";
+
+  if (!confirm(warningMsg)) return;
+
+  const typed = prompt('Per confermare definitivamente, scrivi ELIMINA in maiuscolo:');
+  if (typed !== "ELIMINA") {
+    alert("Eliminazione annullata.");
+    return;
+  }
+
+  const btn = document.getElementById("btnDeleteAccount");
+  btn.disabled = true;
+  btn.textContent = "Eliminazione...";
+
+  const { error } = await supabaseClient.rpc('delete_own_account');
+
+  btn.disabled = false;
+  btn.textContent = "🗑️ Elimina Account";
+
+  if (error) {
+    alert("Errore durante l'eliminazione dell'account: " + error.message);
+    return;
+  }
+
+  await supabaseClient.auth.signOut().catch(() => {});
+  resetUIOnSignOut();
+  alert("✅ Il tuo account e tutti i dati associati sono stati eliminati definitivamente.");
 });
 
 async function checkSession() {
@@ -139,6 +184,9 @@ async function checkSession() {
   document.getElementById("authSection").classList.add("hidden");
   document.getElementById("btnLogout").classList.remove("hidden");
   document.getElementById("btnOpenNotifications").classList.remove("hidden");
+
+  const deleteBox = document.getElementById("deleteAccountSettingsBox");
+  if (deleteBox) deleteBox.classList.remove("hidden");
 
   if (typeof updateTrainerLogoSettingsVisibility === "function") {
     updateTrainerLogoSettingsVisibility();

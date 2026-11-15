@@ -8,10 +8,10 @@ const chkCircuitEnd = document.getElementById("chkCircuitEnd");
 const circuitLabelWrap = document.getElementById("circuitLabelWrap");
 const inCircuitLabel = document.getElementById("inCircuitLabel");
 
-let currentDraftId = null; // Tiene traccia se stiamo modificando una bozza salvata
+let currentDraftId = null;
+let editingItemUid = null;
 let searchDebounceTimer = null;
 
-// Disattiva il datalist nativo che manda in freeze iOS Safari durante la digitazione
 if (exerciseSearch) {
   exerciseSearch.removeAttribute("list");
 }
@@ -19,7 +19,6 @@ if (exerciseSuggestions) {
   exerciseSuggestions.innerHTML = "";
 }
 
-// Verifica se nel giorno selezionato c'è attualmente un circuito aperto
 function hasOpenCircuitInDay(dayName) {
   const dayItems = currentWorkout.filter(item => item.day === dayName);
   let open = false;
@@ -30,7 +29,6 @@ function hasOpenCircuitInDay(dayName) {
   return open;
 }
 
-// Aggiorna automaticamente quale spunta è consentita (solo Inizio se chiuso, solo Fine se aperto)
 function syncCircuitCheckboxes() {
   const dayName = exerciseDaySelect.value;
   const isOpen = hasOpenCircuitInDay(dayName);
@@ -108,7 +106,6 @@ async function loadExercisesFromCloud() {
   syncCircuitCheckboxes();
 }
 
-// Carica e mostra le bozze salvate del Personal Trainer
 async function loadTrainerDrafts() {
   if (!currentProfile || currentProfile.role !== 'trainer') return;
 
@@ -166,7 +163,9 @@ window.resumeDraft = async function(draftId) {
     return;
   }
 
+  showTrainerView("trainerBuilderView");
   currentDraftId = workout.id;
+  editingItemUid = null;
 
   const selectEl = document.getElementById("builderAthleteSelect");
   const loadBtn = document.getElementById("btnLoadExistingWorkout");
@@ -216,7 +215,6 @@ window.deleteDraft = async function(draftId) {
   loadTrainerDrafts();
 };
 
-// Salva o aggiorna la bozza su Supabase senza inviarla all'atleta
 document.getElementById("btnSaveDraft").addEventListener("click", async () => {
   if (currentWorkout.length === 0) {
     alert("Inserisci almeno un esercizio prima di salvare la bozza!");
@@ -319,7 +317,6 @@ document.getElementById("builderAthleteSelect").addEventListener("change", (e) =
   }
 });
 
-// Carica nel builder la scheda attiva dell'atleta per modificarla
 document.getElementById("btnLoadExistingWorkout").addEventListener("click", async () => {
   const athleteId = document.getElementById("builderAthleteSelect").value;
   if (!athleteId) return;
@@ -347,6 +344,7 @@ document.getElementById("btnLoadExistingWorkout").addEventListener("click", asyn
   }
 
   currentDraftId = null;
+  editingItemUid = null;
   document.getElementById("durationWeeks").value = workout.duration_weeks || 4;
   document.getElementById("generalNotes").value = workout.general_notes || "";
 
@@ -371,16 +369,15 @@ document.getElementById("btnLoadExistingWorkout").addEventListener("click", asyn
   loadTrainerDrafts();
 });
 
-// Pulsante Svuota scheda nel builder
 document.getElementById("btnClearBuilder").addEventListener("click", () => {
   if (!confirm("Vuoi rimuovere tutti gli esercizi inseriti in questa scheda?")) return;
   currentWorkout = [];
   currentDraftId = null;
+  editingItemUid = null;
   renderList();
   loadTrainerDrafts();
 });
 
-// Filtra il menu esercizi in modo leggero (senza datalist per evitare freeze su iOS)
 function populateDropdown() {
   const filter = muscleFilter.value;
   const search = exerciseSearch.value.trim().toLowerCase();
@@ -442,7 +439,6 @@ exerciseSearch.addEventListener("input", () => {
 
 exerciseSelect.addEventListener("change", updatePreview);
 
-// Aggiunta esercizio alla scheda (con gestione Circuito)
 document.getElementById("btnAddEx").addEventListener("click", () => {
   const selected = EXERCISE_DB.find(ex => ex.id === exerciseSelect.value);
   if (!selected) return;
@@ -481,9 +477,9 @@ document.getElementById("btnAddEx").addEventListener("click", () => {
   renderList();
 });
 
-// Costruisce il markup di una singola card esercizio nel Builder
 function buildBuilderItemHtml(item, idx, totalInDay) {
   const isSingle = item.imgStart === item.imgEnd;
+  const isEditing = editingItemUid === item.uid;
   let roleTag = "";
   if (item.circuitRole === "start") {
     roleTag = `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 INIZIO CIRCUITO</span>`;
@@ -493,8 +489,35 @@ function buildBuilderItemHtml(item, idx, totalInDay) {
     roleTag = `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 BLOCCO CIRCUITO</span>`;
   }
 
+  const editFormHtml = isEditing ? `
+    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); display: flex; flex-direction: column; gap: 6px;">
+      <div class="grid-3">
+        <div class="field" style="margin:0;">
+          <label style="font-size:0.72rem;">Serie e Reps</label>
+          <input type="text" id="editSets_${item.uid}" value="${item.setsReps === '-' ? '' : escapeHtml(item.setsReps)}" placeholder="es. 4x8-10">
+        </div>
+        <div class="field" style="margin:0;">
+          <label style="font-size:0.72rem;">Rest</label>
+          <input type="text" id="editRest_${item.uid}" value="${item.rest === '-' ? '' : escapeHtml(item.rest)}" placeholder="es. 90''">
+        </div>
+        <div class="field" style="margin:0;">
+          <label style="font-size:0.72rem;">RIR / @</label>
+          <input type="text" id="editRir_${item.uid}" value="${item.rir === '-' ? '' : escapeHtml(item.rir)}" placeholder="es. RIR 1">
+        </div>
+      </div>
+      <div class="field" style="margin:0;">
+        <label style="font-size:0.72rem;">Note Esercizio</label>
+        <textarea id="editNotes_${item.uid}" rows="2" style="min-height: 54px; font-size: 0.8rem;" placeholder="Note tecniche per questo esercizio...">${item.notes === '-' ? '' : escapeHtml(item.notes)}</textarea>
+      </div>
+      <div style="display: flex; gap: 6px; justify-content: flex-end;">
+        <button type="button" class="btn btn-outline btn-sm" style="width:auto;" onclick="cancelEditItem()">Annulla</button>
+        <button type="button" class="btn btn-success btn-sm" style="width:auto;" onclick="saveEditedItem(${item.uid})">💾 Salva Modifiche</button>
+      </div>
+    </div>
+  ` : "";
+
   return `
-    <div class="exercise-item">
+    <div class="exercise-item" style="${isEditing ? 'border-color: var(--primary);' : ''}">
       <div class="exercise-top">
         <div class="item-photos">
           ${isSingle ? `
@@ -507,7 +530,7 @@ function buildBuilderItemHtml(item, idx, totalInDay) {
         <div class="item-details">
           <strong>${idx + 1}. ${escapeHtml(item.name)}</strong> ${roleTag}
           <div class="item-sub"><strong>${escapeHtml(item.setsReps)}</strong> | Rest: ${escapeHtml(item.rest)} | RIR/@: ${escapeHtml(item.rir)}</div>
-          ${item.notes !== '-' ? `<div class="item-notes">Note: ${escapeHtml(item.notes)}</div>` : ''}
+          ${item.notes !== '-' ? `<div class="item-notes" style="white-space: pre-wrap;">Note: ${escapeHtml(item.notes)}</div>` : ''}
         </div>
         <div class="item-actions">
           <button class="btn-icon" title="Sposta su" onclick="moveItem(${item.uid}, -1)" ${idx === 0 ? 'disabled' : ''}>▲</button>
@@ -516,11 +539,11 @@ function buildBuilderItemHtml(item, idx, totalInDay) {
           <button class="btn-icon" title="Rimuovi" style="color:var(--danger);" onclick="removeItem(${item.uid})">✖</button>
         </div>
       </div>
+      ${editFormHtml}
     </div>
   `;
 }
 
-// Renderizza l'elenco esercizi raggruppando visivamente i circuiti
 function renderList() {
   const listEl = document.getElementById("exerciseList");
   const clearBtn = document.getElementById("btnClearBuilder");
@@ -627,25 +650,32 @@ function renderList() {
   });
 }
 
-// Modifica rapida di un esercizio già inserito
+// Apre/chiude il pannello di modifica inline con tutti i campi visibili insieme
 window.editItem = function(uid) {
+  editingItemUid = (editingItemUid === uid) ? null : uid;
+  renderList();
+};
+
+window.cancelEditItem = function() {
+  editingItemUid = null;
+  renderList();
+};
+
+window.saveEditedItem = function(uid) {
   const index = currentWorkout.findIndex(item => item.uid === uid);
   if (index === -1) return;
   const item = currentWorkout[index];
 
-  const newSets = prompt(`Serie e Reps per "${item.name}":`, item.setsReps === "-" ? "" : item.setsReps);
-  if (newSets === null) return;
-  const newRest = prompt(`Recupero (Rest) per "${item.name}":`, item.rest === "-" ? "" : item.rest);
-  if (newRest === null) return;
-  const newRir = prompt(`RIR / @ per "${item.name}":`, item.rir === "-" ? "" : item.rir);
-  if (newRir === null) return;
-  const newNotes = prompt(`Note esercizio per "${item.name}":`, item.notes === "-" ? "" : item.notes);
-  if (newNotes === null) return;
+  const newSets = document.getElementById(`editSets_${uid}`).value.trim();
+  const newRest = document.getElementById(`editRest_${uid}`).value.trim();
+  const newRir = document.getElementById(`editRir_${uid}`).value.trim();
+  const newNotes = document.getElementById(`editNotes_${uid}`).value.trim();
 
-  item.setsReps = newSets.trim() || "-";
-  item.rest = newRest.trim() || "-";
-  item.rir = newRir.trim() || "-";
-  item.notes = newNotes.trim() || "-";
+  item.setsReps = newSets || "-";
+  item.rest = newRest || "-";
+  item.rir = newRir || "-";
+  item.notes = newNotes || "-";
+  editingItemUid = null;
   renderList();
 };
 
@@ -669,11 +699,11 @@ window.moveItem = function(uid, direction) {
 };
 
 window.removeItem = function(uid) {
+  if (editingItemUid === uid) editingItemUid = null;
   currentWorkout = currentWorkout.filter(item => item.uid !== uid);
   renderList();
 };
 
-// Salvataggio su Supabase Cloud e Invio all'Atleta
 document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   const athleteId = document.getElementById("builderAthleteSelect").value;
   if (!athleteId) {
@@ -747,7 +777,6 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   if (exError) {
     alert("Scheda creata ma errore negli esercizi: " + exError.message);
   } else {
-    // Se questa scheda proveniva da una bozza salvata, elimina la bozza ormai pubblicata
     if (currentDraftId) {
       await supabaseClient.from('workout_exercises').delete().eq('workout_id', currentDraftId);
       await supabaseClient.from('workouts').delete().eq('id', currentDraftId);
@@ -756,13 +785,14 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
 
     alert("✅ Scheda salvata e inviata! L'atleta la vedrà immediatamente aprendo la sua app.");
     currentWorkout = [];
+    editingItemUid = null;
     renderList();
     showTrainerView("trainerClientsView");
     loadTrainerClients();
   }
 });
 
-// Generazione PDF Stampabile con Circuiti evidenziati (compatibile iOS Safari)
+// Generazione PDF Stampabile centrata su qualsiasi schermo (Desktop e iOS Safari)
 document.getElementById("btnPdf").addEventListener("click", async () => {
   if (currentWorkout.length === 0) {
     alert("Inserisci almeno un esercizio prima di generare il PDF!");
@@ -875,12 +905,19 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
     tablesContainer.appendChild(table);
   });
 
-  const wrapper = document.getElementById("pdfPreviewWrapper");
-  const element = document.getElementById("pdfSheet");
+  const sourceSheet = document.getElementById("pdfSheet");
 
-  // Porta in primo piano per Safari iOS e attendi il rendering completo
-  wrapper.style.setProperty("left", "0px", "important");
-  wrapper.style.setProperty("z-index", "99999", "important");
+  const printHost = document.createElement("div");
+  printHost.style.cssText = "position: absolute; top: 0; left: 0; width: 740px; margin: 0; padding: 0; background: #ffffff; z-index: 999999;";
+
+  const clonedSheet = sourceSheet.cloneNode(true);
+  clonedSheet.style.cssText = "width: 740px; max-width: 740px; margin: 0; box-sizing: border-box; background: #ffffff; color: #0f172a;";
+  printHost.appendChild(clonedSheet);
+  document.body.appendChild(printHost);
+
+  const prevScrollX = window.scrollX;
+  const prevScrollY = window.scrollY;
+  window.scrollTo(0, 0);
 
   await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 250)));
 
@@ -892,6 +929,9 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
       scale: 2,
       useCORS: true,
       allowTaint: true,
+      x: 0,
+      y: 0,
+      width: 740,
       scrollX: 0,
       scrollY: 0,
       windowWidth: 740
@@ -901,10 +941,10 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
   };
 
   try {
-    await html2pdf().set(opt).from(element).save();
+    await html2pdf().set(opt).from(clonedSheet).save();
   } finally {
-    wrapper.style.setProperty("left", "-10000px", "important");
-    wrapper.style.setProperty("z-index", "-1", "important");
+    document.body.removeChild(printHost);
+    window.scrollTo(prevScrollX, prevScrollY);
     btn.disabled = false;
     btn.textContent = "📄 Scarica PDF";
   }

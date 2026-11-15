@@ -1,3 +1,13 @@
+let currentAthleteCoachName = "";
+let isAthleteCleanView = false;
+let currentAthleteWorkoutData = null;
+
+function getAthleteFirstName(fullName, fallback = "") {
+  if (!fullName) return fallback;
+  const parts = String(fullName).trim().split(/\s+/);
+  return parts[0] || fallback;
+}
+
 async function initAthleteArea() {
   if (!currentProfile.trainer_id) {
     document.getElementById("athleteLinkCoachCard").classList.remove("hidden");
@@ -44,7 +54,197 @@ document.getElementById("btnLinkCoach").addEventListener("click", async () => {
   }
 });
 
-// Segna come viste dall'atleta la scheda e le note del coach
+// Toggle Vista "Scheda Pulita" vs "Modalità Allenamento"
+const btnToggleCleanView = document.getElementById("btnToggleAthleteCleanView");
+if (btnToggleCleanView) {
+  btnToggleCleanView.addEventListener("click", () => {
+    isAthleteCleanView = !isAthleteCleanView;
+    syncAthleteCleanViewButton();
+    if (currentAthleteWorkoutData) {
+      renderAthleteExercisesList(currentAthleteWorkoutData.items, currentAthleteWorkoutData.logsByExercise);
+    }
+  });
+}
+
+function syncAthleteCleanViewButton() {
+  const btn = document.getElementById("btnToggleAthleteCleanView");
+  if (!btn) return;
+  if (isAthleteCleanView) {
+    btn.className = "btn btn-primary btn-sm";
+    btn.textContent = "✏️ Modalità Allenamento";
+  } else {
+    btn.className = "btn btn-outline btn-sm";
+    btn.textContent = "👁️ Scheda Pulita";
+  }
+}
+
+// Export PDF A4 Centrato per l'Atleta
+const btnAthletePdf = document.getElementById("btnAthleteDownloadPdf");
+if (btnAthletePdf) {
+  btnAthletePdf.addEventListener("click", async () => {
+    if (!currentAthleteWorkoutData || !currentAthleteWorkoutData.items || currentAthleteWorkoutData.items.length === 0) {
+      alert("Nessun esercizio disponibile per generare il PDF.");
+      return;
+    }
+
+    btnAthletePdf.disabled = true;
+    btnAthletePdf.textContent = "⏳ Creazione PDF...";
+
+    const { workout, items } = currentAthleteWorkoutData;
+    const athleteName = (currentProfile && currentProfile.full_name) ? currentProfile.full_name.trim() : "Atleta";
+    const durationWeeks = workout.duration_weeks || 4;
+    const generalNotes = (workout.general_notes || "").trim();
+    const coachDisplay = currentAthleteCoachName || "Coach";
+
+    document.getElementById("pdfAthlete").textContent = athleteName;
+    document.getElementById("pdfDuration").textContent = `${durationWeeks} Settimane`;
+    document.getElementById("pdfCount").textContent = items.length;
+    document.getElementById("pdfDate").textContent = new Date().toLocaleDateString('it-IT');
+    document.getElementById("pdfCoachTag").textContent = `COACH: ${coachDisplay.toUpperCase()}`;
+    document.getElementById("pdfFooterCoach").textContent = `Preparatore: ${coachDisplay}`;
+
+    const notesBox = document.getElementById("pdfGeneralNotesBox");
+    if (generalNotes) {
+      notesBox.style.display = "block";
+      document.getElementById("pdfGeneralNotesText").textContent = generalNotes;
+    } else {
+      notesBox.style.display = "none";
+    }
+
+    const tablesContainer = document.getElementById("pdfTablesContainer");
+    tablesContainer.innerHTML = "";
+
+    const grouped = {};
+    items.forEach(item => {
+      if (!grouped[item.day_name]) grouped[item.day_name] = [];
+      grouped[item.day_name].push(item);
+    });
+
+    Object.keys(grouped).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(dayName => {
+      const dayTitle = document.createElement("div");
+      dayTitle.className = "pdf-day-title";
+      dayTitle.textContent = dayName;
+      tablesContainer.appendChild(dayTitle);
+
+      const table = document.createElement("table");
+      table.className = "pdf-table";
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Esecuzione</th>
+            <th>Esercizio</th>
+            <th>Serie/Reps</th>
+            <th>Rest</th>
+            <th>RIR / @</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      `;
+
+      const tbody = table.querySelector("tbody");
+      let inCircuit = false;
+
+      grouped[dayName].forEach((row, index) => {
+        const ex = row.exercises;
+        const imgStart = ex ? ex.img_start : "";
+        const imgEnd = ex ? (ex.img_end || ex.img_start) : "";
+        const muscle = ex ? (ex.muscle || "") : "";
+        const exName = ex ? ex.name : "Esercizio";
+        const isSingle = imgStart === imgEnd;
+        const isCircuitStart = row.circuit_role === "start" || row.circuit_role === "single";
+        const isCircuitEnd = row.circuit_role === "end" || row.circuit_role === "single";
+
+        if (isCircuitStart) {
+          inCircuit = true;
+          const label = row.circuit_label ? row.circuit_label : "CIRCUITO";
+          const bannerTr = document.createElement("tr");
+          bannerTr.innerHTML = `<td colspan="7" class="pdf-circuit-banner">🔄 INIZIO ${escapeHtml(label)}</td>`;
+          tbody.appendChild(bannerTr);
+        }
+
+        const tr = document.createElement("tr");
+        if (inCircuit) tr.className = "pdf-circuit-row";
+
+        tr.innerHTML = `
+          <td><strong>${index + 1}</strong></td>
+          <td style="white-space: nowrap;">
+            ${imgStart ? (isSingle ? `
+              <img src="${imgStart}" class="pdf-thumb">
+            ` : `
+              <img src="${imgStart}" class="pdf-thumb">
+              <img src="${imgEnd}" class="pdf-thumb">
+            `) : '-'}
+          </td>
+          <td>
+            <strong>${escapeHtml(exName)}</strong><br>
+            <span style="font-size: 9px; color: #64748b;">${escapeHtml(muscle)}</span>
+          </td>
+          <td><strong>${escapeHtml(row.sets_reps)}</strong></td>
+          <td>${escapeHtml(row.rest)}</td>
+          <td>${escapeHtml(row.rir)}</td>
+          <td style="font-size: 9.5px; white-space: pre-wrap;">${escapeHtml(row.notes || "-")}</td>
+        `;
+        tbody.appendChild(tr);
+
+        if (isCircuitEnd && inCircuit) {
+          const endTr = document.createElement("tr");
+          endTr.innerHTML = `<td colspan="7" class="pdf-circuit-end">🏁 FINE CIRCUITO</td>`;
+          tbody.appendChild(endTr);
+          inCircuit = false;
+        }
+      });
+
+      tablesContainer.appendChild(table);
+    });
+
+    const sourceSheet = document.getElementById("pdfSheet");
+
+    const printHost = document.createElement("div");
+    printHost.style.cssText = "position: absolute; top: 0; left: 0; width: 740px; margin: 0; padding: 0; background: #ffffff; z-index: 999999;";
+
+    const clonedSheet = sourceSheet.cloneNode(true);
+    clonedSheet.style.cssText = "width: 740px; max-width: 740px; margin: 0; box-sizing: border-box; background: #ffffff; color: #0f172a;";
+    printHost.appendChild(clonedSheet);
+    document.body.appendChild(printHost);
+
+    const prevScrollX = window.scrollX;
+    const prevScrollY = window.scrollY;
+    window.scrollTo(0, 0);
+
+    await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 250)));
+
+    const opt = {
+      margin: 5,
+      filename: `Scheda_${athleteName.replace(/\s+/g, '_')}.pdf`,
+      image: { type: 'jpeg', quality: 0.95 },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        x: 0,
+        y: 0,
+        width: 740,
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: 740
+      },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.pdf-day-title', '.pdf-header', '.pdf-general-notes'] }
+    };
+
+    try {
+      await html2pdf().set(opt).from(clonedSheet).save();
+    } finally {
+      document.body.removeChild(printHost);
+      window.scrollTo(prevScrollX, prevScrollY);
+      btnAthletePdf.disabled = false;
+      btnAthletePdf.textContent = "📄 Scarica PDF";
+    }
+  });
+}
+
 window.markAthleteUpdatesAsSeen = async function(workoutId) {
   const nowIso = new Date().toISOString();
   await Promise.all([
@@ -73,7 +273,98 @@ function getLocalDayKey(isoStr) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// Unisce tutte le modifiche dello stesso giorno in un unico oggetto giornaliero con una sola data
+function isAthleteTodayLog(entry) {
+  if (!entry) return false;
+  const todayKey = getLocalDayKey(new Date().toISOString());
+  return getLocalDayKey(entry.logged_at) === todayKey;
+}
+
+function isFreshOrTodayCoachReplyForAthlete(entry) {
+  if (!entry || !entry.coach_notes) return false;
+  if (entry.hasUnseenCoachReply) return true;
+  if (!entry.coach_replied_at) return false;
+  const todayKey = getLocalDayKey(new Date().toISOString());
+  return getLocalDayKey(entry.coach_replied_at) === todayKey;
+}
+
+function getAthleteOlderYellowBoxStyle() {
+  return "background: rgba(245, 158, 11, 0.14); border: 1px solid rgba(245, 158, 11, 0.45); color: #f59e0b;";
+}
+
+function getAthleteOlderCoachPinkBoxStyle() {
+  return "background: rgba(236, 72, 153, 0.14); border: 1px solid rgba(236, 72, 153, 0.45); color: #f472b6;";
+}
+
+function buildAthleteCoachNoteHtml(entry, extraMarginTop = "") {
+  if (!entry || !entry.coach_notes) return "";
+  const isFresh = isFreshOrTodayCoachReplyForAthlete(entry);
+  const coachFirstName = getAthleteFirstName(currentAthleteCoachName, "");
+  const coachLabel = coachFirstName ? `Coach ${escapeHtml(coachFirstName)}` : "Coach";
+  const coachDateStr = entry.coach_replied_at ? ` (${formatShortDate(entry.coach_replied_at)})` : '';
+  const styleParts = ["white-space: pre-wrap;"];
+  if (extraMarginTop) styleParts.push(`margin-top: ${extraMarginTop};`);
+  if (!isFresh) styleParts.push(getAthleteOlderCoachPinkBoxStyle());
+
+  return `<div class="note-coach-box" style="${styleParts.join(" ")}"><strong>${coachLabel}</strong>${coachDateStr}: ${escapeHtml(entry.coach_notes)}</div>`;
+}
+
+function parsePrescribedSetsCount(setsRepsStr) {
+  if (!setsRepsStr) return 1;
+  const match = String(setsRepsStr).trim().match(/^(\d+)\s*[xX×*]/);
+  if (match) {
+    const n = parseInt(match[1], 10);
+    if (n >= 1 && n <= 12) return n;
+  }
+  return 1;
+}
+
+function parseSeriesBreakdown(log) {
+  if (!log) return [];
+  const raw = (log.reps_done || "").trim();
+
+  if (raw.includes("S1:")) {
+    return raw.split("|").map(part => {
+      const m = part.trim().match(/^S(\d+):\s*(?:([0-9.,]+)\s*kg)?\s*(?:×|x)?\s*([^(|]+?)?(?:\s*\(RIR\s*([0-9.,]+)\))?$/i);
+      if (!m) return null;
+      return {
+        setNum: parseInt(m[1], 10),
+        kg: m[2] ? m[2].replace(',', '.') : "",
+        reps: m[3] && m[3].trim() !== '-' ? m[3].trim() : "",
+        rir: m[4] ? m[4].replace(',', '.') : ""
+      };
+    }).filter(Boolean);
+  }
+
+  if (log.weight_kg !== null || (raw && raw !== '-') || log.rir !== null) {
+    return [{
+      setNum: 1,
+      kg: log.weight_kg !== null && log.weight_kg !== undefined ? String(log.weight_kg) : "",
+      reps: raw && raw !== '-' ? raw : "",
+      rir: log.rir !== null && log.rir !== undefined ? String(log.rir) : ""
+    }];
+  }
+
+  return [];
+}
+
+function formatLogSummaryHtml(entry, dateStr) {
+  const safeName = escapeHtml(getAthleteFirstName(currentProfile && currentProfile.full_name, "Atleta"));
+  const rirFallback = (entry.rir !== null && entry.rir !== undefined) ? ` • RIR ${entry.rir}` : '';
+  const noteLine = entry.athlete_notes ? `\n📝 ${escapeHtml(entry.athlete_notes)}` : '';
+
+  if (entry.reps_done && entry.reps_done.includes("S1:")) {
+    const lines = entry.reps_done
+      .split("|")
+      .map(s => `• ${escapeHtml(s.trim())}`)
+      .join("\n");
+    return `<strong>${safeName}</strong> (${dateStr})\n${lines}${noteLine}`;
+  }
+
+  const kgStr = (entry.weight_kg !== null && entry.weight_kg !== undefined) ? `${entry.weight_kg} kg` : '-';
+  const repsStr = escapeHtml(entry.reps_done || '-');
+  return `<strong>${safeName}</strong> (${dateStr}) — ${kgStr} × ${repsStr}${rirFallback}${noteLine}`;
+}
+
 function consolidateLogsByDay(logs) {
   if (!logs || logs.length === 0) return [];
   const sorted = [...logs].sort((a, b) => new Date(b.logged_at) - new Date(a.logged_at));
@@ -81,6 +372,8 @@ function consolidateLogsByDay(logs) {
 
   sorted.forEach(log => {
     const dayKey = getLocalDayKey(log.logged_at);
+    const coachReplyIsUnseen = Boolean(log.coach_notes && !log.athlete_seen_at);
+
     if (!byDay.has(dayKey)) {
       byDay.set(dayKey, {
         id: log.id,
@@ -88,12 +381,17 @@ function consolidateLogsByDay(logs) {
         weight_kg: log.weight_kg,
         reps_done: log.reps_done,
         rir: log.rir,
+        hasUnseenCoachReply: coachReplyIsUnseen,
         notesList: log.athlete_notes ? [log.athlete_notes.trim()] : [],
         coachNotesList: log.coach_notes ? [log.coach_notes.trim()] : [],
-        coach_replied_at: log.coach_replied_at
+        coach_replied_at: log.coach_replied_at || null
       });
     } else {
       const entry = byDay.get(dayKey);
+      if (coachReplyIsUnseen) entry.hasUnseenCoachReply = true;
+      if (log.coach_replied_at && (!entry.coach_replied_at || new Date(log.coach_replied_at) > new Date(entry.coach_replied_at))) {
+        entry.coach_replied_at = log.coach_replied_at;
+      }
       if ((entry.weight_kg === null || entry.weight_kg === undefined) && log.weight_kg !== null && log.weight_kg !== undefined) {
         entry.weight_kg = log.weight_kg;
       }
@@ -106,7 +404,7 @@ function consolidateLogsByDay(logs) {
       if (log.athlete_notes) {
         const clean = log.athlete_notes.trim();
         if (clean && !entry.notesList.includes(clean)) {
-          entry.notesList.unshift(clean); // ordine cronologico nella giornata
+          entry.notesList.unshift(clean);
         }
       }
       if (log.coach_notes) {
@@ -131,9 +429,6 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
   const end = ex ? (ex.img_end || ex.img_start) : "";
   const isSingle = start === end;
 
-  const dailyLogs = consolidateLogsByDay(rawLogs);
-  const latestLog = dailyLogs.length > 0 ? dailyLogs[0] : null;
-
   let roleTag = "";
   if (row.circuit_role === "start") {
     roleTag = `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 INIZIO CIRCUITO</span>`;
@@ -143,36 +438,69 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
     roleTag = `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 BLOCCO CIRCUITO</span>`;
   }
 
+  // Modalità "Scheda Pulita": solo esercizi, foto, parametri e note tecniche del coach
+  if (isAthleteCleanView) {
+    return `
+      <div class="exercise-item">
+        <div class="exercise-top">
+          <div class="item-photos">
+            ${start ? (isSingle ? `
+              <img src="${start}" class="item-img" style="width: 82px; object-fit: contain;">
+            ` : `
+              <img src="${start}" class="item-img">
+              <img src="${end}" class="item-img">
+            `) : ''}
+          </div>
+          <div class="item-details">
+            <strong>${idx + 1}. ${escapeHtml(ex ? ex.name : 'Esercizio')}</strong> ${roleTag}
+            <div class="item-sub"><strong>${escapeHtml(row.sets_reps)}</strong> | Rest: ${escapeHtml(row.rest)} | RIR/@: ${escapeHtml(row.rir)}</div>
+            ${row.notes && row.notes !== '-' ? `<div class="item-notes" style="white-space: pre-wrap;">Note: ${escapeHtml(row.notes)}</div>` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  const dailyLogs = consolidateLogsByDay(rawLogs);
+  const latestLog = dailyLogs.length > 0 ? dailyLogs[0] : null;
+  const setsCount = parsePrescribedSetsCount(row.sets_reps);
+  const parsedSeries = parseSeriesBreakdown(latestLog);
+
+  let seriesRowsHtml = "";
+  for (let s = 1; s <= setsCount; s++) {
+    const prevSet = parsedSeries.find(item => item.setNum === s) || {};
+    seriesRowsHtml += `
+      <div class="athlete-inputs-row" style="align-items: center;">
+        <span style="font-size: 0.75rem; font-weight: 800; color: var(--primary); min-width: 26px; text-align: center;">S${s}</span>
+        <input type="number" step="0.5" placeholder="Kg" id="logKg_${row.id}_${s}" class="inp-kg" value="${escapeHtml(prevSet.kg || '')}" title="Serie ${s} - Carico (Kg)">
+        <input type="text" placeholder="Reps" id="logReps_${row.id}_${s}" class="inp-reps" value="${escapeHtml(prevSet.reps || '')}" title="Serie ${s} - Ripetizioni">
+        <input type="number" step="0.5" placeholder="RIR" id="logRir_${row.id}_${s}" class="inp-rir" value="${escapeHtml(prevSet.rir || '')}" title="Serie ${s} - RIR">
+      </div>
+    `;
+  }
+
   let latestBoxesHtml = `<div style="font-size: 0.74rem; color: var(--text-muted); margin-top: 2px;">Nessun carico ancora registrato</div>`;
 
   if (latestLog) {
+    const isToday = isAthleteTodayLog(latestLog);
     const dStr = formatShortDate(latestLog.logged_at);
-    const kgStr = latestLog.weight_kg !== null && latestLog.weight_kg !== undefined ? `${latestLog.weight_kg} kg` : '-';
-    const repsStr = escapeHtml(latestLog.reps_done || '-');
-    const rirStr = latestLog.rir !== null && latestLog.rir !== undefined ? ` • RIR ${latestLog.rir}` : '';
-    const noteLine = latestLog.athlete_notes ? `\n${escapeHtml(latestLog.athlete_notes)}` : '';
-
-    const coachDateStr = latestLog.coach_replied_at ? ` (${formatShortDate(latestLog.coach_replied_at)})` : '';
-    const coachBoxHtml = latestLog.coach_notes
-      ? `<div class="note-coach-box">🔴 Coach${coachDateStr}: ${escapeHtml(latestLog.coach_notes)}</div>`
-      : "";
+    const mainSummary = formatLogSummaryHtml(latestLog, dStr);
+    const mainBoxStyle = isToday ? "white-space: pre-wrap;" : `white-space: pre-wrap; ${getAthleteOlderYellowBoxStyle()}`;
+    const coachBoxHtml = buildAthleteCoachNoteHtml(latestLog);
 
     const olderHtml = dailyLogs.length > 1 ? `
       <details class="past-logs-details" style="margin-top: 6px;">
         <summary>Vedi giorni precedenti (${dailyLogs.length - 1})</summary>
         <div style="margin-top: 5px; display: flex; flex-direction: column; gap: 5px;">
           ${dailyLogs.slice(1).map(old => {
+            const oldToday = isAthleteTodayLog(old);
             const od = formatShortDate(old.logged_at);
-            const okg = old.weight_kg !== null && old.weight_kg !== undefined ? `${old.weight_kg} kg` : '-';
-            const orir = old.rir !== null && old.rir !== undefined ? ` • RIR ${old.rir}` : '';
-            const onote = old.athlete_notes ? `\n${escapeHtml(old.athlete_notes)}` : '';
-            const ocd = old.coach_replied_at ? ` (${formatShortDate(old.coach_replied_at)})` : '';
-            const ocoach = old.coach_notes
-              ? `<div class="note-coach-box" style="margin-top:3px;">🔴 Coach${ocd}: ${escapeHtml(old.coach_notes)}</div>`
-              : '';
+            const oldSummary = formatLogSummaryHtml(old, od);
+            const oldStyle = oldToday ? "margin-top:0; white-space: pre-wrap;" : `margin-top:0; white-space: pre-wrap; ${getAthleteOlderYellowBoxStyle()}`;
+            const ocoach = buildAthleteCoachNoteHtml(old, "3px");
             return `
               <div style="border-top: 1px dashed var(--border); padding-top: 4px;">
-                <div class="note-athlete-box" style="margin-top:0;">🟢 ${od} — ${okg} × ${escapeHtml(old.reps_done || '-')}${orir}${onote}</div>
+                <div class="note-athlete-box" style="${oldStyle}">${oldSummary}</div>
                 ${ocoach}
               </div>
             `;
@@ -182,7 +510,7 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
     ` : "";
 
     latestBoxesHtml = `
-      <div class="note-athlete-box">🟢 ${dStr} — ${kgStr} × ${repsStr}${rirStr}${noteLine}</div>
+      <div class="note-athlete-box" style="${mainBoxStyle}">${mainSummary}</div>
       ${coachBoxHtml}
       ${olderHtml}
     `;
@@ -192,142 +520,36 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
     <div class="exercise-item">
       <div class="exercise-top">
         <div class="item-photos">
-          ${isSingle ? `
+          ${start ? (isSingle ? `
             <img src="${start}" class="item-img" style="width: 82px; object-fit: contain;">
           ` : `
             <img src="${start}" class="item-img">
             <img src="${end}" class="item-img">
-          `}
+          `) : ''}
         </div>
         <div class="item-details">
           <strong>${idx + 1}. ${escapeHtml(ex ? ex.name : 'Esercizio')}</strong> ${roleTag}
           <div class="item-sub"><strong>${escapeHtml(row.sets_reps)}</strong> | Rest: ${escapeHtml(row.rest)} | RIR/@: ${escapeHtml(row.rir)}</div>
-          ${row.notes && row.notes !== '-' ? `<div class="item-notes">Note: ${escapeHtml(row.notes)}</div>` : ''}
+          ${row.notes && row.notes !== '-' ? `<div class="item-notes" style="white-space: pre-wrap;">Note: ${escapeHtml(row.notes)}</div>` : ''}
         </div>
       </div>
 
-      <!-- Barra Diario Carichi compatta + Riquadri Verde (Atleta) e Rosso (Coach) raggruppati per giorno -->
       <div class="athlete-log-bar" style="flex-direction: column; align-items: stretch; gap: 6px;">
-        <div class="athlete-inputs-row">
-          <input type="number" step="0.5" placeholder="Kg" id="logKg_${row.id}" class="inp-kg" value="${latestLog?.weight_kg ?? ''}" title="Carico usato (Kg)">
-          <input type="text" placeholder="Reps (es. 10-9-8)" id="logReps_${row.id}" class="inp-reps" value="${latestLog?.reps_done && latestLog.reps_done !== '-' ? escapeHtml(latestLog.reps_done) : ''}" title="Ripetizioni eseguite">
-          <input type="number" step="0.5" placeholder="RIR" id="logRir_${row.id}" class="inp-rir" value="${latestLog?.rir ?? ''}" title="RIR percepito">
-          <button type="button" class="btn btn-success btn-sm" onclick="saveWorkoutLog('${row.id}')">Salva</button>
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+          ${seriesRowsHtml}
         </div>
-        <input type="text" id="logNote_${row.id}" placeholder="🟢 Scrivi una nota per la sessione di oggi (sensazioni, fatica, dolore)..." style="font-size: 0.78rem; padding: 6px 8px; border-color: rgba(16, 185, 129, 0.45);">
+        <div style="display: flex; gap: 6px; align-items: flex-end;">
+          <textarea id="logNote_${row.id}" rows="2" placeholder="Note generali per questo esercizio..." style="flex: 1; min-height: 44px; font-size: 0.78rem; padding: 6px 8px; border-color: rgba(16, 185, 129, 0.45); resize: vertical;"></textarea>
+          <button type="button" class="btn btn-success btn-sm" style="width: auto; flex-shrink: 0; align-self: stretch;" onclick="saveWorkoutLog('${row.id}', ${setsCount})">Salva</button>
+        </div>
         ${latestBoxesHtml}
       </div>
     </div>
   `;
 }
 
-async function loadAthleteWorkout() {
-  const { data: coach } = await supabaseClient
-    .from('profiles')
-    .select('full_name, logo_url')
-    .eq('id', currentProfile.trainer_id)
-    .single();
-
-  if (coach) {
-    document.getElementById("athleteCoachName").textContent = `Coach: ${coach.full_name}`;
-    applyBrandLogo(coach.logo_url);
-  }
-
-  const { data: workout, error } = await supabaseClient
-    .from('workouts')
-    .select('*')
-    .eq('athlete_id', currentProfile.id)
-    .eq('status', 'active')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
-
+function renderAthleteExercisesList(items, logsByExercise) {
   const container = document.getElementById("athleteExercisesContainer");
-  const notesEl = document.getElementById("athleteGeneralNotes");
-  const metaEl = document.getElementById("athleteWorkoutMeta");
-
-  if (error || !workout) {
-    metaEl.textContent = "In attesa che il tuo Personal Trainer ti assegni una scheda.";
-    notesEl.classList.add("hidden");
-    container.innerHTML = "";
-    updateNotificationCenter([{
-      level: "warning",
-      title: "Nessuna scheda attiva",
-      message: "Il tuo coach non ha ancora pubblicato una scheda attiva sul tuo profilo."
-    }]);
-    return;
-  }
-
-  const end = workout.end_date ? new Date(workout.end_date) : null;
-  const endStr = end ? end.toLocaleDateString('it-IT') : '-';
-  metaEl.textContent = `Durata: ${workout.duration_weeks} settimane • Scadenza: ${endStr}`;
-
-  const athleteAlerts = [];
-  if (end) {
-    const diffDays = Math.ceil((end - new Date()) / (1000 * 60 * 60 * 24));
-    if (diffDays < 0) {
-      athleteAlerts.push({
-        level: "danger",
-        title: "⚠️ Scheda Scaduta",
-        message: `La tua scheda è scaduta il ${endStr}. Contatta il tuo coach per il rinnovo!`
-      });
-    } else if (diffDays <= 5) {
-      athleteAlerts.push({
-        level: "warning",
-        title: "⏳ Scheda in Scadenza",
-        message: `Mancano ${diffDays} giorni alla scadenza della tua scheda (${endStr}).`
-      });
-    }
-  }
-
-  if (workout.general_notes) {
-    notesEl.classList.remove("hidden");
-    notesEl.innerHTML = `<strong>NOTE DEL COACH:</strong>\n${escapeHtml(workout.general_notes)}`;
-  } else {
-    notesEl.classList.add("hidden");
-  }
-
-  const [{ data: items }, { data: logs }] = await Promise.all([
-    supabaseClient
-      .from('workout_exercises')
-      .select('*, exercises(*)')
-      .eq('workout_id', workout.id)
-      .order('order_index', { ascending: true }),
-    supabaseClient
-      .from('workout_logs')
-      .select('*')
-      .eq('athlete_id', currentProfile.id)
-      .order('logged_at', { ascending: false })
-  ]);
-
-  const logsByExercise = {};
-  (logs || []).forEach(l => {
-    if (!logsByExercise[l.workout_exercise_id]) {
-      logsByExercise[l.workout_exercise_id] = [];
-    }
-    logsByExercise[l.workout_exercise_id].push(l);
-  });
-
-  const hasNewWorkout = !workout.athlete_seen_at;
-  const hasUnreadCoachComment = (logs || []).some(l => l.coach_notes && !l.athlete_seen_at);
-
-  if (hasNewWorkout || hasUnreadCoachComment) {
-    let msg = "Il tuo coach ha aggiornato la tua scheda di allenamento.";
-    if (hasNewWorkout && hasUnreadCoachComment) {
-      msg = "Hai una nuova scheda assegnata e nuove indicazioni in rosso dal tuo coach.";
-    } else if (hasUnreadCoachComment) {
-      msg = "Il tuo coach ha lasciato un commento in rosso sui tuoi esercizi.";
-    }
-
-    athleteAlerts.unshift({
-      level: "info",
-      title: "🔴 Novità dal tuo Coach",
-      message: msg,
-      actionHtml: `<button class="btn btn-primary btn-sm" onclick="markAthleteUpdatesAsSeen('${workout.id}')">Segna come letto</button>`
-    });
-  }
-
-  updateNotificationCenter(athleteAlerts);
 
   if (!items || items.length === 0) {
     container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem;">Nessun esercizio inserito nella scheda.</div>`;
@@ -426,23 +648,183 @@ async function loadAthleteWorkout() {
   });
 }
 
-// Salva o aggiorna l'unico record di oggi per questo esercizio (tutte le modifiche dello stesso giorno in un unico messaggio)
-window.saveWorkoutLog = async function(workoutExerciseId) {
-  const kgVal = document.getElementById(`logKg_${workoutExerciseId}`).value;
-  const repsVal = document.getElementById(`logReps_${workoutExerciseId}`).value.trim();
-  const rirVal = document.getElementById(`logRir_${workoutExerciseId}`).value;
-  const noteVal = document.getElementById(`logNote_${workoutExerciseId}`).value.trim();
+async function loadAthleteWorkout() {
+  const { data: coach } = await supabaseClient
+    .from('profiles')
+    .select('full_name, logo_url')
+    .eq('id', currentProfile.trainer_id)
+    .single();
 
-  if (!kgVal && !repsVal && !noteVal) {
-    alert("Inserisci almeno il peso usato, le ripetizioni o una nota.");
+  if (coach) {
+    currentAthleteCoachName = coach.full_name || "";
+    document.getElementById("athleteCoachName").textContent = `Coach: ${coach.full_name}`;
+    applyBrandLogo(coach.logo_url);
+  }
+
+  const { data: workout, error } = await supabaseClient
+    .from('workouts')
+    .select('*')
+    .eq('athlete_id', currentProfile.id)
+    .eq('status', 'active')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  const container = document.getElementById("athleteExercisesContainer");
+  const notesEl = document.getElementById("athleteGeneralNotes");
+  const metaEl = document.getElementById("athleteWorkoutMeta");
+  const actionsBarEl = document.getElementById("athleteWorkoutActionsBar");
+
+  if (error || !workout) {
+    currentAthleteWorkoutData = null;
+    if (actionsBarEl) actionsBarEl.classList.add("hidden");
+    metaEl.textContent = "In attesa che il tuo Personal Trainer ti assegni una scheda.";
+    notesEl.classList.add("hidden");
+    container.innerHTML = "";
+    updateNotificationCenter([{
+      level: "warning",
+      title: "Nessuna scheda attiva",
+      message: "Il tuo coach non ha ancora pubblicato una scheda attiva sul tuo profilo."
+    }]);
     return;
   }
+
+  const end = workout.end_date ? new Date(workout.end_date) : null;
+  const endStr = end ? end.toLocaleDateString('it-IT') : '-';
+  metaEl.textContent = `Durata: ${workout.duration_weeks} settimane • Scadenza: ${endStr}`;
+
+  const athleteAlerts = [];
+  if (end) {
+    const diffDays = Math.ceil((end - new Date()) / (1000 * 60 * 60 * 24));
+    if (diffDays < 0) {
+      athleteAlerts.push({
+        level: "danger",
+        title: "⚠️ Scheda Scaduta",
+        message: `La tua scheda è scaduta il ${endStr}. Contatta il tuo coach per il rinnovo!`
+      });
+    } else if (diffDays <= 5) {
+      athleteAlerts.push({
+        level: "warning",
+        title: "⏳ Scheda in Scadenza",
+        message: `Mancano ${diffDays} giorni alla scadenza della tua scheda (${endStr}).`
+      });
+    }
+  }
+
+  if (workout.general_notes) {
+    notesEl.classList.remove("hidden");
+    notesEl.innerHTML = `<strong>NOTE DEL COACH:</strong>\n${escapeHtml(workout.general_notes)}`;
+  } else {
+    notesEl.classList.add("hidden");
+  }
+
+  const [{ data: items }, { data: logs }] = await Promise.all([
+    supabaseClient
+      .from('workout_exercises')
+      .select('*, exercises(*)')
+      .eq('workout_id', workout.id)
+      .order('order_index', { ascending: true }),
+    supabaseClient
+      .from('workout_logs')
+      .select('*')
+      .eq('athlete_id', currentProfile.id)
+      .order('logged_at', { ascending: false })
+  ]);
+
+  const logsByExercise = {};
+  (logs || []).forEach(l => {
+    if (!logsByExercise[l.workout_exercise_id]) {
+      logsByExercise[l.workout_exercise_id] = [];
+    }
+    logsByExercise[l.workout_exercise_id].push(l);
+  });
+
+  currentAthleteWorkoutData = {
+    workout,
+    items: items || [],
+    logsByExercise
+  };
+
+  if (actionsBarEl) {
+    if (items && items.length > 0) {
+      actionsBarEl.classList.remove("hidden");
+      syncAthleteCleanViewButton();
+    } else {
+      actionsBarEl.classList.add("hidden");
+    }
+  }
+
+  const hasNewWorkout = !workout.athlete_seen_at;
+  const hasUnreadCoachComment = (logs || []).some(l => l.coach_notes && !l.athlete_seen_at);
+
+  if (hasNewWorkout || hasUnreadCoachComment) {
+    let msg = "Il tuo coach ha aggiornato la tua scheda di allenamento.";
+    if (hasNewWorkout && hasUnreadCoachComment) {
+      msg = "Hai una nuova scheda assegnata e nuove indicazioni dal tuo coach.";
+    } else if (hasUnreadCoachComment) {
+      msg = "Il tuo coach ha lasciato un commento sui tuoi esercizi.";
+    }
+
+    athleteAlerts.unshift({
+      level: "info",
+      title: "Novità dal tuo Coach",
+      message: msg,
+      actionHtml: `<button class="btn btn-primary btn-sm" onclick="markAthleteUpdatesAsSeen('${workout.id}')">Segna come letto</button>`
+    });
+  }
+
+  updateNotificationCenter(athleteAlerts);
+  renderAthleteExercisesList(items || [], logsByExercise);
+}
+
+window.saveWorkoutLog = async function(workoutExerciseId, setsCount = 1) {
+  const seriesParts = [];
+  let maxWeight = null;
+  let rirSum = 0;
+  let rirCount = 0;
+
+  for (let s = 1; s <= setsCount; s++) {
+    const kgEl = document.getElementById(`logKg_${workoutExerciseId}_${s}`);
+    const repsEl = document.getElementById(`logReps_${workoutExerciseId}_${s}`);
+    const rirEl = document.getElementById(`logRir_${workoutExerciseId}_${s}`);
+
+    const kgVal = kgEl ? kgEl.value.trim() : "";
+    const repsVal = repsEl ? repsEl.value.trim() : "";
+    const rirVal = rirEl ? rirEl.value.trim() : "";
+
+    if (kgVal || repsVal || rirVal) {
+      const kgNum = kgVal ? parseFloat(kgVal) : null;
+      const rirNum = rirVal ? parseFloat(rirVal) : null;
+
+      if (kgNum !== null && !isNaN(kgNum)) {
+        if (maxWeight === null || kgNum > maxWeight) maxWeight = kgNum;
+      }
+      if (rirNum !== null && !isNaN(rirNum)) {
+        rirSum += rirNum;
+        rirCount++;
+      }
+
+      const kgTxt = kgVal ? `${kgVal} kg` : "-";
+      const repsTxt = repsVal || "-";
+      const rirTxt = rirVal ? ` (RIR ${rirVal})` : "";
+      seriesParts.push(`S${s}: ${kgTxt} × ${repsTxt}${rirTxt}`);
+    }
+  }
+
+  const noteVal = document.getElementById(`logNote_${workoutExerciseId}`).value.trim();
+
+  if (seriesParts.length === 0 && !noteVal) {
+    alert("Compila almeno una serie (Kg, Reps o RIR) oppure inserisci una nota.");
+    return;
+  }
+
+  const formattedSeriesStr = seriesParts.length > 0 ? seriesParts.join(" | ") : null;
+  const avgRir = rirCount > 0 ? Math.round((rirSum / rirCount) * 10) / 10 : null;
 
   const now = new Date();
   const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0).toISOString();
   const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
 
-  // Cerca se esiste già un salvataggio nella giornata di oggi per questo esercizio
   const { data: todayLogs } = await supabaseClient
     .from('workout_logs')
     .select('*')
@@ -468,9 +850,9 @@ window.saveWorkoutLog = async function(workoutExerciseId) {
     const res = await supabaseClient
       .from('workout_logs')
       .update({
-        weight_kg: kgVal ? parseFloat(kgVal) : primaryLog.weight_kg,
-        reps_done: repsVal || primaryLog.reps_done || "-",
-        rir: rirVal ? parseFloat(rirVal) : primaryLog.rir,
+        weight_kg: maxWeight !== null ? maxWeight : primaryLog.weight_kg,
+        reps_done: formattedSeriesStr || primaryLog.reps_done || "-",
+        rir: avgRir !== null ? avgRir : primaryLog.rir,
         athlete_notes: existingNotes.length > 0 ? existingNotes.join("\n") : null,
         logged_at: now.toISOString(),
         trainer_seen_at: null,
@@ -485,9 +867,9 @@ window.saveWorkoutLog = async function(workoutExerciseId) {
       .insert({
         workout_exercise_id: workoutExerciseId,
         athlete_id: currentProfile.id,
-        weight_kg: kgVal ? parseFloat(kgVal) : null,
-        reps_done: repsVal || "-",
-        rir: rirVal ? parseFloat(rirVal) : null,
+        weight_kg: maxWeight,
+        reps_done: formattedSeriesStr || "-",
+        rir: avgRir,
         athlete_notes: noteVal || null,
         trainer_seen_at: null,
         athlete_seen_at: now.toISOString()

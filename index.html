@@ -37,7 +37,7 @@
       </div>
     </header>
 
-    <!-- PANNELLO IMPOSTAZIONI (Tema Chiaro/Scuro + Logo Trainer) -->
+    <!-- PANNELLO IMPOSTAZIONI (Tema Chiaro/Scuro + Logo Trainer + Elimina Account) -->
     <div id="settingsSection" class="card hidden">
       <div class="section-title">
         <span>⚙️ Impostazioni</span>
@@ -70,6 +70,17 @@
         <div class="grid-2">
           <button type="button" class="btn btn-primary btn-sm" id="btnSaveLogo" style="width: 100%;">💾 Salva Logo</button>
           <button type="button" class="btn btn-outline btn-sm" id="btnResetLogo" style="width: 100%;">Ripristina Default</button>
+        </div>
+      </div>
+
+      <!-- Eliminazione Account (visibile a tutti gli utenti loggati: Atleti e Coach) -->
+      <div id="deleteAccountSettingsBox" class="hidden" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <div>
+            <strong style="font-size: 0.88rem; display: block; color: var(--danger);">Elimina Account</strong>
+            <span style="font-size: 0.76rem; color: var(--text-muted);">Cancella definitivamente il tuo profilo e tutti i dati associati.</span>
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" id="btnDeleteAccount" style="border-color: var(--danger); color: var(--danger); width: auto;">🗑️ Elimina Account</button>
         </div>
       </div>
     </div>
@@ -376,6 +387,13 @@
           <span id="athleteCoachName" style="font-size: 0.78rem; color: var(--text-muted);"></span>
         </div>
         <div id="athleteWorkoutMeta" style="font-size: 0.8rem; color: var(--primary); margin-bottom: 10px;"></div>
+
+        <!-- Barra Azioni Rapide Atleta (Vista Pulita + PDF) -->
+        <div id="athleteWorkoutActionsBar" class="grid-2 hidden" style="margin-bottom: 12px;">
+          <button type="button" class="btn btn-outline btn-sm" id="btnToggleAthleteCleanView" style="width: 100%;">👁️ Scheda Pulita</button>
+          <button type="button" class="btn btn-outline btn-sm" id="btnAthleteDownloadPdf" style="width: 100%;">📄 Scarica PDF</button>
+        </div>
+
         <div id="athleteGeneralNotes" style="background: var(--notes-bg); color: var(--notes-text); border: 1px solid var(--border); padding: 10px; border-radius: 8px; font-size: 0.82rem; margin-bottom: 12px; white-space: pre-wrap;"></div>
         
         <div class="exercise-list" id="athleteExercisesContainer"></div>
