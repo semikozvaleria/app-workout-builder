@@ -951,8 +951,8 @@ window.exportPaginatedWorkoutPdf = async function({
   }));
   await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 150)));
 
-  const PAGE_SLOT_PX = 1048;
-  const SAFE_BOTTOM_MARGIN = 14;
+  const PAGE_SLOT_PX = 1061.9;
+  const SAFE_BOTTOM_MARGIN = 18;
 
   const daySections = Array.from(clonedSheet.querySelectorAll(".pdf-day-section"));
 
@@ -975,7 +975,7 @@ window.exportPaginatedWorkoutPdf = async function({
 
     const titlePosInSlot = (titleRect.top - sheetTop) % PAGE_SLOT_PX;
     if (titlePosInSlot > 30 && (titlePosInSlot + titleRect.height + theadHeight + initialBlockHeight > PAGE_SLOT_PX - SAFE_BOTTOM_MARGIN)) {
-      const spacerH = Math.ceil(PAGE_SLOT_PX - titlePosInSlot);
+      const spacerH = Math.ceil(PAGE_SLOT_PX - titlePosInSlot + 6);
       const spacer = document.createElement("div");
       spacer.style.cssText = `height: ${spacerH}px; width: 100%; background: #ffffff;`;
       section.insertBefore(spacer, titleEl);
@@ -1001,7 +1001,7 @@ window.exportPaginatedWorkoutPdf = async function({
 
       // Non creare mai un salto pagina solo per "FINE CIRCUITO" (resta già attaccato all'esercizio precedente)
       if (!tr.dataset.isCircuitEnd && posInSlot > 40 && (posInSlot + neededH > PAGE_SLOT_PX - SAFE_BOTTOM_MARGIN)) {
-        const spacerH = Math.ceil(PAGE_SLOT_PX - posInSlot);
+        const spacerH = Math.ceil(PAGE_SLOT_PX - titlePosInSlot + 6);
         const spacer = document.createElement("div");
         spacer.style.cssText = `height: ${spacerH}px; width: 100%; background: #ffffff;`;
         activeTable.parentNode.insertBefore(spacer, activeTable.nextSibling);
