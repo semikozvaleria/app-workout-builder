@@ -949,8 +949,8 @@ window.exportPaginatedWorkoutPdf = async function({
   await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 150)));
 
   // Passo di taglio reale di html2pdf con width=740px e margin=5mm (calibrato per evitare deriva su 3+ pagine)
-  const PAGE_SLOT_PX = 1020;
-  const SAFE_BOTTOM_MARGIN = 16;
+  const PAGE_SLOT_PX = 1061;
+  const SAFE_BOTTOM_MARGIN = 12;
 
   const daySections = Array.from(clonedSheet.querySelectorAll(".pdf-day-section"));
 
