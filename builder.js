@@ -816,6 +816,7 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
 });
 
 // Generazione PDF Stampabile centrata su Desktop e iOS Safari con spaziatura anti-taglio righe
+// Sostituisci solo la funzione window.exportPaginatedWorkoutPdf in builder.js
 window.exportPaginatedWorkoutPdf = async function({
   athleteName,
   durationWeeks,
@@ -913,7 +914,9 @@ window.exportPaginatedWorkoutPdf = async function({
       tbody.appendChild(tr);
 
       if (isCircuitEnd && inCircuit) {
+        tr.dataset.keepWithNext = "true"; // Tiene l'ultimo esercizio unito al suo banner FINE CIRCUITO
         const endTr = document.createElement("tr");
+        endTr.dataset.isCircuitEnd = "true";
         endTr.innerHTML = `<td colspan="7" class="pdf-circuit-end">🏁 FINE CIRCUITO</td>`;
         tbody.appendChild(endTr);
         inCircuit = false;
@@ -948,9 +951,8 @@ window.exportPaginatedWorkoutPdf = async function({
   }));
   await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 150)));
 
-  // Passo di taglio reale di html2pdf con width=740px e margin=5mm (calibrato per evitare deriva su 3+ pagine)
-  const PAGE_SLOT_PX = 1061;
-  const SAFE_BOTTOM_MARGIN = 12;
+  const PAGE_SLOT_PX = 1048;
+  const SAFE_BOTTOM_MARGIN = 14;
 
   const daySections = Array.from(clonedSheet.querySelectorAll(".pdf-day-section"));
 
@@ -997,7 +999,8 @@ window.exportPaginatedWorkoutPdf = async function({
         neededH += allRows[i + 1].getBoundingClientRect().height;
       }
 
-      if (posInSlot > 40 && (posInSlot + neededH > PAGE_SLOT_PX - SAFE_BOTTOM_MARGIN)) {
+      // Non creare mai un salto pagina solo per "FINE CIRCUITO" (resta già attaccato all'esercizio precedente)
+      if (!tr.dataset.isCircuitEnd && posInSlot > 40 && (posInSlot + neededH > PAGE_SLOT_PX - SAFE_BOTTOM_MARGIN)) {
         const spacerH = Math.ceil(PAGE_SLOT_PX - posInSlot);
         const spacer = document.createElement("div");
         spacer.style.cssText = `height: ${spacerH}px; width: 100%; background: #ffffff;`;
