@@ -54,7 +54,7 @@ document.getElementById("btnLinkCoach").addEventListener("click", async () => {
   }
 });
 
-// Toggle Vista "Scheda Pulita" vs "Modalità Allenamento"
+// Toggle Vista "Scheda Pulita" vs "Modalità Allenamento" (in cima)
 const btnToggleCleanView = document.getElementById("btnToggleAthleteCleanView");
 if (btnToggleCleanView) {
   btnToggleCleanView.addEventListener("click", () => {
@@ -78,7 +78,7 @@ function syncAthleteCleanViewButton() {
   }
 }
 
-// Export PDF A4 Centrato con paginazione anti-taglio righe per l'Atleta
+// Export PDF A4 Centrato della scheda pulita per l'Atleta (in fondo a entrambe le schermate)
 const btnAthletePdf = document.getElementById("btnAthleteDownloadPdf");
 if (btnAthletePdf) {
   btnAthletePdf.addEventListener("click", async () => {
@@ -557,11 +557,13 @@ async function loadAthleteWorkout() {
   const container = document.getElementById("athleteExercisesContainer");
   const notesEl = document.getElementById("athleteGeneralNotes");
   const metaEl = document.getElementById("athleteWorkoutMeta");
-  const actionsBarEl = document.getElementById("athleteWorkoutActionsBar");
+  const cleanToggleWrap = document.getElementById("athleteCleanViewToggleWrap");
+  const pdfFooterWrap = document.getElementById("athletePdfFooterWrap");
 
   if (error || !workout) {
     currentAthleteWorkoutData = null;
-    if (actionsBarEl) actionsBarEl.classList.add("hidden");
+    if (cleanToggleWrap) cleanToggleWrap.classList.add("hidden");
+    if (pdfFooterWrap) pdfFooterWrap.classList.add("hidden");
     metaEl.textContent = "In attesa che il tuo Personal Trainer ti assegni una scheda.";
     notesEl.classList.add("hidden");
     container.innerHTML = "";
@@ -629,12 +631,20 @@ async function loadAthleteWorkout() {
     logsByExercise
   };
 
-  if (actionsBarEl) {
-    if (items && items.length > 0) {
-      actionsBarEl.classList.remove("hidden");
+  const hasItems = items && items.length > 0;
+  if (cleanToggleWrap) {
+    if (hasItems) {
+      cleanToggleWrap.classList.remove("hidden");
       syncAthleteCleanViewButton();
     } else {
-      actionsBarEl.classList.add("hidden");
+      cleanToggleWrap.classList.add("hidden");
+    }
+  }
+  if (pdfFooterWrap) {
+    if (hasItems) {
+      pdfFooterWrap.classList.remove("hidden");
+    } else {
+      pdfFooterWrap.classList.add("hidden");
     }
   }
 

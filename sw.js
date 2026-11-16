@@ -1,3 +1,4 @@
+
 const CACHE_NAME = "workout-builder-v42";
 const ASSETS_TO_CACHE = [
   "./",

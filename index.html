@@ -131,12 +131,10 @@
         <div class="password-input-wrap">
           <input type="password" id="authPassword" placeholder="••••••••">
           <button type="button" id="btnTogglePassword" class="btn-toggle-pwd" title="Mostra/Nascondi password" aria-label="Mostra password">
-            <!-- Occhio aperto -->
             <svg id="iconEyeOpen" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
               <circle cx="12" cy="12" r="3"></circle>
             </svg>
-            <!-- Occhio chiuso/barrato -->
             <svg id="iconEyeClosed" class="hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
               <line x1="1" y1="1" x2="23" y2="23"></line>
@@ -175,6 +173,20 @@
         <div id="clientsListContainer">
           <div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento atleti...</div>
         </div>
+
+        <!-- SEZIONE ANAMNESI ATLETI ESTERNI -->
+        <div style="margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border);">
+          <div class="section-title">
+            <span>🩺 Anamnesi Atleti Esterni</span>
+            <button type="button" class="btn btn-primary btn-sm" id="btnNewExternalAnamnesis">➕ Nuova Anamnesi</button>
+          </div>
+          <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 10px;">
+            Archivio privato riservato a te per clienti non iscritti all'app a cui prepari schede in PDF.
+          </p>
+          <div id="externalAnamnesisListContainer">
+            <div style="text-align: center; color: var(--text-muted); font-size: 0.82rem; padding: 8px;">Nessuna anamnesi esterna salvata.</div>
+          </div>
+        </div>
       </div>
 
       <!-- VISTA B: PROGRESSI E DIARIO CARICHI ATLETA -->
@@ -207,6 +219,92 @@
         </div>
         <div id="statsDashboardContainer">
           <div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Elaborazione statistiche...</div>
+        </div>
+      </div>
+
+      <!-- VISTA B4: SCHEDA ANAMNESI PRIVATA (SOLO TRAINER) -->
+      <div id="trainerAnamnesisView" class="card hidden">
+        <div class="section-title">
+          <div>
+            <span id="anamnesisViewTitle">🩺 Scheda Anamnesi</span>
+            <div id="anamnesisViewSubtitle" style="font-size: 0.74rem; color: var(--text-muted); font-weight: 400; margin-top: 2px;">🔒 Visibile solo a te (privata)</div>
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" id="btnBackFromAnamnesis">← Indietro</button>
+        </div>
+
+        <input type="hidden" id="anamnesisRecordId">
+        <input type="hidden" id="anamnesisAthleteId">
+
+        <div class="grid-2">
+          <div class="field">
+            <label>Nome e Cognome *</label>
+            <input type="text" id="anamFullName" placeholder="es. Mario Rossi">
+          </div>
+          <div class="field">
+            <label>Data di Nascita</label>
+            <input type="date" id="anamBirthDate">
+          </div>
+        </div>
+
+        <div class="grid-3">
+          <div class="field">
+            <label>Sesso</label>
+            <select id="anamGender">
+              <option value="">-- Seleziona --</option>
+              <option value="Uomo">Uomo</option>
+              <option value="Donna">Donna</option>
+              <option value="Altro">Altro</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Altezza (cm)</label>
+            <input type="number" id="anamHeightCm" placeholder="es. 178" min="100" max="250">
+          </div>
+          <div class="field">
+            <label>Peso Iniziale (kg)</label>
+            <input type="number" step="0.1" id="anamWeightKg" placeholder="es. 76.5" min="30" max="250">
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label>Lavoro e Stile di Vita</label>
+            <input type="text" id="anamOccupation" placeholder="es. Impiegato sedentario / Turnista">
+          </div>
+          <div class="field">
+            <label>Disponibilità Allenamento</label>
+            <input type="text" id="anamAvailability" placeholder="es. 3 volte/sett. da 60 min">
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Obiettivo Principale</label>
+          <textarea id="anamGoal" rows="2" style="min-height: 58px;" placeholder="es. Ricomposizione corporea, aumento forza panca/squat, preparazione gara..."></textarea>
+        </div>
+
+        <div class="field">
+          <label>Infortuni, Dolori o Limitazioni Articolari/Mediche</label>
+          <textarea id="anamInjuries" rows="2" style="min-height: 64px;" placeholder="es. Protrusione L4-L5, fastidio spalla destra in spinta sopra la testa, ipertensione..."></textarea>
+        </div>
+
+        <div class="field">
+          <label>Esperienza Pregressa e Attrezzatura Disponibile</label>
+          <textarea id="anamExperience" rows="2" style="min-height: 58px;" placeholder="es. 2 anni di sala pesi, palestra commerciale completa / home gym con manubri e bilanciere..."></textarea>
+        </div>
+
+        <div class="field">
+          <label>Note Riservate del Coach</label>
+          <textarea id="anamPrivateNotes" rows="3" style="min-height: 72px;" placeholder="Appunti privati, osservazioni posturali, progressioni programmate..."></textarea>
+        </div>
+
+        <div id="anamnesisUpdatedMeta" style="font-size: 0.74rem; color: var(--text-muted); margin-bottom: 10px;"></div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <button type="button" class="btn btn-success" id="btnSaveAnamnesis">💾 Salva Anamnesi</button>
+          <div class="grid-2">
+            <button type="button" class="btn btn-outline btn-sm" id="btnAnamnesisToBuilder" style="width: 100%;">✏️ Crea Scheda</button>
+            <button type="button" class="btn btn-outline btn-sm hidden" id="btnDeleteAnamnesis" style="width: 100%; border-color: var(--danger); color: var(--danger);">🗑️ Elimina Anamnesi</button>
+          </div>
         </div>
       </div>
 
@@ -388,15 +486,19 @@
         </div>
         <div id="athleteWorkoutMeta" style="font-size: 0.8rem; color: var(--primary); margin-bottom: 10px;"></div>
 
-        <!-- Barra Azioni Rapide Atleta (Vista Pulita + PDF) -->
-        <div id="athleteWorkoutActionsBar" class="grid-2 hidden" style="margin-bottom: 12px;">
+        <!-- Toggle Vista Pulita / Modalità Allenamento in cima -->
+        <div id="athleteCleanViewToggleWrap" class="hidden" style="margin-bottom: 12px;">
           <button type="button" class="btn btn-outline btn-sm" id="btnToggleAthleteCleanView" style="width: 100%;">👁️ Scheda Pulita</button>
-          <button type="button" class="btn btn-outline btn-sm" id="btnAthleteDownloadPdf" style="width: 100%;">📄 Scarica PDF</button>
         </div>
 
         <div id="athleteGeneralNotes" style="background: var(--notes-bg); color: var(--notes-text); border: 1px solid var(--border); padding: 10px; border-radius: 8px; font-size: 0.82rem; margin-bottom: 12px; white-space: pre-wrap;"></div>
         
         <div class="exercise-list" id="athleteExercisesContainer"></div>
+
+        <!-- Scarica PDF della scheda pulita in fondo a entrambe le schermate -->
+        <div id="athletePdfFooterWrap" class="hidden" style="margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);">
+          <button type="button" class="btn btn-outline btn-sm" id="btnAthleteDownloadPdf" style="width: 100%;">📄 Scarica PDF</button>
+        </div>
       </div>
     </div>
 
