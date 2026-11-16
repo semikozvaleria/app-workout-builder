@@ -815,8 +815,7 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   }
 });
 
-// Generazione PDF Stampabile centrata su Desktop e iOS Safari con spaziatura anti-taglio righe
-// Sostituisci solo la funzione window.exportPaginatedWorkoutPdf in builder.js
+// Generazione PDF Stampabile centrata su Desktop e iOS Safari con paginazione anti-taglio righe
 window.exportPaginatedWorkoutPdf = async function({
   athleteName,
   durationWeeks,
@@ -914,7 +913,7 @@ window.exportPaginatedWorkoutPdf = async function({
       tbody.appendChild(tr);
 
       if (isCircuitEnd && inCircuit) {
-        tr.dataset.keepWithNext = "true"; // Tiene l'ultimo esercizio unito al suo banner FINE CIRCUITO
+        tr.dataset.keepWithNext = "true";
         const endTr = document.createElement("tr");
         endTr.dataset.isCircuitEnd = "true";
         endTr.innerHTML = `<td colspan="7" class="pdf-circuit-end">🏁 FINE CIRCUITO</td>`;
@@ -951,8 +950,17 @@ window.exportPaginatedWorkoutPdf = async function({
   }));
   await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 150)));
 
-  const PAGE_SLOT_PX = 1061.9;
-  const SAFE_BOTTOM_MARGIN = 18;
+  const PAGE_MAX_PX = 1044;
+  const sheetTop = clonedSheet.getBoundingClientRect().top;
+  const tablesTop = clonedSheet.querySelector("#pdfTablesContainer").getBoundingClientRect().top;
+  let usedInCurrentPage = Math.max(0, tablesTop - sheetTop);
+
+  function createPageBreakMarker() {
+    const brk = document.createElement("div");
+    brk.className = "html2pdf__page-break";
+    brk.style.cssText = "height: 1px; width: 100%; page-break-before: always; break-before: page;";
+    return brk;
+  }
 
   const daySections = Array.from(clonedSheet.querySelectorAll(".pdf-day-section"));
 
@@ -966,55 +974,55 @@ window.exportPaginatedWorkoutPdf = async function({
     const allRows = Array.from(firstTable.querySelectorAll("tbody tr"));
     if (allRows.length === 0) return;
 
-    const sheetTop = clonedSheet.getBoundingClientRect().top;
-    const titleRect = titleEl.getBoundingClientRect();
-    let initialBlockHeight = allRows[0].getBoundingClientRect().height;
+    const titleStyle = window.getComputedStyle(titleEl);
+    const titleTotalH = titleEl.getBoundingClientRect().height +
+      (parseFloat(titleStyle.marginTop) || 0) +
+      (parseFloat(titleStyle.marginBottom) || 0);
+
+    let initialBlockH = allRows[0].getBoundingClientRect().height;
     if (allRows[0].dataset.keepWithNext === "true" && allRows[1]) {
-      initialBlockHeight += allRows[1].getBoundingClientRect().height;
+      initialBlockH += allRows[1].getBoundingClientRect().height;
     }
 
-    const titlePosInSlot = (titleRect.top - sheetTop) % PAGE_SLOT_PX;
-    if (titlePosInSlot > 30 && (titlePosInSlot + titleRect.height + theadHeight + initialBlockHeight > PAGE_SLOT_PX - SAFE_BOTTOM_MARGIN)) {
-      const spacerH = Math.ceil(PAGE_SLOT_PX - titlePosInSlot + 6);
-      const spacer = document.createElement("div");
-      spacer.style.cssText = `height: ${spacerH}px; width: 100%; background: #ffffff;`;
-      section.insertBefore(spacer, titleEl);
+    if (usedInCurrentPage > 40 && (usedInCurrentPage + titleTotalH + theadHeight + initialBlockH > PAGE_MAX_PX)) {
+      section.insertBefore(createPageBreakMarker(), titleEl);
+      usedInCurrentPage = titleTotalH + theadHeight;
+    } else {
+      usedInCurrentPage += titleTotalH + theadHeight;
     }
 
     let activeTable = firstTable;
     let activeTbody = firstTable.querySelector("tbody");
 
-    for (let i = 1; i < allRows.length; i++) {
+    for (let i = 0; i < allRows.length; i++) {
       const tr = allRows[i];
       if (tr.parentNode !== activeTbody) {
         activeTbody.appendChild(tr);
       }
 
-      const currentSheetTop = clonedSheet.getBoundingClientRect().top;
-      const trRect = tr.getBoundingClientRect();
-      const posInSlot = (trRect.top - currentSheetTop) % PAGE_SLOT_PX;
-
-      let neededH = trRect.height;
+      const rowH = tr.getBoundingClientRect().height;
+      let neededH = rowH;
       if (tr.dataset.keepWithNext === "true" && allRows[i + 1]) {
         neededH += allRows[i + 1].getBoundingClientRect().height;
       }
 
-      // Non creare mai un salto pagina solo per "FINE CIRCUITO" (resta già attaccato all'esercizio precedente)
-      if (!tr.dataset.isCircuitEnd && posInSlot > 40 && (posInSlot + neededH > PAGE_SLOT_PX - SAFE_BOTTOM_MARGIN)) {
-        const spacerH = Math.ceil(PAGE_SLOT_PX - titlePosInSlot + 6);
-        const spacer = document.createElement("div");
-        spacer.style.cssText = `height: ${spacerH}px; width: 100%; background: #ffffff;`;
-        activeTable.parentNode.insertBefore(spacer, activeTable.nextSibling);
+      if (i > 0 && !tr.dataset.isCircuitEnd && usedInCurrentPage > 50 && (usedInCurrentPage + neededH > PAGE_MAX_PX)) {
+        const brk = createPageBreakMarker();
+        activeTable.parentNode.insertBefore(brk, activeTable.nextSibling);
 
         const nextTable = document.createElement("table");
         nextTable.className = "pdf-table";
         nextTable.style.marginTop = "0";
         nextTable.innerHTML = `${theadHtml}<tbody></tbody>`;
 
-        spacer.parentNode.insertBefore(nextTable, spacer.nextSibling);
+        brk.parentNode.insertBefore(nextTable, brk.nextSibling);
         activeTable = nextTable;
         activeTbody = nextTable.querySelector("tbody");
         activeTbody.appendChild(tr);
+
+        usedInCurrentPage = theadHeight + rowH;
+      } else {
+        usedInCurrentPage += rowH;
       }
     }
   });
@@ -1036,7 +1044,8 @@ window.exportPaginatedWorkoutPdf = async function({
       scrollY: 0,
       windowWidth: 740
     },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    pagebreak: { mode: ['legacy'] }
   };
 
   try {
