@@ -458,6 +458,7 @@ function openAnamnesisEditor({ athleteId = null, recordId = null, defaultName = 
   const titleEl = document.getElementById("anamnesisViewTitle");
   const subtitleEl = document.getElementById("anamnesisViewSubtitle");
   const deleteBtn = document.getElementById("btnDeleteAnamnesis");
+  const secondaryActionsEl = document.getElementById("anamnesisSecondaryActions");
   const metaEl = document.getElementById("anamnesisUpdatedMeta");
   const nameInput = document.getElementById("anamFullName");
 
@@ -470,7 +471,7 @@ function openAnamnesisEditor({ athleteId = null, recordId = null, defaultName = 
     nameInput.value = record && record.full_name ? record.full_name : defaultName;
   } else {
     titleEl.textContent = record ? `🩺 Anamnesi: ${record.full_name}` : "🩺 Nuova Anamnesi (Atleta Esterno)";
-    subtitleEl.textContent = "🔒 Scheda privata riservata al coach • Atleta esterno (Solo PDF)";
+    subtitleEl.textContent = "🔒 Scheda privata riservata al coach • Atleta esterno";
     nameInput.value = record ? record.full_name : defaultName;
   }
 
@@ -495,9 +496,17 @@ function openAnamnesisEditor({ athleteId = null, recordId = null, defaultName = 
     });
     metaEl.textContent = `Ultimo aggiornamento: ${dt}`;
     deleteBtn.classList.remove("hidden");
+    if (secondaryActionsEl) {
+      secondaryActionsEl.className = "grid-2";
+      secondaryActionsEl.style.cssText = "";
+    }
   } else {
     metaEl.textContent = "Compila i campi e premi Salva Anamnesi.";
     deleteBtn.classList.add("hidden");
+    if (secondaryActionsEl) {
+      secondaryActionsEl.className = "";
+      secondaryActionsEl.style.cssText = "display: flex; flex-direction: column; gap: 8px;";
+    }
   }
 }
 
