@@ -783,3 +783,40 @@ body:not(.light-theme) .note-coach-box {
   break-after: avoid !important;
   page-break-after: avoid !important;
 }
+
+/* Fix impaginazione Anamnesi su iPhone / iOS Safari */
+#trainerAnamnesisView input,
+#trainerAnamnesisView select,
+#trainerAnamnesisView textarea {
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Allinea sempre in basso i campi affiancati anche se le label vanno su 2 righe */
+#trainerAnamnesisView .grid-2,
+#trainerAnamnesisView .grid-3 {
+  align-items: end;
+}
+
+#trainerAnamnesisView .grid-2 > .field,
+#trainerAnamnesisView .grid-3 > .field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+/* Su schermi stretti (iPhone) impila i campi doppi dell'anamnesi a larghezza piena */
+@media (max-width: 480px) {
+  #trainerAnamnesisView .grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  #trainerAnamnesisView input[type="date"] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: 40px;
+  }
+}
