@@ -815,7 +815,8 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   }
 });
 
-// Helper condiviso per paginazione A4 esplicita con tracciamento altezza reale per singola pagina
+// Motore PDF A4 multi-pagina deterministico (100% compatibile con iOS Safari e Desktop:
+// impagina pagina per pagina senza mai tagliare una riga a metà)
 window.exportPaginatedWorkoutPdf = async function({
   athleteName,
   durationWeeks,
@@ -841,9 +842,6 @@ window.exportPaginatedWorkoutPdf = async function({
     notesBox.style.display = "none";
   }
 
-  const tablesContainer = document.getElementById("pdfTablesContainer");
-  tablesContainer.innerHTML = "";
-
   const theadHtml = `
     <thead>
       <tr>
@@ -858,197 +856,226 @@ window.exportPaginatedWorkoutPdf = async function({
     </thead>
   `;
 
-  Object.keys(groupedDays).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(dayName => {
-    const daySection = document.createElement("div");
-    daySection.className = "pdf-day-section";
+  // Costruisce i blocchi giorno con le righe già pronte
+  const dayDataList = Object.keys(groupedDays)
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+    .map(dayName => {
+      const trs = [];
+      let inCircuit = false;
 
-    const dayTitle = document.createElement("div");
-    dayTitle.className = "pdf-day-title";
-    dayTitle.textContent = dayName;
-    daySection.appendChild(dayTitle);
+      groupedDays[dayName].forEach((item, index) => {
+        const isSingle = item.imgStart === item.imgEnd;
+        const isCircuitStart = item.circuitRole === "start" || item.circuitRole === "single";
+        const isCircuitEnd = item.circuitRole === "end" || item.circuitRole === "single";
 
-    const table = document.createElement("table");
-    table.className = "pdf-table";
-    table.innerHTML = `${theadHtml}<tbody></tbody>`;
+        if (isCircuitStart) {
+          inCircuit = true;
+          const label = item.circuitLabel ? item.circuitLabel : "CIRCUITO";
+          const bannerTr = document.createElement("tr");
+          bannerTr.dataset.keepWithNext = "true";
+          bannerTr.innerHTML = `<td colspan="7" class="pdf-circuit-banner">🔄 INIZIO ${escapeHtml(label)}</td>`;
+          trs.push(bannerTr);
+        }
 
-    const tbody = table.querySelector("tbody");
-    let inCircuit = false;
+        const tr = document.createElement("tr");
+        if (inCircuit) tr.className = "pdf-circuit-row";
+        tr.innerHTML = `
+          <td><strong>${index + 1}</strong></td>
+          <td style="white-space: nowrap;">
+            ${item.imgStart ? (isSingle ? `
+              <img src="${item.imgStart}" class="pdf-thumb">
+            ` : `
+              <img src="${item.imgStart}" class="pdf-thumb">
+              <img src="${item.imgEnd}" class="pdf-thumb">
+            `) : '-'}
+          </td>
+          <td>
+            <strong>${escapeHtml(item.name)}</strong><br>
+            <span style="font-size: 9px; color: #64748b;">${escapeHtml(item.muscle || "")}</span>
+          </td>
+          <td><strong>${escapeHtml(item.setsReps || "-")}</strong></td>
+          <td>${escapeHtml(item.rest || "-")}</td>
+          <td>${escapeHtml(item.rir || "-")}</td>
+          <td style="font-size: 9.5px; white-space: pre-wrap;">${escapeHtml(item.notes || "-")}</td>
+        `;
+        trs.push(tr);
 
-    groupedDays[dayName].forEach((item, index) => {
-      const isSingle = item.imgStart === item.imgEnd;
-      const isCircuitStart = item.circuitRole === "start" || item.circuitRole === "single";
-      const isCircuitEnd = item.circuitRole === "end" || item.circuitRole === "single";
+        if (isCircuitEnd && inCircuit) {
+          const endTr = document.createElement("tr");
+          endTr.innerHTML = `<td colspan="7" class="pdf-circuit-end">🏁 FINE CIRCUITO</td>`;
+          trs.push(endTr);
+          inCircuit = false;
+        }
+      });
 
-      if (isCircuitStart) {
-        inCircuit = true;
-        const label = item.circuitLabel ? item.circuitLabel : "CIRCUITO";
-        const bannerTr = document.createElement("tr");
-        bannerTr.dataset.keepWithNext = "true";
-        bannerTr.innerHTML = `<td colspan="7" class="pdf-circuit-banner">🔄 INIZIO ${escapeHtml(label)}</td>`;
-        tbody.appendChild(bannerTr);
-      }
-
-      const tr = document.createElement("tr");
-      if (inCircuit) tr.className = "pdf-circuit-row";
-
-      tr.innerHTML = `
-        <td><strong>${index + 1}</strong></td>
-        <td style="white-space: nowrap;">
-          ${item.imgStart ? (isSingle ? `
-            <img src="${item.imgStart}" class="pdf-thumb">
-          ` : `
-            <img src="${item.imgStart}" class="pdf-thumb">
-            <img src="${item.imgEnd}" class="pdf-thumb">
-          `) : '-'}
-        </td>
-        <td>
-          <strong>${escapeHtml(item.name)}</strong><br>
-          <span style="font-size: 9px; color: #64748b;">${escapeHtml(item.muscle || "")}</span>
-        </td>
-        <td><strong>${escapeHtml(item.setsReps || "-")}</strong></td>
-        <td>${escapeHtml(item.rest || "-")}</td>
-        <td>${escapeHtml(item.rir || "-")}</td>
-        <td style="font-size: 9.5px; white-space: pre-wrap;">${escapeHtml(item.notes || "-")}</td>
-      `;
-      tbody.appendChild(tr);
-
-      if (isCircuitEnd && inCircuit) {
-        const endTr = document.createElement("tr");
-        endTr.innerHTML = `<td colspan="7" class="pdf-circuit-end">🏁 FINE CIRCUITO</td>`;
-        tbody.appendChild(endTr);
-        inCircuit = false;
-      }
+      return { dayName, trs };
     });
 
-    daySection.appendChild(table);
-    tablesContainer.appendChild(daySection);
-  });
-
-  const sourceSheet = document.getElementById("pdfSheet");
-
-  const printHost = document.createElement("div");
-  printHost.style.cssText = "position: absolute; top: 0; left: 0; width: 740px; margin: 0; padding: 0; background: #ffffff; z-index: 999999;";
-
-  const clonedSheet = sourceSheet.cloneNode(true);
-  clonedSheet.style.cssText = "width: 740px; max-width: 740px; margin: 0; padding: 0; box-sizing: border-box; background: #ffffff; color: #0f172a;";
-  printHost.appendChild(clonedSheet);
-  document.body.appendChild(printHost);
+  // Area di misurazione fuori schermo con text-size-adjust bloccato per iOS Safari
+  const measureHost = document.createElement("div");
+  measureHost.style.cssText = "position: absolute; top: 0; left: 0; width: 740px; margin: 0; padding: 0; background: #ffffff; z-index: 999999; -webkit-text-size-adjust: 100%; text-size-adjust: 100%;";
+  document.body.appendChild(measureHost);
 
   const prevScrollX = window.scrollX;
   const prevScrollY = window.scrollY;
   window.scrollTo(0, 0);
 
-  const imgs = Array.from(clonedSheet.querySelectorAll("img"));
-  await Promise.all(imgs.map(img => {
+  // Dimensioni pagina A4 in pixel (200mm x 287mm -> 740px x 1061px)
+  const PAGE_W = 740;
+  const PAGE_H = 1056;
+
+  function createPageContainer() {
+    const page = document.createElement("div");
+    page.className = "pdf-sheet";
+    page.style.cssText = `width: ${PAGE_W}px; max-width: ${PAGE_W}px; min-height: ${PAGE_H}px; height: ${PAGE_H}px; margin: 0; padding: 14px 16px; box-sizing: border-box; background: #ffffff; color: #0f172a; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; -webkit-text-size-adjust: 100%;`;
+    const body = document.createElement("div");
+    body.style.cssText = "flex: 1; display: flex; flex-direction: column;";
+    page.appendChild(body);
+    return { page, body };
+  }
+
+  // Clona intestazione + meta + note generali per Pagina 1
+  const sourceSheet = document.getElementById("pdfSheet");
+  const headerClone = sourceSheet.querySelector(".pdf-header").cloneNode(true);
+  const metaClone = sourceSheet.querySelector(".pdf-meta").cloneNode(true);
+  const notesClone = sourceSheet.querySelector("#pdfGeneralNotesBox").cloneNode(true);
+  const footerTemplate = sourceSheet.querySelector(".pdf-footer");
+
+  const pages = [];
+  let current = createPageContainer();
+  current.body.appendChild(headerClone);
+  current.body.appendChild(metaClone);
+  if (generalNotes) current.body.appendChild(notesClone);
+  measureHost.appendChild(current.page);
+  pages.push(current);
+
+  // Attende il caricamento delle immagini
+  const allImgs = [
+    ...Array.from(headerClone.querySelectorAll("img")),
+    ...dayDataList.flatMap(d => d.trs.flatMap(tr => Array.from(tr.querySelectorAll("img"))))
+  ];
+  await Promise.all(allImgs.map(img => {
     if (img.complete) return Promise.resolve();
-    return new Promise(res => {
-      img.onload = res;
-      img.onerror = res;
-    });
+    return new Promise(res => { img.onload = res; img.onerror = res; });
   }));
-  await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 120)));
+  await new Promise(r => requestAnimationFrame(() => setTimeout(r, 80)));
 
-  const MAX_PAGE_HEIGHT = 1036;
+  const FOOTER_RESERVE = 34;
 
-  const tablesTop = clonedSheet.querySelector("#pdfTablesContainer").getBoundingClientRect().top;
-  const sheetTop = clonedSheet.getBoundingClientRect().top;
-  let usedOnPage = Math.max(0, tablesTop - sheetTop);
+  function getRemainingSpace(pageObj) {
+    const pageRect = pageObj.page.getBoundingClientRect();
+    const lastChild = pageObj.body.lastElementChild;
+    const usedBottom = lastChild ? lastChild.getBoundingClientRect().bottom : pageRect.top + 14;
+    return (pageRect.bottom - 14 - FOOTER_RESERVE) - usedBottom;
+  }
 
-  const daySections = Array.from(clonedSheet.querySelectorAll(".pdf-day-section"));
+  function startNewPage() {
+    const next = createPageContainer();
+    measureHost.appendChild(next.page);
+    pages.push(next);
+    current = next;
+    return next;
+  }
 
-  daySections.forEach(section => {
-    const titleEl = section.querySelector(".pdf-day-title");
-    const firstTable = section.querySelector(".pdf-table");
-    if (!firstTable || !titleEl) return;
+  // Distribuisce ogni giorno e ogni singola riga nelle pagine A4 misurando l'altezza reale nel DOM
+  for (const dayData of dayDataList) {
+    const dayTitle = document.createElement("div");
+    dayTitle.className = "pdf-day-title";
+    dayTitle.textContent = dayData.dayName;
 
-    const theadEl = firstTable.querySelector("thead");
-    const theadHeight = theadEl ? theadEl.getBoundingClientRect().height : 26;
-    const allRows = Array.from(firstTable.querySelectorAll("tbody tr"));
-    if (allRows.length === 0) return;
+    let table = document.createElement("table");
+    table.className = "pdf-table";
+    table.innerHTML = `${theadHtml}<tbody></tbody>`;
+    let tbody = table.querySelector("tbody");
 
-    const titleStyle = window.getComputedStyle(titleEl);
-    const titleMarginTop = parseFloat(titleStyle.marginTop) || 0;
-    const titleMarginBottom = parseFloat(titleStyle.marginBottom) || 0;
-    const titleTotalHeight = titleEl.getBoundingClientRect().height + titleMarginTop + titleMarginBottom;
-
-    let firstBlockHeight = allRows[0].getBoundingClientRect().height;
-    if (allRows[0].dataset.keepWithNext === "true" && allRows[1]) {
-      firstBlockHeight += allRows[1].getBoundingClientRect().height;
+    // Prova ad aggiungere titolo + intestazione + prima riga (e banner se presente) sulla pagina corrente
+    current.body.appendChild(dayTitle);
+    current.body.appendChild(table);
+    if (dayData.trs[0]) tbody.appendChild(dayData.trs[0]);
+    if (dayData.trs[0]?.dataset.keepWithNext === "true" && dayData.trs[1]) {
+      tbody.appendChild(dayData.trs[1]);
     }
 
-    if (usedOnPage > 40 && (usedOnPage + titleTotalHeight + theadHeight + firstBlockHeight > MAX_PAGE_HEIGHT)) {
-      titleEl.classList.add("pdf-page-break");
-      usedOnPage = titleEl.getBoundingClientRect().height + titleMarginBottom + theadHeight;
-    } else {
-      usedOnPage += titleTotalHeight + theadHeight;
+    if (getRemainingSpace(current) < 0 && pages[0].body.children.length > 2) {
+      // Non ci sta: sposta l'intero inizio giorno alla pagina successiva
+      current.body.removeChild(dayTitle);
+      current.body.removeChild(table);
+      startNewPage();
+      current.body.appendChild(dayTitle);
+      current.body.appendChild(table);
     }
 
-    let activeTable = firstTable;
-    let activeTbody = firstTable.querySelector("tbody");
+    // Svuota e reinserisce tutte le righe una per una verificando lo spazio residuo reale
+    tbody.innerHTML = "";
+    for (let i = 0; i < dayData.trs.length; i++) {
+      const tr = dayData.trs[i];
+      const nextTr = (tr.dataset.keepWithNext === "true" && dayData.trs[i + 1]) ? dayData.trs[i + 1] : null;
 
-    for (let i = 0; i < allRows.length; i++) {
-      const tr = allRows[i];
-      if (tr.parentNode !== activeTbody) {
-        activeTbody.appendChild(tr);
+      tbody.appendChild(tr);
+      if (nextTr) tbody.appendChild(nextTr);
+
+      if (getRemainingSpace(current) < 0 && tbody.children.length > (nextTr ? 2 : 1)) {
+        // Questa riga sfora: toglila dalla tabella corrente e mettila in cima a una nuova pagina
+        tbody.removeChild(tr);
+        if (nextTr) tbody.removeChild(nextTr);
+
+        startNewPage();
+        table = document.createElement("table");
+        table.className = "pdf-table";
+        table.style.marginTop = "0";
+        table.innerHTML = `${theadHtml}<tbody></tbody>`;
+        tbody = table.querySelector("tbody");
+        current.body.appendChild(table);
+
+        tbody.appendChild(tr);
+        if (nextTr) tbody.appendChild(nextTr);
       }
 
-      const rowHeight = tr.getBoundingClientRect().height;
-      let neededHeight = rowHeight;
-      if (tr.dataset.keepWithNext === "true" && allRows[i + 1]) {
-        neededHeight += allRows[i + 1].getBoundingClientRect().height;
-      }
-
-      if (i > 0 && usedOnPage > 60 && (usedOnPage + neededHeight > MAX_PAGE_HEIGHT)) {
-        const nextTable = document.createElement("table");
-        nextTable.className = "pdf-table pdf-page-break";
-        nextTable.style.marginTop = "0";
-        nextTable.innerHTML = `${theadHtml}<tbody></tbody>`;
-
-        activeTable.parentNode.insertBefore(nextTable, activeTable.nextSibling);
-        activeTable = nextTable;
-        activeTbody = nextTable.querySelector("tbody");
-        activeTbody.appendChild(tr);
-
-        usedOnPage = theadHeight + rowHeight;
-      } else {
-        usedOnPage += rowHeight;
-      }
-    }
-  });
-
-  const footerEl = clonedSheet.querySelector(".pdf-footer");
-  if (footerEl) {
-    const footerHeight = footerEl.getBoundingClientRect().height + 16;
-    if (usedOnPage + footerHeight > MAX_PAGE_HEIGHT) {
-      footerEl.classList.add("pdf-page-break");
+      if (nextTr) i++;
     }
   }
 
-  await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 100)));
+  // Aggiunge il footer con numero pagina su ogni foglio A4
+  pages.forEach((p, idx) => {
+    const f = footerTemplate.cloneNode(true);
+    f.style.marginTop = "8px";
+    const rightSpan = f.querySelector("span:last-child");
+    if (rightSpan) rightSpan.textContent = `Pagina ${idx + 1} di ${pages.length}`;
+    p.page.appendChild(f);
+  });
 
-  const opt = {
-    margin: 5,
-    filename: fileName,
-    image: { type: 'jpeg', quality: 0.95 },
-    html2canvas: {
-      scale: 2,
-      useCORS: true,
-      allowTaint: true,
-      x: 0,
-      y: 0,
-      width: 740,
-      scrollX: 0,
-      scrollY: 0,
-      windowWidth: 740
-    },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-    pagebreak: { mode: ['css'], before: '.pdf-page-break' }
-  };
+  await new Promise(r => requestAnimationFrame(() => setTimeout(r, 80)));
 
   try {
-    await html2pdf().set(opt).from(clonedSheet).save();
+    const JsPdfCtor = (window.jspdf && window.jspdf.jsPDF) ? window.jspdf.jsPDF : window.jsPDF;
+    const pdf = new JsPdfCtor({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    const pdfW = pdf.internal.pageSize.getWidth();
+    const pdfH = pdf.internal.pageSize.getHeight();
+    const marginMm = 5;
+    const contentW = pdfW - marginMm * 2;
+    const contentH = pdfH - marginMm * 2;
+
+    for (let idx = 0; idx < pages.length; idx++) {
+      const canvas = await html2canvas(pages[idx].page, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: "#ffffff",
+        width: PAGE_W,
+        height: PAGE_H,
+        windowWidth: PAGE_W,
+        scrollX: 0,
+        scrollY: 0
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      if (idx > 0) pdf.addPage();
+      pdf.addImage(imgData, 'JPEG', marginMm, marginMm, contentW, contentH);
+    }
+
+    pdf.save(fileName);
   } finally {
-    document.body.removeChild(printHost);
+    document.body.removeChild(measureHost);
     window.scrollTo(prevScrollX, prevScrollY);
   }
 };
