@@ -141,3 +141,63 @@ document.getElementById("btnResetLogo").addEventListener("click", async () => {
     alert("Logo predefinito ripristinato.");
   }
 });
+
+const btnOpenAppGuide = document.getElementById("btnOpenAppGuide");
+const btnCloseAppGuide = document.getElementById("btnCloseAppGuide");
+const appGuideSection = document.getElementById("appGuideSection");
+const appGuideContent = document.getElementById("appGuideContent");
+
+function renderAppGuideContent() {
+  if (!appGuideContent) return;
+  const isTrainer = typeof currentProfile !== "undefined" && currentProfile && currentProfile.role === "trainer";
+
+  if (isTrainer) {
+    appGuideContent.innerHTML = `
+      <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
+        <strong style="color: var(--primary); display: block; margin-bottom: 4px;">1. Collegare gli Atleti</strong>
+        Copia il tuo <strong>Codice Invito</strong> dalla scheda <em>I Miei Atleti</em> e invialo al cliente. Una volta registrato come Atleta, potrà incollarlo per collegarsi al tuo profilo.
+      </div>
+      <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
+        <strong style="color: var(--primary); display: block; margin-bottom: 4px;">2. Anamnesi Privata (Collegati ed Esterni)</strong>
+        Clicca su <strong>🩺 Anamnesi</strong> accanto a un atleta collegato (oppure <strong>➕ Nuova Anamnesi</strong> per clienti esterni) per annotare infortuni, obiettivi, stile di vita e note riservate visibili solo a te.
+      </div>
+      <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
+        <strong style="color: var(--primary); display: block; margin-bottom: 4px;">3. Workout Builder, Circuiti e PDF</strong>
+        Seleziona l'atleta (o lascia vuoto per solo PDF), aggiungi gli esercizi per giorno, usa <em>Inizio/Fine Circuito</em> per raggruppare superset o circuiti, salva in <strong>📝 Bozza</strong> o invia direttamente all'app con <strong>☁️ Salva e Invia</strong>.
+      </div>
+      <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
+        <strong style="color: var(--primary); display: block; margin-bottom: 4px;">4. Progressi, Risposte e Statistiche</strong>
+        In <strong>📊 Progressi</strong> leggi i carichi e le note inserite dall'atleta e rispondi direttamente sotto ogni esercizio. In <strong>📈 Statistiche</strong> monitori l'andamento di volumi e carichi nel tempo.
+      </div>
+    `;
+  } else {
+    appGuideContent.innerHTML = `
+      <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
+        <strong style="color: var(--primary); display: block; margin-bottom: 4px;">1. Collegamento al Personal Trainer</strong>
+        Al primo accesso incolla il <strong>Codice Invito</strong> ricevuto dal tuo coach per sincronizzare automaticamente il tuo profilo e ricevere le schede.
+      </div>
+      <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
+        <strong style="color: var(--primary); display: block; margin-bottom: 4px;">2. Modalità Allenamento vs Scheda Pulita</strong>
+        In cima alla scheda puoi alternare <strong>✏️ Modalità Allenamento</strong> (per inserire Kg, Ripetizioni, RIR e note per ogni serie) e <strong>👁️ Scheda Pulita</strong> (per consultare solo gli esercizi senza campi di inserimento).
+      </div>
+      <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
+        <strong style="color: var(--primary); display: block; margin-bottom: 4px;">3. Feedback con il Coach e PDF</strong>
+        Ogni volta che salvi i carichi o una nota, il tuo coach riceve una notifica e può risponderti direttamente sotto l'esercizio. In fondo alla pagina puoi sempre scaricare la scheda in <strong>📄 PDF</strong>.
+      </div>
+    `;
+  }
+}
+
+if (btnOpenAppGuide) {
+  btnOpenAppGuide.addEventListener("click", () => {
+    renderAppGuideContent();
+    document.getElementById("settingsSection").classList.add("hidden");
+    appGuideSection.classList.remove("hidden");
+  });
+}
+
+if (btnCloseAppGuide) {
+  btnCloseAppGuide.addEventListener("click", () => {
+    appGuideSection.classList.add("hidden");
+  });
+}
