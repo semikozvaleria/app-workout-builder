@@ -815,7 +815,7 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   }
 });
 
-// Helper condiviso per paginazione A4 esplicita con tracciamento altezza reale per singola pagina
+// Generazione PDF Stampabile centrata su Desktop e iOS Safari con paginazione anti-taglio righe
 window.exportPaginatedWorkoutPdf = async function({
   athleteName,
   durationWeeks,
@@ -913,7 +913,9 @@ window.exportPaginatedWorkoutPdf = async function({
       tbody.appendChild(tr);
 
       if (isCircuitEnd && inCircuit) {
+        tr.dataset.keepWithNext = "true";
         const endTr = document.createElement("tr");
+        endTr.dataset.isCircuitEnd = "true";
         endTr.innerHTML = `<td colspan="7" class="pdf-circuit-end">🏁 FINE CIRCUITO</td>`;
         tbody.appendChild(endTr);
         inCircuit = false;
@@ -927,10 +929,10 @@ window.exportPaginatedWorkoutPdf = async function({
   const sourceSheet = document.getElementById("pdfSheet");
 
   const printHost = document.createElement("div");
-  printHost.style.cssText = "position: absolute; top: 0; left: 0; width: 740px; margin: 0; padding: 0; background: #ffffff; z-index: 999999;";
+  printHost.style.cssText = "position: absolute; top: 0; left: 0; width: 740px; min-width: 740px; margin: 0; padding: 0; background: #ffffff; z-index: 999999; -webkit-text-size-adjust: 100%; text-size-adjust: 100%;";
 
   const clonedSheet = sourceSheet.cloneNode(true);
-  clonedSheet.style.cssText = "width: 740px; max-width: 740px; margin: 0; padding: 0; box-sizing: border-box; background: #ffffff; color: #0f172a;";
+  clonedSheet.style.cssText = "width: 740px; min-width: 740px; max-width: 740px; margin: 0; box-sizing: border-box; background: #ffffff; color: #0f172a; -webkit-text-size-adjust: 100%; text-size-adjust: 100%;";
   printHost.appendChild(clonedSheet);
   document.body.appendChild(printHost);
 
@@ -946,13 +948,19 @@ window.exportPaginatedWorkoutPdf = async function({
       img.onerror = res;
     });
   }));
-  await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 120)));
+  await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 150)));
 
-  const MAX_PAGE_HEIGHT = 1036;
-
-  const tablesTop = clonedSheet.querySelector("#pdfTablesContainer").getBoundingClientRect().top;
+  const PAGE_MAX_PX = 1044;
   const sheetTop = clonedSheet.getBoundingClientRect().top;
-  let usedOnPage = Math.max(0, tablesTop - sheetTop);
+  const tablesTop = clonedSheet.querySelector("#pdfTablesContainer").getBoundingClientRect().top;
+  let usedInCurrentPage = Math.max(0, tablesTop - sheetTop);
+
+  function createPageBreakMarker() {
+    const brk = document.createElement("div");
+    brk.className = "html2pdf__page-break";
+    brk.style.cssText = "height: 1px; width: 100%; page-break-before: always; break-before: page;";
+    return brk;
+  }
 
   const daySections = Array.from(clonedSheet.querySelectorAll(".pdf-day-section"));
 
@@ -967,20 +975,20 @@ window.exportPaginatedWorkoutPdf = async function({
     if (allRows.length === 0) return;
 
     const titleStyle = window.getComputedStyle(titleEl);
-    const titleMarginTop = parseFloat(titleStyle.marginTop) || 0;
-    const titleMarginBottom = parseFloat(titleStyle.marginBottom) || 0;
-    const titleTotalHeight = titleEl.getBoundingClientRect().height + titleMarginTop + titleMarginBottom;
+    const titleTotalH = titleEl.getBoundingClientRect().height +
+      (parseFloat(titleStyle.marginTop) || 0) +
+      (parseFloat(titleStyle.marginBottom) || 0);
 
-    let firstBlockHeight = allRows[0].getBoundingClientRect().height;
+    let initialBlockH = allRows[0].getBoundingClientRect().height;
     if (allRows[0].dataset.keepWithNext === "true" && allRows[1]) {
-      firstBlockHeight += allRows[1].getBoundingClientRect().height;
+      initialBlockH += allRows[1].getBoundingClientRect().height;
     }
 
-    if (usedOnPage > 40 && (usedOnPage + titleTotalHeight + theadHeight + firstBlockHeight > MAX_PAGE_HEIGHT)) {
-      titleEl.classList.add("pdf-page-break");
-      usedOnPage = titleEl.getBoundingClientRect().height + titleMarginBottom + theadHeight;
+    if (usedInCurrentPage > 40 && (usedInCurrentPage + titleTotalH + theadHeight + initialBlockH > PAGE_MAX_PX)) {
+      section.insertBefore(createPageBreakMarker(), titleEl);
+      usedInCurrentPage = titleTotalH + theadHeight;
     } else {
-      usedOnPage += titleTotalHeight + theadHeight;
+      usedInCurrentPage += titleTotalH + theadHeight;
     }
 
     let activeTable = firstTable;
@@ -992,39 +1000,34 @@ window.exportPaginatedWorkoutPdf = async function({
         activeTbody.appendChild(tr);
       }
 
-      const rowHeight = tr.getBoundingClientRect().height;
-      let neededHeight = rowHeight;
+      const rowH = tr.getBoundingClientRect().height;
+      let neededH = rowH;
       if (tr.dataset.keepWithNext === "true" && allRows[i + 1]) {
-        neededHeight += allRows[i + 1].getBoundingClientRect().height;
+        neededH += allRows[i + 1].getBoundingClientRect().height;
       }
 
-      if (i > 0 && usedOnPage > 60 && (usedOnPage + neededHeight > MAX_PAGE_HEIGHT)) {
+      if (i > 0 && !tr.dataset.isCircuitEnd && usedInCurrentPage > 50 && (usedInCurrentPage + neededH > PAGE_MAX_PX)) {
+        const brk = createPageBreakMarker();
+        activeTable.parentNode.insertBefore(brk, activeTable.nextSibling);
+
         const nextTable = document.createElement("table");
-        nextTable.className = "pdf-table pdf-page-break";
+        nextTable.className = "pdf-table";
         nextTable.style.marginTop = "0";
         nextTable.innerHTML = `${theadHtml}<tbody></tbody>`;
 
-        activeTable.parentNode.insertBefore(nextTable, activeTable.nextSibling);
+        brk.parentNode.insertBefore(nextTable, brk.nextSibling);
         activeTable = nextTable;
         activeTbody = nextTable.querySelector("tbody");
         activeTbody.appendChild(tr);
 
-        usedOnPage = theadHeight + rowHeight;
+        usedInCurrentPage = theadHeight + rowH;
       } else {
-        usedOnPage += rowHeight;
+        usedInCurrentPage += rowH;
       }
     }
   });
 
-  const footerEl = clonedSheet.querySelector(".pdf-footer");
-  if (footerEl) {
-    const footerHeight = footerEl.getBoundingClientRect().height + 16;
-    if (usedOnPage + footerHeight > MAX_PAGE_HEIGHT) {
-      footerEl.classList.add("pdf-page-break");
-    }
-  }
-
-  await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 100)));
+  await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 120)));
 
   const opt = {
     margin: 5,
@@ -1042,7 +1045,7 @@ window.exportPaginatedWorkoutPdf = async function({
       windowWidth: 740
     },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-    pagebreak: { mode: ['css'], before: '.pdf-page-break' }
+    pagebreak: { mode: ['legacy'] }
   };
 
   try {
