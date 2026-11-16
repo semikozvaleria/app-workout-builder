@@ -73,21 +73,19 @@
         </div>
       </div>
 
-      <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
-        <div>
-          <strong style="font-size: 0.88rem; display: block;">Guida Applicazione</strong>
-          <span style="font-size: 0.76rem; color: var(--text-muted);">Manuale rapido su tutte le funzionalità</span>
+      <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <div>
+            <strong style="font-size: 0.88rem; display: block;">Guida Applicazione</strong>
+            <span style="font-size: 0.76rem; color: var(--text-muted);">Manuale rapido su tutte le funzionalità</span>
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" id="btnOpenAppGuide" style="width: auto;">📖 Apri Guida</button>
         </div>
-        <button type="button" class="btn btn-outline btn-sm" id="btnOpenAppGuide" style="width: auto;">📖 Apri Guida</button>
-      </div>
 
-      <!-- PANNELLO GUIDA / MANUALE UTENTE -->
-      <div id="appGuideSection" class="card hidden">
-        <div class="section-title">
-          <span>📖 Guida Applicazione</span>
-          <button type="button" id="btnCloseAppGuide" class="btn btn-outline btn-sm">Chiudi ✖</button>
+        <!-- PANNELLO GUIDA / MANUALE UTENTE -->
+        <div id="appGuideSection" class="hidden" style="margin-top: 12px;">
+          <div id="appGuideContent" style="font-size: 0.84rem; line-height: 1.55; display: flex; flex-direction: column; gap: 10px;"></div>
         </div>
-        <div id="appGuideContent" style="font-size: 0.84rem; line-height: 1.55; display: flex; flex-direction: column; gap: 12px;"></div>
       </div>
 
       <!-- Eliminazione Account (visibile a tutti gli utenti loggati: Atleti e Coach) -->
