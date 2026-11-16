@@ -166,6 +166,16 @@
           <button class="btn btn-primary btn-sm" id="btnCopyCode">Copia</button>
         </div>
 
+        <!-- RICERCA RAPIDA ATLETI (COLLEGATI + ANAMNESI) -->
+        <div style="position: relative; margin-bottom: 14px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none;">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="text" id="trainerClientsSearchInput" placeholder="Cerca atleta.." style="padding-left: 34px; padding-right: 30px;">
+          <button type="button" id="btnClearTrainerClientsSearch" class="hidden" title="Cancella ricerca" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.85rem; padding: 2px 5px;">✕</button>
+        </div>
+
         <div class="section-title">
           <span>Atleti Collegati</span>
           <span id="clientsCount" style="font-size: 0.8rem; color: var(--text-muted);">0</span>
@@ -301,7 +311,7 @@
 
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <button type="button" class="btn btn-success" id="btnSaveAnamnesis">💾 Salva Anamnesi</button>
-          <div class="grid-2">
+          <div id="anamnesisSecondaryActions" style="display: flex; flex-direction: column; gap: 8px;">
             <button type="button" class="btn btn-outline btn-sm" id="btnAnamnesisToBuilder" style="width: 100%;">✏️ Crea Scheda</button>
             <button type="button" class="btn btn-outline btn-sm hidden" id="btnDeleteAnamnesis" style="width: 100%; border-color: var(--danger); color: var(--danger);">🗑️ Elimina Anamnesi</button>
           </div>
