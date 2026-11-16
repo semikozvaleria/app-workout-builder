@@ -530,7 +530,7 @@ textarea { resize: vertical; min-height: 70px; font-size: 0.85rem; line-height: 
   padding: 6px 9px;
   border-radius: 6px;
   font-size: 0.79rem;
-  font-weight: 600;
+  font-weight: 400;
   margin-top: 5px;
   white-space: pre-wrap;
 }
@@ -546,7 +546,7 @@ body:not(.light-theme) .note-athlete-box {
   padding: 6px 9px;
   border-radius: 6px;
   font-size: 0.79rem;
-  font-weight: 600;
+  font-weight: 400;
   margin-top: 6px;
   white-space: pre-wrap;
 }
