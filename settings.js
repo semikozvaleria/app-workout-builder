@@ -40,6 +40,10 @@ document.getElementById("btnOpenSettings").addEventListener("click", () => {
 
 document.getElementById("btnCloseSettings").addEventListener("click", () => {
   document.getElementById("settingsSection").classList.add("hidden");
+  const guideBox = document.getElementById("appGuideSection");
+  const guideBtn = document.getElementById("btnOpenAppGuide");
+  if (guideBox) guideBox.classList.add("hidden");
+  if (guideBtn) guideBtn.textContent = "📖 Apri Guida";
 });
 
 // Aggiorna visivamente il logo in tutta l'app (Header + PDF)
@@ -142,8 +146,8 @@ document.getElementById("btnResetLogo").addEventListener("click", async () => {
   }
 });
 
+// Guida Applicazione espandibile dentro Impostazioni
 const btnOpenAppGuide = document.getElementById("btnOpenAppGuide");
-const btnCloseAppGuide = document.getElementById("btnCloseAppGuide");
 const appGuideSection = document.getElementById("appGuideSection");
 const appGuideContent = document.getElementById("appGuideContent");
 
@@ -188,16 +192,17 @@ function renderAppGuideContent() {
   }
 }
 
-if (btnOpenAppGuide) {
-  btnOpenAppGuide.addEventListener("click", () => {
-    renderAppGuideContent();
-    document.getElementById("settingsSection").classList.add("hidden");
-    appGuideSection.classList.remove("hidden");
-  });
-}
-
-if (btnCloseAppGuide) {
-  btnCloseAppGuide.addEventListener("click", () => {
-    appGuideSection.classList.add("hidden");
+if (btnOpenAppGuide && appGuideSection) {
+  btnOpenAppGuide.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const isHidden = appGuideSection.classList.contains("hidden");
+    if (isHidden) {
+      renderAppGuideContent();
+      appGuideSection.classList.remove("hidden");
+      btnOpenAppGuide.textContent = "Chiudi ✖";
+    } else {
+      appGuideSection.classList.add("hidden");
+      btnOpenAppGuide.textContent = "📖 Apri Guida";
+    }
   });
 }
