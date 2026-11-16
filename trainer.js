@@ -1,4 +1,6 @@
 let trainerAnamnesisList = [];
+let enrichedClientsCache = [];
+let trainerClientsSearchTerm = "";
 
 async function initTrainerArea() {
   document.getElementById("trainerInviteCode").textContent = currentProfile.id;
@@ -11,6 +13,30 @@ document.getElementById("btnCopyCode").addEventListener("click", () => {
   btn.textContent = "Copiato!";
   setTimeout(() => btn.textContent = "Copia", 2000);
 });
+
+const trainerSearchInputEl = document.getElementById("trainerClientsSearchInput");
+const btnClearTrainerSearchEl = document.getElementById("btnClearTrainerClientsSearch");
+
+if (trainerSearchInputEl) {
+  trainerSearchInputEl.addEventListener("input", (e) => {
+    trainerClientsSearchTerm = e.target.value.trim().toLowerCase();
+    if (btnClearTrainerSearchEl) {
+      btnClearTrainerSearchEl.classList.toggle("hidden", trainerClientsSearchTerm.length === 0);
+    }
+    renderConnectedClientsList();
+    renderExternalAnamnesisList();
+  });
+}
+
+if (btnClearTrainerSearchEl) {
+  btnClearTrainerSearchEl.addEventListener("click", () => {
+    trainerClientsSearchTerm = "";
+    if (trainerSearchInputEl) trainerSearchInputEl.value = "";
+    btnClearTrainerSearchEl.classList.add("hidden");
+    renderConnectedClientsList();
+    renderExternalAnamnesisList();
+  });
+}
 
 function showTrainerView(viewId) {
   document.getElementById("trainerClientsView").classList.add("hidden");
@@ -214,6 +240,66 @@ function consolidateTrainerLogsByDay(logs, unseenIdsSet = new Set()) {
   }));
 }
 
+function renderConnectedClientsList() {
+  const container = document.getElementById("clientsListContainer");
+  const countEl = document.getElementById("clientsCount");
+  if (!container) return;
+
+  if (!enrichedClientsCache || enrichedClientsCache.length === 0) {
+    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">Nessun atleta ancora collegato. Condividi il tuo Codice Invito!</div>`;
+    if (countEl) countEl.textContent = "0 atleti";
+    return;
+  }
+
+  const term = trainerClientsSearchTerm;
+  const filtered = term
+    ? enrichedClientsCache.filter(({ client }) => {
+        const nameMatch = (client.full_name || "").toLowerCase().includes(term);
+        const emailMatch = (client.email || "").toLowerCase().includes(term);
+        const anam = (trainerAnamnesisList || []).find(a => a.athlete_id === client.id);
+        const anamMatch = anam
+          ? ((anam.goal || "").toLowerCase().includes(term) || (anam.private_notes || "").toLowerCase().includes(term))
+          : false;
+        return nameMatch || emailMatch || anamMatch;
+      })
+    : enrichedClientsCache;
+
+  if (countEl) {
+    countEl.textContent = term
+      ? `${filtered.length} di ${enrichedClientsCache.length}`
+      : `${enrichedClientsCache.length} atleti`;
+  }
+
+  if (filtered.length === 0) {
+    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.84rem; padding: 12px;">Nessun atleta collegato corrisponde a "${escapeHtml(trainerClientsSearchTerm)}".</div>`;
+    return;
+  }
+
+  container.innerHTML = "";
+  filtered.forEach(({ client, badgeHtml, hasUnreadUpdate, hasAnamnesis }) => {
+    const card = document.createElement("div");
+    card.className = "client-card";
+    card.innerHTML = `
+      <div>
+        <strong style="font-size: 0.95rem; display: block;">
+          ${escapeHtml(client.full_name)}
+          ${hasUnreadUpdate ? '<span style="font-size:0.7rem; background:rgba(16,185,129,0.18); color:#10b981; padding:1px 6px; border-radius:4px; margin-left:4px;">● Da vedere</span>' : ''}
+        </strong>
+        <span style="font-size: 0.78rem; color: var(--text-muted);">${escapeHtml(client.email)}</span><br>
+        ${badgeHtml}
+      </div>
+      <div class="client-actions">
+        <button class="btn btn-outline btn-sm" style="${hasAnamnesis ? 'border-color: var(--primary); color: var(--primary);' : ''}" onclick="openClientAnamnesis('${client.id}', '${escapeHtml(client.full_name)}')">🩺 Anamnesi</button>
+        <button class="btn btn-outline btn-sm" onclick="viewClientWorkouts('${client.id}', '${escapeHtml(client.full_name)}')">📋 Schede</button>
+        <button class="btn btn-outline btn-sm" onclick="viewClientProgress('${client.id}', '${escapeHtml(client.full_name)}')">📊 Progressi</button>
+        <button class="btn btn-outline btn-sm" onclick="viewClientStats('${client.id}', '${escapeHtml(client.full_name)}')">📈 Statistiche</button>
+        <button class="btn btn-primary btn-sm" onclick="openBuilderForClient('${client.id}', '${escapeHtml(client.full_name)}')">Crea Scheda</button>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
 function renderExternalAnamnesisList() {
   const container = document.getElementById("externalAnamnesisListContainer");
   if (!container) return;
@@ -225,8 +311,23 @@ function renderExternalAnamnesisList() {
     return;
   }
 
+  const term = trainerClientsSearchTerm;
+  const filtered = term
+    ? externalRecords.filter(rec =>
+        (rec.full_name || "").toLowerCase().includes(term) ||
+        (rec.goal || "").toLowerCase().includes(term) ||
+        (rec.availability || "").toLowerCase().includes(term) ||
+        (rec.private_notes || "").toLowerCase().includes(term)
+      )
+    : externalRecords;
+
+  if (filtered.length === 0) {
+    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.82rem; padding: 8px;">Nessuna anamnesi esterna corrisponde a "${escapeHtml(trainerClientsSearchTerm)}".</div>`;
+    return;
+  }
+
   container.innerHTML = "";
-  externalRecords.forEach(rec => {
+  filtered.forEach(rec => {
     const updatedStr = rec.updated_at
       ? new Date(rec.updated_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' })
       : '';
@@ -278,7 +379,6 @@ async function loadTrainerClients() {
   trainerAnamnesisList = allAnamnesis || [];
   renderExternalAnamnesisList();
 
-  const container = document.getElementById("clientsListContainer");
   const select = document.getElementById("builderAthleteSelect");
   const coachAlerts = [];
 
@@ -292,15 +392,14 @@ async function loadTrainerClients() {
   });
 
   if (error || !clients || clients.length === 0) {
-    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">Nessun atleta ancora collegato. Condividi il tuo Codice Invito!</div>`;
-    document.getElementById("clientsCount").textContent = "0 atleti";
+    enrichedClientsCache = [];
+    renderConnectedClientsList();
     select.innerHTML = `<option value="">-- Nessun atleta collegato (Solo PDF) --</option>`;
     updateNotificationCenter(coachAlerts);
     return;
   }
 
   trainerClients = clients;
-  document.getElementById("clientsCount").textContent = `${clients.length} atleti`;
 
   select.innerHTML = `<option value="">-- Nessun atleta collegato (Solo PDF) --</option>` +
     clients.map(c => `<option value="${c.id}">${escapeHtml(c.full_name)} (${c.email})</option>`).join("");
@@ -321,7 +420,6 @@ async function loadTrainerClients() {
       .order('logged_at', { ascending: false })
   ]);
 
-  container.innerHTML = "";
   const today = new Date();
   const enrichedClients = [];
 
@@ -380,29 +478,8 @@ async function loadTrainerClients() {
   });
 
   enrichedClients.sort((a, b) => a.priority - b.priority);
-
-  enrichedClients.forEach(({ client, badgeHtml, hasUnreadUpdate, hasAnamnesis }) => {
-    const card = document.createElement("div");
-    card.className = "client-card";
-    card.innerHTML = `
-      <div>
-        <strong style="font-size: 0.95rem; display: block;">
-          ${escapeHtml(client.full_name)}
-          ${hasUnreadUpdate ? '<span style="font-size:0.7rem; background:rgba(16,185,129,0.18); color:#10b981; padding:1px 6px; border-radius:4px; margin-left:4px;">● Da vedere</span>' : ''}
-        </strong>
-        <span style="font-size: 0.78rem; color: var(--text-muted);">${escapeHtml(client.email)}</span><br>
-        ${badgeHtml}
-      </div>
-      <div class="client-actions">
-        <button class="btn btn-outline btn-sm" style="${hasAnamnesis ? 'border-color: var(--primary); color: var(--primary);' : ''}" onclick="openClientAnamnesis('${client.id}', '${escapeHtml(client.full_name)}')">🩺 Anamnesi</button>
-        <button class="btn btn-outline btn-sm" onclick="viewClientWorkouts('${client.id}', '${escapeHtml(client.full_name)}')">📋 Schede</button>
-        <button class="btn btn-outline btn-sm" onclick="viewClientProgress('${client.id}', '${escapeHtml(client.full_name)}')">📊 Progressi</button>
-        <button class="btn btn-outline btn-sm" onclick="viewClientStats('${client.id}', '${escapeHtml(client.full_name)}')">📈 Statistiche</button>
-        <button class="btn btn-primary btn-sm" onclick="openBuilderForClient('${client.id}', '${escapeHtml(client.full_name)}')">Crea Scheda</button>
-      </div>
-    `;
-    container.appendChild(card);
-  });
+  enrichedClientsCache = enrichedClients;
+  renderConnectedClientsList();
 
   updateNotificationCenter(coachAlerts);
 }
