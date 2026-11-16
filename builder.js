@@ -948,10 +948,9 @@ window.exportPaginatedWorkoutPdf = async function({
   }));
   await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 150)));
 
-  // Altezza reale di una pagina A4 in html2pdf con width=740px e margin=5mm:
-  // 210mm x 297mm -> area utile 200mm x 287mm -> 740 * (287 / 200) = 1061.9px
-  const PAGE_SLOT_PX = 1062;
-  const SAFE_BOTTOM_MARGIN = 18;
+  // Passo di taglio reale di html2pdf con width=740px e margin=5mm (calibrato per evitare deriva su 3+ pagine)
+  const PAGE_SLOT_PX = 1020;
+  const SAFE_BOTTOM_MARGIN = 16;
 
   const daySections = Array.from(clonedSheet.querySelectorAll(".pdf-day-section"));
 
@@ -965,8 +964,6 @@ window.exportPaginatedWorkoutPdf = async function({
     const allRows = Array.from(firstTable.querySelectorAll("tbody tr"));
     if (allRows.length === 0) return;
 
-    // 1. Se Titolo Giorno + Intestazione + Prima riga (e banner se presente) non entrano nello slot corrente,
-    //    inserisce uno spaziatore bianco per farli partire esattamente in cima alla pagina successiva
     const sheetTop = clonedSheet.getBoundingClientRect().top;
     const titleRect = titleEl.getBoundingClientRect();
     let initialBlockHeight = allRows[0].getBoundingClientRect().height;
@@ -982,8 +979,6 @@ window.exportPaginatedWorkoutPdf = async function({
       section.insertBefore(spacer, titleEl);
     }
 
-    // 2. Controlla riga per riga: se una riga attraverserebbe il bordo pagina, inserisce uno spaziatore
-    //    fino all'inizio della pagina successiva e ripete l'intestazione della tabella
     let activeTable = firstTable;
     let activeTbody = firstTable.querySelector("tbody");
 
