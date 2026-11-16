@@ -815,8 +815,8 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   }
 });
 
-// Motore PDF A4 multi-pagina deterministico (100% compatibile con iOS Safari e Desktop:
-// impagina pagina per pagina senza mai tagliare una riga a metà)
+// Motore PDF A4 multi-pagina deterministico tramite API interna di html2pdf
+// (100% compatibile con iOS Safari e Desktop: impagina pagina per pagina senza tagliare righe)
 window.exportPaginatedWorkoutPdf = async function({
   athleteName,
   durationWeeks,
@@ -825,6 +825,11 @@ window.exportPaginatedWorkoutPdf = async function({
   groupedDays,
   fileName
 }) {
+  if (typeof html2pdf !== "function") {
+    alert("Libreria PDF non ancora caricata. Riprova tra un attimo.");
+    return;
+  }
+
   const totalExercises = Object.values(groupedDays).reduce((acc, arr) => acc + arr.length, 0);
 
   document.getElementById("pdfAthlete").textContent = athleteName;
@@ -856,7 +861,6 @@ window.exportPaginatedWorkoutPdf = async function({
     </thead>
   `;
 
-  // Costruisce i blocchi giorno con le righe già pronte
   const dayDataList = Object.keys(groupedDays)
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
     .map(dayName => {
@@ -911,7 +915,6 @@ window.exportPaginatedWorkoutPdf = async function({
       return { dayName, trs };
     });
 
-  // Area di misurazione fuori schermo con text-size-adjust bloccato per iOS Safari
   const measureHost = document.createElement("div");
   measureHost.style.cssText = "position: absolute; top: 0; left: 0; width: 740px; margin: 0; padding: 0; background: #ffffff; z-index: 999999; -webkit-text-size-adjust: 100%; text-size-adjust: 100%;";
   document.body.appendChild(measureHost);
@@ -920,9 +923,8 @@ window.exportPaginatedWorkoutPdf = async function({
   const prevScrollY = window.scrollY;
   window.scrollTo(0, 0);
 
-  // Dimensioni pagina A4 in pixel (200mm x 287mm -> 740px x 1061px)
   const PAGE_W = 740;
-  const PAGE_H = 1056;
+  const PAGE_H = 1054;
 
   function createPageContainer() {
     const page = document.createElement("div");
@@ -934,7 +936,6 @@ window.exportPaginatedWorkoutPdf = async function({
     return { page, body };
   }
 
-  // Clona intestazione + meta + note generali per Pagina 1
   const sourceSheet = document.getElementById("pdfSheet");
   const headerClone = sourceSheet.querySelector(".pdf-header").cloneNode(true);
   const metaClone = sourceSheet.querySelector(".pdf-meta").cloneNode(true);
@@ -949,7 +950,6 @@ window.exportPaginatedWorkoutPdf = async function({
   measureHost.appendChild(current.page);
   pages.push(current);
 
-  // Attende il caricamento delle immagini
   const allImgs = [
     ...Array.from(headerClone.querySelectorAll("img")),
     ...dayDataList.flatMap(d => d.trs.flatMap(tr => Array.from(tr.querySelectorAll("img"))))
@@ -977,7 +977,6 @@ window.exportPaginatedWorkoutPdf = async function({
     return next;
   }
 
-  // Distribuisce ogni giorno e ogni singola riga nelle pagine A4 misurando l'altezza reale nel DOM
   for (const dayData of dayDataList) {
     const dayTitle = document.createElement("div");
     dayTitle.className = "pdf-day-title";
@@ -988,7 +987,6 @@ window.exportPaginatedWorkoutPdf = async function({
     table.innerHTML = `${theadHtml}<tbody></tbody>`;
     let tbody = table.querySelector("tbody");
 
-    // Prova ad aggiungere titolo + intestazione + prima riga (e banner se presente) sulla pagina corrente
     current.body.appendChild(dayTitle);
     current.body.appendChild(table);
     if (dayData.trs[0]) tbody.appendChild(dayData.trs[0]);
@@ -997,7 +995,6 @@ window.exportPaginatedWorkoutPdf = async function({
     }
 
     if (getRemainingSpace(current) < 0 && pages[0].body.children.length > 2) {
-      // Non ci sta: sposta l'intero inizio giorno alla pagina successiva
       current.body.removeChild(dayTitle);
       current.body.removeChild(table);
       startNewPage();
@@ -1005,7 +1002,6 @@ window.exportPaginatedWorkoutPdf = async function({
       current.body.appendChild(table);
     }
 
-    // Svuota e reinserisce tutte le righe una per una verificando lo spazio residuo reale
     tbody.innerHTML = "";
     for (let i = 0; i < dayData.trs.length; i++) {
       const tr = dayData.trs[i];
@@ -1015,7 +1011,6 @@ window.exportPaginatedWorkoutPdf = async function({
       if (nextTr) tbody.appendChild(nextTr);
 
       if (getRemainingSpace(current) < 0 && tbody.children.length > (nextTr ? 2 : 1)) {
-        // Questa riga sfora: toglila dalla tabella corrente e mettila in cima a una nuova pagina
         tbody.removeChild(tr);
         if (nextTr) tbody.removeChild(nextTr);
 
@@ -1035,7 +1030,6 @@ window.exportPaginatedWorkoutPdf = async function({
     }
   }
 
-  // Aggiunge il footer con numero pagina su ogni foglio A4
   pages.forEach((p, idx) => {
     const f = footerTemplate.cloneNode(true);
     f.style.marginTop = "8px";
@@ -1047,16 +1041,11 @@ window.exportPaginatedWorkoutPdf = async function({
   await new Promise(r => requestAnimationFrame(() => setTimeout(r, 80)));
 
   try {
-    const JsPdfCtor = (window.jspdf && window.jspdf.jsPDF) ? window.jspdf.jsPDF : window.jsPDF;
-    const pdf = new JsPdfCtor({ unit: 'mm', format: 'a4', orientation: 'portrait' });
-    const pdfW = pdf.internal.pageSize.getWidth();
-    const pdfH = pdf.internal.pageSize.getHeight();
-    const marginMm = 5;
-    const contentW = pdfW - marginMm * 2;
-    const contentH = pdfH - marginMm * 2;
-
-    for (let idx = 0; idx < pages.length; idx++) {
-      const canvas = await html2canvas(pages[idx].page, {
+    const baseOpt = {
+      margin: 5,
+      filename: fileName,
+      image: { type: 'jpeg', quality: 0.95 },
+      html2canvas: {
         scale: 2,
         useCORS: true,
         allowTaint: true,
@@ -1066,14 +1055,30 @@ window.exportPaginatedWorkoutPdf = async function({
         windowWidth: PAGE_W,
         scrollX: 0,
         scrollY: 0
-      });
+      },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
-      if (idx > 0) pdf.addPage();
-      pdf.addImage(imgData, 'JPEG', marginMm, marginMm, contentW, contentH);
+    // Usa il worker nativo di html2pdf per renderizzare ogni singola pagina senza spezzare mai le righe
+    let worker = html2pdf().set(baseOpt).from(pages[0].page).toContainer().toCanvas().toImg().toPdf();
+
+    for (let idx = 1; idx < pages.length; idx++) {
+      worker = worker
+        .get('pdf')
+        .then(pdf => {
+          pdf.addPage();
+        })
+        .from(pages[idx].page)
+        .toContainer()
+        .toCanvas()
+        .toImg()
+        .toPdf();
     }
 
-    pdf.save(fileName);
+    await worker.save();
+  } catch (err) {
+    console.error("Errore generazione PDF:", err);
+    alert("Errore durante la creazione del PDF: " + err.message);
   } finally {
     document.body.removeChild(measureHost);
     window.scrollTo(prevScrollX, prevScrollY);
