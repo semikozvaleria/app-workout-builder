@@ -815,8 +815,7 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   }
 });
 
-// Motore PDF A4 multi-pagina deterministico tramite API interna di html2pdf
-// (100% compatibile con iOS Safari e Desktop: impagina pagina per pagina senza tagliare righe)
+// Generazione PDF Stampabile centrata su Desktop e iOS Safari con spaziatura anti-taglio righe
 window.exportPaginatedWorkoutPdf = async function({
   athleteName,
   durationWeeks,
@@ -825,11 +824,6 @@ window.exportPaginatedWorkoutPdf = async function({
   groupedDays,
   fileName
 }) {
-  if (typeof html2pdf !== "function") {
-    alert("Libreria PDF non ancora caricata. Riprova tra un attimo.");
-    return;
-  }
-
   const totalExercises = Object.values(groupedDays).reduce((acc, arr) => acc + arr.length, 0);
 
   document.getElementById("pdfAthlete").textContent = athleteName;
@@ -847,6 +841,9 @@ window.exportPaginatedWorkoutPdf = async function({
     notesBox.style.display = "none";
   }
 
+  const tablesContainer = document.getElementById("pdfTablesContainer");
+  tablesContainer.innerHTML = "";
+
   const theadHtml = `
     <thead>
       <tr>
@@ -861,226 +858,193 @@ window.exportPaginatedWorkoutPdf = async function({
     </thead>
   `;
 
-  const dayDataList = Object.keys(groupedDays)
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-    .map(dayName => {
-      const trs = [];
-      let inCircuit = false;
+  Object.keys(groupedDays).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(dayName => {
+    const daySection = document.createElement("div");
+    daySection.className = "pdf-day-section";
 
-      groupedDays[dayName].forEach((item, index) => {
-        const isSingle = item.imgStart === item.imgEnd;
-        const isCircuitStart = item.circuitRole === "start" || item.circuitRole === "single";
-        const isCircuitEnd = item.circuitRole === "end" || item.circuitRole === "single";
+    const dayTitle = document.createElement("div");
+    dayTitle.className = "pdf-day-title";
+    dayTitle.textContent = dayName;
+    daySection.appendChild(dayTitle);
 
-        if (isCircuitStart) {
-          inCircuit = true;
-          const label = item.circuitLabel ? item.circuitLabel : "CIRCUITO";
-          const bannerTr = document.createElement("tr");
-          bannerTr.dataset.keepWithNext = "true";
-          bannerTr.innerHTML = `<td colspan="7" class="pdf-circuit-banner">🔄 INIZIO ${escapeHtml(label)}</td>`;
-          trs.push(bannerTr);
-        }
+    const table = document.createElement("table");
+    table.className = "pdf-table";
+    table.innerHTML = `${theadHtml}<tbody></tbody>`;
 
-        const tr = document.createElement("tr");
-        if (inCircuit) tr.className = "pdf-circuit-row";
-        tr.innerHTML = `
-          <td><strong>${index + 1}</strong></td>
-          <td style="white-space: nowrap;">
-            ${item.imgStart ? (isSingle ? `
-              <img src="${item.imgStart}" class="pdf-thumb">
-            ` : `
-              <img src="${item.imgStart}" class="pdf-thumb">
-              <img src="${item.imgEnd}" class="pdf-thumb">
-            `) : '-'}
-          </td>
-          <td>
-            <strong>${escapeHtml(item.name)}</strong><br>
-            <span style="font-size: 9px; color: #64748b;">${escapeHtml(item.muscle || "")}</span>
-          </td>
-          <td><strong>${escapeHtml(item.setsReps || "-")}</strong></td>
-          <td>${escapeHtml(item.rest || "-")}</td>
-          <td>${escapeHtml(item.rir || "-")}</td>
-          <td style="font-size: 9.5px; white-space: pre-wrap;">${escapeHtml(item.notes || "-")}</td>
-        `;
-        trs.push(tr);
+    const tbody = table.querySelector("tbody");
+    let inCircuit = false;
 
-        if (isCircuitEnd && inCircuit) {
-          const endTr = document.createElement("tr");
-          endTr.innerHTML = `<td colspan="7" class="pdf-circuit-end">🏁 FINE CIRCUITO</td>`;
-          trs.push(endTr);
-          inCircuit = false;
-        }
-      });
+    groupedDays[dayName].forEach((item, index) => {
+      const isSingle = item.imgStart === item.imgEnd;
+      const isCircuitStart = item.circuitRole === "start" || item.circuitRole === "single";
+      const isCircuitEnd = item.circuitRole === "end" || item.circuitRole === "single";
 
-      return { dayName, trs };
+      if (isCircuitStart) {
+        inCircuit = true;
+        const label = item.circuitLabel ? item.circuitLabel : "CIRCUITO";
+        const bannerTr = document.createElement("tr");
+        bannerTr.dataset.keepWithNext = "true";
+        bannerTr.innerHTML = `<td colspan="7" class="pdf-circuit-banner">🔄 INIZIO ${escapeHtml(label)}</td>`;
+        tbody.appendChild(bannerTr);
+      }
+
+      const tr = document.createElement("tr");
+      if (inCircuit) tr.className = "pdf-circuit-row";
+
+      tr.innerHTML = `
+        <td><strong>${index + 1}</strong></td>
+        <td style="white-space: nowrap;">
+          ${item.imgStart ? (isSingle ? `
+            <img src="${item.imgStart}" class="pdf-thumb">
+          ` : `
+            <img src="${item.imgStart}" class="pdf-thumb">
+            <img src="${item.imgEnd}" class="pdf-thumb">
+          `) : '-'}
+        </td>
+        <td>
+          <strong>${escapeHtml(item.name)}</strong><br>
+          <span style="font-size: 9px; color: #64748b;">${escapeHtml(item.muscle || "")}</span>
+        </td>
+        <td><strong>${escapeHtml(item.setsReps || "-")}</strong></td>
+        <td>${escapeHtml(item.rest || "-")}</td>
+        <td>${escapeHtml(item.rir || "-")}</td>
+        <td style="font-size: 9.5px; white-space: pre-wrap;">${escapeHtml(item.notes || "-")}</td>
+      `;
+      tbody.appendChild(tr);
+
+      if (isCircuitEnd && inCircuit) {
+        const endTr = document.createElement("tr");
+        endTr.innerHTML = `<td colspan="7" class="pdf-circuit-end">🏁 FINE CIRCUITO</td>`;
+        tbody.appendChild(endTr);
+        inCircuit = false;
+      }
     });
 
-  const measureHost = document.createElement("div");
-  measureHost.style.cssText = "position: absolute; top: 0; left: 0; width: 740px; margin: 0; padding: 0; background: #ffffff; z-index: 999999; -webkit-text-size-adjust: 100%; text-size-adjust: 100%;";
-  document.body.appendChild(measureHost);
+    daySection.appendChild(table);
+    tablesContainer.appendChild(daySection);
+  });
+
+  const sourceSheet = document.getElementById("pdfSheet");
+
+  const printHost = document.createElement("div");
+  printHost.style.cssText = "position: absolute; top: 0; left: 0; width: 740px; min-width: 740px; margin: 0; padding: 0; background: #ffffff; z-index: 999999; -webkit-text-size-adjust: 100%; text-size-adjust: 100%;";
+
+  const clonedSheet = sourceSheet.cloneNode(true);
+  clonedSheet.style.cssText = "width: 740px; min-width: 740px; max-width: 740px; margin: 0; box-sizing: border-box; background: #ffffff; color: #0f172a; -webkit-text-size-adjust: 100%; text-size-adjust: 100%;";
+  printHost.appendChild(clonedSheet);
+  document.body.appendChild(printHost);
 
   const prevScrollX = window.scrollX;
   const prevScrollY = window.scrollY;
   window.scrollTo(0, 0);
 
-  const PAGE_W = 740;
-  const PAGE_H = 1054;
-
-  function createPageContainer() {
-    const page = document.createElement("div");
-    page.className = "pdf-sheet";
-    page.style.cssText = `width: ${PAGE_W}px; max-width: ${PAGE_W}px; min-height: ${PAGE_H}px; height: ${PAGE_H}px; margin: 0; padding: 14px 16px; box-sizing: border-box; background: #ffffff; color: #0f172a; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; -webkit-text-size-adjust: 100%;`;
-    const body = document.createElement("div");
-    body.style.cssText = "flex: 1; display: flex; flex-direction: column;";
-    page.appendChild(body);
-    return { page, body };
-  }
-
-  const sourceSheet = document.getElementById("pdfSheet");
-  const headerClone = sourceSheet.querySelector(".pdf-header").cloneNode(true);
-  const metaClone = sourceSheet.querySelector(".pdf-meta").cloneNode(true);
-  const notesClone = sourceSheet.querySelector("#pdfGeneralNotesBox").cloneNode(true);
-  const footerTemplate = sourceSheet.querySelector(".pdf-footer");
-
-  const pages = [];
-  let current = createPageContainer();
-  current.body.appendChild(headerClone);
-  current.body.appendChild(metaClone);
-  if (generalNotes) current.body.appendChild(notesClone);
-  measureHost.appendChild(current.page);
-  pages.push(current);
-
-  const allImgs = [
-    ...Array.from(headerClone.querySelectorAll("img")),
-    ...dayDataList.flatMap(d => d.trs.flatMap(tr => Array.from(tr.querySelectorAll("img"))))
-  ];
-  await Promise.all(allImgs.map(img => {
+  const imgs = Array.from(clonedSheet.querySelectorAll("img"));
+  await Promise.all(imgs.map(img => {
     if (img.complete) return Promise.resolve();
-    return new Promise(res => { img.onload = res; img.onerror = res; });
+    return new Promise(res => {
+      img.onload = res;
+      img.onerror = res;
+    });
   }));
-  await new Promise(r => requestAnimationFrame(() => setTimeout(r, 80)));
+  await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 150)));
 
-  const FOOTER_RESERVE = 34;
+  // Altezza reale di una pagina A4 in html2pdf con width=740px e margin=5mm:
+  // 210mm x 297mm -> area utile 200mm x 287mm -> 740 * (287 / 200) = 1061.9px
+  const PAGE_SLOT_PX = 1062;
+  const SAFE_BOTTOM_MARGIN = 18;
 
-  function getRemainingSpace(pageObj) {
-    const pageRect = pageObj.page.getBoundingClientRect();
-    const lastChild = pageObj.body.lastElementChild;
-    const usedBottom = lastChild ? lastChild.getBoundingClientRect().bottom : pageRect.top + 14;
-    return (pageRect.bottom - 14 - FOOTER_RESERVE) - usedBottom;
-  }
+  const daySections = Array.from(clonedSheet.querySelectorAll(".pdf-day-section"));
 
-  function startNewPage() {
-    const next = createPageContainer();
-    measureHost.appendChild(next.page);
-    pages.push(next);
-    current = next;
-    return next;
-  }
+  daySections.forEach(section => {
+    const titleEl = section.querySelector(".pdf-day-title");
+    const firstTable = section.querySelector(".pdf-table");
+    if (!firstTable || !titleEl) return;
 
-  for (const dayData of dayDataList) {
-    const dayTitle = document.createElement("div");
-    dayTitle.className = "pdf-day-title";
-    dayTitle.textContent = dayData.dayName;
+    const theadEl = firstTable.querySelector("thead");
+    const theadHeight = theadEl ? theadEl.getBoundingClientRect().height : 26;
+    const allRows = Array.from(firstTable.querySelectorAll("tbody tr"));
+    if (allRows.length === 0) return;
 
-    let table = document.createElement("table");
-    table.className = "pdf-table";
-    table.innerHTML = `${theadHtml}<tbody></tbody>`;
-    let tbody = table.querySelector("tbody");
-
-    current.body.appendChild(dayTitle);
-    current.body.appendChild(table);
-    if (dayData.trs[0]) tbody.appendChild(dayData.trs[0]);
-    if (dayData.trs[0]?.dataset.keepWithNext === "true" && dayData.trs[1]) {
-      tbody.appendChild(dayData.trs[1]);
+    // 1. Se Titolo Giorno + Intestazione + Prima riga (e banner se presente) non entrano nello slot corrente,
+    //    inserisce uno spaziatore bianco per farli partire esattamente in cima alla pagina successiva
+    const sheetTop = clonedSheet.getBoundingClientRect().top;
+    const titleRect = titleEl.getBoundingClientRect();
+    let initialBlockHeight = allRows[0].getBoundingClientRect().height;
+    if (allRows[0].dataset.keepWithNext === "true" && allRows[1]) {
+      initialBlockHeight += allRows[1].getBoundingClientRect().height;
     }
 
-    if (getRemainingSpace(current) < 0 && pages[0].body.children.length > 2) {
-      current.body.removeChild(dayTitle);
-      current.body.removeChild(table);
-      startNewPage();
-      current.body.appendChild(dayTitle);
-      current.body.appendChild(table);
+    const titlePosInSlot = (titleRect.top - sheetTop) % PAGE_SLOT_PX;
+    if (titlePosInSlot > 30 && (titlePosInSlot + titleRect.height + theadHeight + initialBlockHeight > PAGE_SLOT_PX - SAFE_BOTTOM_MARGIN)) {
+      const spacerH = Math.ceil(PAGE_SLOT_PX - titlePosInSlot);
+      const spacer = document.createElement("div");
+      spacer.style.cssText = `height: ${spacerH}px; width: 100%; background: #ffffff;`;
+      section.insertBefore(spacer, titleEl);
     }
 
-    tbody.innerHTML = "";
-    for (let i = 0; i < dayData.trs.length; i++) {
-      const tr = dayData.trs[i];
-      const nextTr = (tr.dataset.keepWithNext === "true" && dayData.trs[i + 1]) ? dayData.trs[i + 1] : null;
+    // 2. Controlla riga per riga: se una riga attraverserebbe il bordo pagina, inserisce uno spaziatore
+    //    fino all'inizio della pagina successiva e ripete l'intestazione della tabella
+    let activeTable = firstTable;
+    let activeTbody = firstTable.querySelector("tbody");
 
-      tbody.appendChild(tr);
-      if (nextTr) tbody.appendChild(nextTr);
-
-      if (getRemainingSpace(current) < 0 && tbody.children.length > (nextTr ? 2 : 1)) {
-        tbody.removeChild(tr);
-        if (nextTr) tbody.removeChild(nextTr);
-
-        startNewPage();
-        table = document.createElement("table");
-        table.className = "pdf-table";
-        table.style.marginTop = "0";
-        table.innerHTML = `${theadHtml}<tbody></tbody>`;
-        tbody = table.querySelector("tbody");
-        current.body.appendChild(table);
-
-        tbody.appendChild(tr);
-        if (nextTr) tbody.appendChild(nextTr);
+    for (let i = 1; i < allRows.length; i++) {
+      const tr = allRows[i];
+      if (tr.parentNode !== activeTbody) {
+        activeTbody.appendChild(tr);
       }
 
-      if (nextTr) i++;
-    }
-  }
+      const currentSheetTop = clonedSheet.getBoundingClientRect().top;
+      const trRect = tr.getBoundingClientRect();
+      const posInSlot = (trRect.top - currentSheetTop) % PAGE_SLOT_PX;
 
-  pages.forEach((p, idx) => {
-    const f = footerTemplate.cloneNode(true);
-    f.style.marginTop = "8px";
-    const rightSpan = f.querySelector("span:last-child");
-    if (rightSpan) rightSpan.textContent = `Pagina ${idx + 1} di ${pages.length}`;
-    p.page.appendChild(f);
+      let neededH = trRect.height;
+      if (tr.dataset.keepWithNext === "true" && allRows[i + 1]) {
+        neededH += allRows[i + 1].getBoundingClientRect().height;
+      }
+
+      if (posInSlot > 40 && (posInSlot + neededH > PAGE_SLOT_PX - SAFE_BOTTOM_MARGIN)) {
+        const spacerH = Math.ceil(PAGE_SLOT_PX - posInSlot);
+        const spacer = document.createElement("div");
+        spacer.style.cssText = `height: ${spacerH}px; width: 100%; background: #ffffff;`;
+        activeTable.parentNode.insertBefore(spacer, activeTable.nextSibling);
+
+        const nextTable = document.createElement("table");
+        nextTable.className = "pdf-table";
+        nextTable.style.marginTop = "0";
+        nextTable.innerHTML = `${theadHtml}<tbody></tbody>`;
+
+        spacer.parentNode.insertBefore(nextTable, spacer.nextSibling);
+        activeTable = nextTable;
+        activeTbody = nextTable.querySelector("tbody");
+        activeTbody.appendChild(tr);
+      }
+    }
   });
 
-  await new Promise(r => requestAnimationFrame(() => setTimeout(r, 80)));
+  await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 120)));
+
+  const opt = {
+    margin: 5,
+    filename: fileName,
+    image: { type: 'jpeg', quality: 0.95 },
+    html2canvas: {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      x: 0,
+      y: 0,
+      width: 740,
+      scrollX: 0,
+      scrollY: 0,
+      windowWidth: 740
+    },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  };
 
   try {
-    const baseOpt = {
-      margin: 5,
-      filename: fileName,
-      image: { type: 'jpeg', quality: 0.95 },
-      html2canvas: {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: "#ffffff",
-        width: PAGE_W,
-        height: PAGE_H,
-        windowWidth: PAGE_W,
-        scrollX: 0,
-        scrollY: 0
-      },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    };
-
-    // Usa il worker nativo di html2pdf per renderizzare ogni singola pagina senza spezzare mai le righe
-    let worker = html2pdf().set(baseOpt).from(pages[0].page).toContainer().toCanvas().toImg().toPdf();
-
-    for (let idx = 1; idx < pages.length; idx++) {
-      worker = worker
-        .get('pdf')
-        .then(pdf => {
-          pdf.addPage();
-        })
-        .from(pages[idx].page)
-        .toContainer()
-        .toCanvas()
-        .toImg()
-        .toPdf();
-    }
-
-    await worker.save();
-  } catch (err) {
-    console.error("Errore generazione PDF:", err);
-    alert("Errore durante la creazione del PDF: " + err.message);
+    await html2pdf().set(opt).from(clonedSheet).save();
   } finally {
-    document.body.removeChild(measureHost);
+    document.body.removeChild(printHost);
     window.scrollTo(prevScrollX, prevScrollY);
   }
 };
