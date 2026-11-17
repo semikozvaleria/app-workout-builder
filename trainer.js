@@ -45,6 +45,9 @@ function showTrainerView(viewId) {
   document.getElementById("trainerWorkoutsView").classList.add("hidden");
   document.getElementById("trainerStatsView").classList.add("hidden");
   document.getElementById("trainerAnamnesisView").classList.add("hidden");
+  const checkinsView = document.getElementById("trainerCheckinsView");
+  if (checkinsView) checkinsView.classList.add("hidden");
+
   document.getElementById(viewId).classList.remove("hidden");
 
   document.getElementById("navTrainerClients").className = viewId === "trainerClientsView" ? "btn btn-primary" : "btn btn-outline";
@@ -276,7 +279,7 @@ function renderConnectedClientsList() {
   }
 
   container.innerHTML = "";
-  filtered.forEach(({ client, badgeHtml, hasUnreadUpdate, hasAnamnesis }) => {
+  filtered.forEach(({ client, badgeHtml, hasUnreadUpdate, hasUnreviewedCheckin, hasAnamnesis }) => {
     const card = document.createElement("div");
     card.className = "client-card";
     card.innerHTML = `
@@ -289,6 +292,7 @@ function renderConnectedClientsList() {
         ${badgeHtml}
       </div>
       <div class="client-actions">
+        <button class="btn btn-outline btn-sm" style="${hasUnreviewedCheckin ? 'border-color: #10b981; color: #10b981;' : ''}" onclick="openTrainerAthleteCheckins('${client.id}', '${escapeHtml(client.full_name)}')">✅ Check-in${hasUnreviewedCheckin ? ' ●' : ''}</button>
         <button class="btn btn-outline btn-sm" style="${hasAnamnesis ? 'border-color: var(--primary); color: var(--primary);' : ''}" onclick="openClientAnamnesis('${client.id}', '${escapeHtml(client.full_name)}')">🩺 Anamnesi</button>
         <button class="btn btn-outline btn-sm" onclick="viewClientWorkouts('${client.id}', '${escapeHtml(client.full_name)}')">📋 Schede</button>
         <button class="btn btn-outline btn-sm" onclick="viewClientProgress('${client.id}', '${escapeHtml(client.full_name)}')">📊 Progressi</button>
@@ -406,7 +410,7 @@ async function loadTrainerClients() {
 
   const clientIds = clients.map(c => c.id);
 
-  const [{ data: workouts }, { data: unreadLogs }] = await Promise.all([
+  const [{ data: workouts }, { data: unreadLogs }, { data: unreviewedCheckins }] = await Promise.all([
     supabaseClient
       .from('workouts')
       .select('*')
@@ -417,7 +421,13 @@ async function loadTrainerClients() {
       .select('id, athlete_id, logged_at, athlete_notes')
       .in('athlete_id', clientIds)
       .is('trainer_seen_at', null)
-      .order('logged_at', { ascending: false })
+      .order('logged_at', { ascending: false }),
+    supabaseClient
+      .from('weekly_checkins')
+      .select('id, athlete_id, checkin_date')
+      .eq('trainer_id', currentProfile.id)
+      .is('reviewed_at', null)
+      .order('checkin_date', { ascending: false })
   ]);
 
   const today = new Date();
@@ -474,7 +484,24 @@ async function loadTrainerClients() {
       });
     }
 
-    enrichedClients.push({ client, badgeHtml, priority, hasUnreadUpdate: clientUnreadLogs.length > 0, hasAnamnesis });
+    const clientNewCheckins = (unreviewedCheckins || []).filter(c => c.athlete_id === client.id);
+    if (clientNewCheckins.length > 0) {
+      coachAlerts.push({
+        level: "info",
+        title: `✅ Nuovo Check-in da ${escapeHtml(client.full_name)}`,
+        message: `Report settimanale inviato e in attesa di tua revisione.`,
+        actionHtml: `<button class="btn btn-primary btn-sm" onclick="document.getElementById('notificationsSection').classList.add('hidden'); openTrainerAthleteCheckins('${client.id}', '${escapeHtml(client.full_name)}')">Apri Check-in</button>`
+      });
+    }
+
+    enrichedClients.push({
+      client,
+      badgeHtml,
+      priority,
+      hasUnreadUpdate: clientUnreadLogs.length > 0,
+      hasUnreviewedCheckin: clientNewCheckins.length > 0,
+      hasAnamnesis
+    });
   });
 
   enrichedClients.sort((a, b) => a.priority - b.priority);
