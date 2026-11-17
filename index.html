@@ -37,7 +37,7 @@
       </div>
     </header>
 
-    <!-- PANNELLO IMPOSTAZIONI (Tema Chiaro/Scuro + Logo Trainer + Elimina Account) -->
+    <!-- PANNELLO IMPOSTAZIONI (Tema Chiaro/Scuro + Logo Trainer + Guida + Elimina Account) -->
     <div id="settingsSection" class="card hidden">
       <div class="section-title">
         <span>⚙️ Impostazioni</span>
@@ -252,7 +252,7 @@
         <div class="section-title">
           <div>
             <span id="anamnesisViewTitle">🩺 Scheda Anamnesi</span>
-            <div id="anamnesisViewSubtitle" style="font-size: 0.74rem; color: var(--text-muted); font-weight: 400; margin-top: 2px;">🔒 Visibile solo a te (privata)</div>
+            <div id="anamnesisViewSubtitle" style="font-size: 0.74rem; color: var(--text-muted); font-weight: 400; margin-top: 2px;">Visibile solo a te (privata)</div>
           </div>
           <button type="button" class="btn btn-outline btn-sm" id="btnBackFromAnamnesis">← Indietro</button>
         </div>
@@ -506,6 +506,11 @@
     <!-- 3. AREA ATLETA -->
     <div id="athleteSection" class="hidden" style="display: flex; flex-direction: column; gap: 14px;">
       
+      <div id="athleteNavTabs" class="grid-2 hidden">
+        <button type="button" class="btn btn-primary" id="navAthleteWorkout">🏋️ La Mia Scheda</button>
+        <button type="button" class="btn btn-outline" id="navAthleteCheckin">📋 Check-in Settimanale</button>
+      </div>
+
       <div id="athleteLinkCoachCard" class="card hidden">
         <div class="section-title">Collega il tuo Personal Trainer</div>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 10px;">
@@ -527,7 +532,7 @@
 
         <!-- Toggle Vista Pulita / Modalità Allenamento in cima -->
         <div id="athleteCleanViewToggleWrap" class="hidden" style="margin-bottom: 12px;">
-          <button type="button" class="btn btn-outline btn-sm" id="btnToggleAthleteCleanView" style="width: 100%;">👁️ Scheda Pulita</button>
+          <button type="button" class="btn btn-outline btn-sm" id="btnToggleAthleteCleanView" style="width: 100%;">Scheda Pulita</button>
         </div>
 
         <div id="athleteGeneralNotes" style="background: var(--notes-bg); color: var(--notes-text); border: 1px solid var(--border); padding: 10px; border-radius: 8px; font-size: 0.82rem; margin-bottom: 12px; white-space: pre-wrap;"></div>
@@ -539,6 +544,88 @@
           <button type="button" class="btn btn-outline btn-sm" id="btnAthleteDownloadPdf" style="width: 100%;">📄 Scarica PDF</button>
         </div>
       </div>
+
+      <!-- PANNELLO CHECK-IN FINE SETTIMANA (ATLETA) -->
+      <div id="athleteCheckinCard" class="card hidden">
+        <div class="section-title">
+          <span>📋 Check-in di Fine Settimana</span>
+          <span style="font-size: 0.76rem; color: var(--text-muted);">Report per il Coach</span>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label>Data Check-in</label>
+            <input type="date" id="checkinDate">
+          </div>
+          <div class="field">
+            <label>Peso Corporeo (kg)</label>
+            <input type="number" step="0.1" id="checkinWeightKg" placeholder="es. 74.5" min="30" max="250">
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label>Aderenza Scheda & Dieta (1–5)</label>
+            <select id="checkinAdherence">
+              <option value="5">5 - Ottima (90–100%)</option>
+              <option value="4" selected>4 - Buona (75–90%)</option>
+              <option value="3">3 - Discreta (60–75%)</option>
+              <option value="2">2 - Bassa (&lt; 60%)</option>
+              <option value="1">1 - Settimana saltata</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Qualità del Sonno (1–5)</label>
+            <select id="checkinSleep">
+              <option value="5">5 - Riposato e profondo</option>
+              <option value="4" selected>4 - Buono</option>
+              <option value="3">3 - Nella media</option>
+              <option value="2">2 - Disturbato / Scarso</option>
+              <option value="1">1 - Pessimo / Insonnia</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label>Energia & Recupero (1–5)</label>
+            <select id="checkinEnergy">
+              <option value="5">5 - Energia altissima</option>
+              <option value="4" selected>4 - Buona energia</option>
+              <option value="3">3 - Normale</option>
+              <option value="2">2 - Stanchezza accumulata</option>
+              <option value="1">1 - Esausto / Spossato</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Stress & Dolori Articolari (1–5)</label>
+            <select id="checkinStress">
+              <option value="1">1 - Nessun dolore / Zero stress</option>
+              <option value="2" selected>2 - Leggero affaticamento</option>
+              <option value="3">3 - Moderato</option>
+              <option value="4">4 - Stress alto / Fastidi</option>
+              <option value="5">5 - Dolori forti / Molto stressato</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Note Settimanali per il Coach</label>
+          <textarea id="checkinAthleteNotes" rows="3" style="min-height: 75px;" placeholder="Come ti sei sentito negli allenamenti? Fame, digestione, carichi, eventuali fastidi o richieste..."></textarea>
+        </div>
+
+        <button type="button" class="btn btn-success" id="btnSubmitWeeklyCheckin">📤 Invia Check-in al Coach</button>
+
+        <div style="margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border);">
+          <div class="section-title">
+            <span>Storico Check-in Inviati</span>
+          </div>
+          <div id="athleteCheckinsHistoryContainer">
+            <div style="text-align: center; color: var(--text-muted); font-size: 0.82rem; padding: 8px;">Nessun check-in inviato.</div>
+          </div>
+        </div>
+      </div>
+
     </div>
 
   </div>
@@ -584,6 +671,7 @@
   <script src="analytics.js"></script>
   <script src="builder.js"></script>
   <script src="athlete.js"></script>
+  <script src="checkins.js"></script>
   <script>
     loadExercisesFromCloud();
     checkSession();
