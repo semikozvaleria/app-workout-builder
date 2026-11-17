@@ -821,16 +821,18 @@ body:not(.light-theme) .note-coach-box {
   }
 }
 
-.client-actions {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-  width: 100%;
-  margin-top: 10px;
-}
+@media (max-width: 640px) {
+  .client-actions {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    width: 100%;
+    margin-top: 10px;
+  }
 
-.client-actions .btn {
-  width: 100%;
-  justify-content: center;
-  text-align: center;
+  .client-actions .btn {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
 }
