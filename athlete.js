@@ -74,7 +74,7 @@ function syncAthleteCleanViewButton() {
     btn.textContent = "✏️ Modalità Allenamento";
   } else {
     btn.className = "btn btn-outline btn-sm";
-    btn.textContent = "👁️ Scheda Pulita";
+    btn.textContent = "Scheda Pulita";
   }
 }
 
