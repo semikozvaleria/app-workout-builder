@@ -8,6 +8,8 @@ const chkCircuitEnd = document.getElementById("chkCircuitEnd");
 const circuitLabelWrap = document.getElementById("circuitLabelWrap");
 const inCircuitLabel = document.getElementById("inCircuitLabel");
 
+const ADMIN_GLOBAL_EXERCISE_EMAIL = "carlo.ratto250889@gmail.com";
+
 let currentDraftId = null;
 let editingItemUid = null;
 let searchDebounceTimer = null;
@@ -17,6 +19,11 @@ if (exerciseSearch) {
 }
 if (exerciseSuggestions) {
   exerciseSuggestions.innerHTML = "";
+}
+
+function isGlobalExerciseAdmin() {
+  const email = (currentProfile && currentProfile.email) || (currentUser && currentUser.email) || "";
+  return email.trim().toLowerCase() === ADMIN_GLOBAL_EXERCISE_EMAIL;
 }
 
 function getSafeTrainerClients() {
@@ -96,6 +103,180 @@ chkCircuitEnd.addEventListener("change", () => {
   }
 });
 
+// --- GESTIONE CREAZIONE NUOVO ESERCIZIO (PERSONALE O GLOBALE ADMIN) ---
+const btnToggleNewExBox = document.getElementById("btnToggleNewExerciseBox");
+const btnCloseNewExBox = document.getElementById("btnCloseNewExerciseBox");
+const newExerciseBox = document.getElementById("newExerciseBox");
+
+function syncNewExerciseScopeUi() {
+  const hintEl = document.getElementById("newExerciseScopeHint");
+  const titleEl = document.getElementById("newExerciseBoxTitle");
+  const optPersonal = document.getElementById("optPersonalExercises");
+
+  if (isGlobalExerciseAdmin()) {
+    if (titleEl) titleEl.textContent = "➕ Crea Nuovo Esercizio (Catalogo Globale)";
+    if (hintEl) hintEl.textContent = "Stai creando un esercizio globale: sarà visibile a tutti i Personal Trainer dell'app.";
+    if (optPersonal) optPersonal.classList.add("hidden");
+  } else {
+    if (titleEl) titleEl.textContent = "➕ Crea Nuovo Esercizio Personale";
+    if (hintEl) hintEl.textContent = "Questo esercizio sarà visibile solo nella tua libreria personale.";
+    if (optPersonal) optPersonal.classList.remove("hidden");
+  }
+}
+
+if (btnToggleNewExBox && newExerciseBox) {
+  btnToggleNewExBox.addEventListener("click", () => {
+    syncNewExerciseScopeUi();
+    newExerciseBox.classList.toggle("hidden");
+  });
+}
+
+if (btnCloseNewExBox && newExerciseBox) {
+  btnCloseNewExBox.addEventListener("click", () => {
+    newExerciseBox.classList.add("hidden");
+  });
+}
+
+async function uploadExerciseImageFile(file, slotLabel) {
+  if (!file || !currentProfile) return null;
+  const rawExt = (file.name && file.name.includes(".")) ? file.name.split(".").pop().toLowerCase() : "jpg";
+  const safeExt = rawExt.replace(/[^a-z0-9]/g, "") || "jpg";
+  const filePath = `${currentProfile.id}/${Date.now()}_${slotLabel}_${Math.random().toString(36).slice(2, 7)}.${safeExt}`;
+
+  const { error: uploadErr } = await supabaseClient.storage
+    .from("exercise-images")
+    .upload(filePath, file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: file.type || "image/jpeg"
+    });
+
+  if (uploadErr) {
+    throw new Error(`Errore caricamento immagine (${slotLabel}): ${uploadErr.message}`);
+  }
+
+  const { data: pubData } = supabaseClient.storage
+    .from("exercise-images")
+    .getPublicUrl(filePath);
+
+  return pubData ? pubData.publicUrl : null;
+}
+
+const btnSaveNewExercise = document.getElementById("btnSaveNewExercise");
+if (btnSaveNewExercise) {
+  btnSaveNewExercise.addEventListener("click", async () => {
+    if (!currentProfile || currentProfile.role !== "trainer") {
+      alert("Solo i Personal Trainer possono creare esercizi.");
+      return;
+    }
+
+    const nameVal = document.getElementById("newExName").value.trim();
+    const muscleVal = document.getElementById("newExMuscle").value;
+    const fileStart = document.getElementById("newExImgStart").files[0] || null;
+    const fileEnd = document.getElementById("newExImgEnd").files[0] || null;
+
+    if (!nameVal) {
+      alert("Inserisci il nome dell'esercizio.");
+      return;
+    }
+
+    btnSaveNewExercise.disabled = true;
+    btnSaveNewExercise.textContent = "Salvataggio in corso...";
+
+    try {
+      let url1 = fileStart ? await uploadExerciseImageFile(fileStart, "start") : null;
+      let url2 = fileEnd ? await uploadExerciseImageFile(fileEnd, "end") : null;
+
+      // Supporto flessibile per 0, 1 o 2 immagini:
+      // Se è stata caricata 1 sola immagine (in uno qualsiasi dei due slot), la usiamo come immagine singola
+      let finalImgStart = null;
+      let finalImgEnd = null;
+      if (url1 && url2) {
+        finalImgStart = url1;
+        finalImgEnd = url2;
+      } else if (url1 || url2) {
+        finalImgStart = url1 || url2;
+        finalImgEnd = finalImgStart;
+      }
+
+      const isAdmin = isGlobalExerciseAdmin();
+      const targetTrainerId = isAdmin ? null : currentProfile.id;
+
+      const { data: createdEx, error: insertErr } = await supabaseClient
+        .from("exercises")
+        .insert([{
+          name: nameVal,
+          muscle: muscleVal,
+          img_start: finalImgStart,
+          img_end: finalImgEnd,
+          trainer_id: targetTrainerId
+        }])
+        .select()
+        .single();
+
+      if (insertErr || !createdEx) {
+        throw new Error(insertErr ? insertErr.message : "Errore sconosciuto durante l'inserimento.");
+      }
+
+      document.getElementById("newExName").value = "";
+      document.getElementById("newExImgStart").value = "";
+      document.getElementById("newExImgEnd").value = "";
+      if (newExerciseBox) newExerciseBox.classList.add("hidden");
+
+      await loadExercisesFromCloud();
+
+      // Seleziona automaticamente il nuovo esercizio appena creato
+      muscleFilter.value = "ALL";
+      exerciseSearch.value = "";
+      populateDropdown();
+      exerciseSelect.value = createdEx.id;
+      updatePreview();
+
+      alert(isAdmin
+        ? `✅ Esercizio "${createdEx.name}" aggiunto al catalogo globale!`
+        : `✅ Esercizio personale "${createdEx.name}" salvato nella tua libreria!`
+      );
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      btnSaveNewExercise.disabled = false;
+      btnSaveNewExercise.textContent = "💾 Salva Esercizio in Libreria";
+    }
+  });
+}
+
+const btnDeleteCustomExercise = document.getElementById("btnDeleteCustomExercise");
+if (btnDeleteCustomExercise) {
+  btnDeleteCustomExercise.addEventListener("click", async () => {
+    const selected = EXERCISE_DB.find(ex => ex.id === exerciseSelect.value);
+    if (!selected) return;
+
+    const canDelete = Boolean(
+      (selected.trainer_id && currentProfile && selected.trainer_id === currentProfile.id) ||
+      (!selected.trainer_id && isGlobalExerciseAdmin())
+    );
+
+    if (!canDelete) {
+      alert("Non puoi eliminare questo esercizio.");
+      return;
+    }
+
+    if (!confirm(`Vuoi eliminare definitivamente l'esercizio "${selected.name}" dalla libreria?`)) return;
+
+    const { error } = await supabaseClient
+      .from("exercises")
+      .delete()
+      .eq("id", selected.id);
+
+    if (error) {
+      alert("Errore eliminazione esercizio: " + error.message);
+      return;
+    }
+
+    await loadExercisesFromCloud();
+  });
+}
+
 async function loadExercisesFromCloud() {
   const { data, error } = await supabaseClient
     .from('exercises')
@@ -105,6 +286,7 @@ async function loadExercisesFromCloud() {
   if (!error && data) {
     EXERCISE_DB = data;
     document.getElementById("dbCount").textContent = `${EXERCISE_DB.length} esercizi`;
+    syncNewExerciseScopeUi();
     populateDropdown();
   }
   syncCircuitCheckboxes();
@@ -210,8 +392,8 @@ window.resumeDraft = async function(draftId) {
         day: row.day_name,
         name: exFromDb ? exFromDb.name : "Esercizio",
         muscle: exFromDb ? exFromDb.muscle : "",
-        imgStart: exFromDb ? exFromDb.img_start : "",
-        imgEnd: exFromDb ? (exFromDb.img_end || exFromDb.img_start) : "",
+        imgStart: exFromDb ? (exFromDb.img_start || "") : "",
+        imgEnd: exFromDb ? (exFromDb.img_end || exFromDb.img_start || "") : "",
         setsReps: row.sets_reps,
         rest: row.rest,
         rir: row.rir,
@@ -379,8 +561,8 @@ document.getElementById("btnLoadExistingWorkout").addEventListener("click", asyn
     day: row.day_name,
     name: row.exercises ? row.exercises.name : "Esercizio",
     muscle: row.exercises ? row.exercises.muscle : "",
-    imgStart: row.exercises ? row.exercises.img_start : "",
-    imgEnd: row.exercises ? (row.exercises.img_end || row.exercises.img_start) : "",
+    imgStart: row.exercises ? (row.exercises.img_start || "") : "",
+    imgEnd: row.exercises ? (row.exercises.img_end || row.exercises.img_start || "") : "",
     setsReps: row.sets_reps,
     rest: row.rest,
     rir: row.rir,
@@ -407,18 +589,26 @@ function populateDropdown() {
   const search = exerciseSearch.value.trim().toLowerCase();
 
   const filtered = EXERCISE_DB.filter(ex => {
-    const matchMuscle = filter === "ALL" || ex.muscle === filter;
+    const matchMuscle = filter === "ALL"
+      ? true
+      : filter === "PERSONAL"
+        ? Boolean(ex.trainer_id)
+        : ex.muscle === filter;
     const matchSearch = !search || ex.name.toLowerCase().includes(search);
     return matchMuscle && matchSearch;
   });
 
   if (filtered.length === 0) {
     exerciseSelect.innerHTML = `<option value="">Nessun esercizio trovato</option>`;
+    updatePreview();
     return;
   }
 
   exerciseSelect.innerHTML = filtered
-    .map(ex => `<option value="${ex.id}">${escapeHtml(ex.name)} (${escapeHtml(ex.muscle)})</option>`)
+    .map(ex => {
+      const personalTag = ex.trainer_id ? " [Personale]" : "";
+      return `<option value="${ex.id}">${escapeHtml(ex.name)} (${escapeHtml(ex.muscle)})${personalTag}</option>`;
+    })
     .join("");
 
   updatePreview();
@@ -426,31 +616,54 @@ function populateDropdown() {
 
 function updatePreview() {
   const selected = EXERCISE_DB.find(ex => ex.id === exerciseSelect.value);
-  if (!selected) return;
+  const photosContainer = document.getElementById("previewPhotosContainer");
+  const deleteBtn = document.getElementById("btnDeleteCustomExercise");
 
-  const startSrc = selected.img_start;
-  const endSrc = selected.img_end || selected.img_start;
+  if (!selected) {
+    if (photosContainer) photosContainer.style.display = "none";
+    document.getElementById("previewName").textContent = "-";
+    document.getElementById("previewMuscle").textContent = "-";
+    if (deleteBtn) deleteBtn.classList.add("hidden");
+    return;
+  }
+
+  const startSrc = selected.img_start || "";
+  const endSrc = selected.img_end || selected.img_start || "";
   const isSingle = startSrc === endSrc;
 
   const imgStartEl = document.getElementById("previewImgStart");
   const wrapEndEl = document.getElementById("wrapImgEnd");
   const tagStartEl = document.getElementById("tagImgStart");
 
-  imgStartEl.src = startSrc;
+  const personalSuffix = selected.trainer_id ? " • Personale" : "";
   document.getElementById("previewName").textContent = selected.name;
-  document.getElementById("previewMuscle").textContent = selected.muscle;
+  document.getElementById("previewMuscle").textContent = `${selected.muscle}${personalSuffix}`;
 
-  if (isSingle) {
-    wrapEndEl.style.display = "none";
-    imgStartEl.style.width = "105px";
-    imgStartEl.style.objectFit = "contain";
-    tagStartEl.textContent = "Esecuzione";
+  if (!startSrc) {
+    if (photosContainer) photosContainer.style.display = "none";
   } else {
-    wrapEndEl.style.display = "flex";
-    imgStartEl.style.width = "64px";
-    imgStartEl.style.objectFit = "cover";
-    tagStartEl.textContent = "Partenza";
-    document.getElementById("previewImgEnd").src = endSrc;
+    if (photosContainer) photosContainer.style.display = "flex";
+    imgStartEl.src = startSrc;
+    if (isSingle) {
+      wrapEndEl.style.display = "none";
+      imgStartEl.style.width = "105px";
+      imgStartEl.style.objectFit = "contain";
+      tagStartEl.textContent = "Esecuzione";
+    } else {
+      wrapEndEl.style.display = "flex";
+      imgStartEl.style.width = "64px";
+      imgStartEl.style.objectFit = "cover";
+      tagStartEl.textContent = "Partenza";
+      document.getElementById("previewImgEnd").src = endSrc;
+    }
+  }
+
+  if (deleteBtn) {
+    const canDelete = Boolean(
+      (selected.trainer_id && currentProfile && selected.trainer_id === currentProfile.id) ||
+      (!selected.trainer_id && isGlobalExerciseAdmin())
+    );
+    deleteBtn.classList.toggle("hidden", !canDelete);
   }
 }
 
@@ -479,8 +692,8 @@ document.getElementById("btnAddEx").addEventListener("click", () => {
     day: exerciseDaySelect.value,
     name: selected.name,
     muscle: selected.muscle,
-    imgStart: selected.img_start,
-    imgEnd: selected.img_end || selected.img_start,
+    imgStart: selected.img_start || "",
+    imgEnd: selected.img_end || selected.img_start || "",
     setsReps: document.getElementById("inSetsReps").value.trim() || "-",
     rest: document.getElementById("inRest").value.trim() || "-",
     rir: document.getElementById("inRir").value.trim() || "-",
@@ -544,12 +757,12 @@ function buildBuilderItemHtml(item, idx, totalInDay) {
     <div class="exercise-item" style="${isEditing ? 'border-color: var(--primary);' : ''}">
       <div class="exercise-top">
         <div class="item-photos">
-          ${isSingle ? `
+          ${item.imgStart ? (isSingle ? `
             <img src="${item.imgStart}" class="item-img" style="width: 82px; object-fit: contain;">
           ` : `
             <img src="${item.imgStart}" class="item-img">
             <img src="${item.imgEnd}" class="item-img">
-          `}
+          `) : ''}
         </div>
         <div class="item-details">
           <strong>${idx + 1}. ${escapeHtml(item.name)}</strong> ${roleTag}
