@@ -14,6 +14,7 @@ const ASSETS_TO_CACHE = [
   "./athlete.js",
   "./logo_W.jpeg",
   "./manifest.json"
+  "./checkins.js"
 ];
 
 self.addEventListener("install", (event) => {
