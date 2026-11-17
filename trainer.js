@@ -45,6 +45,9 @@ function showTrainerView(viewId) {
   document.getElementById("trainerWorkoutsView").classList.add("hidden");
   document.getElementById("trainerStatsView").classList.add("hidden");
   document.getElementById("trainerAnamnesisView").classList.add("hidden");
+  const checkinsView = document.getElementById("trainerCheckinsView");
+  if (checkinsView) checkinsView.classList.add("hidden");
+
   document.getElementById(viewId).classList.remove("hidden");
 
   document.getElementById("navTrainerClients").className = viewId === "trainerClientsView" ? "btn btn-primary" : "btn btn-outline";
@@ -59,6 +62,7 @@ document.getElementById("navTrainerClients").addEventListener("click", () => {
 document.getElementById("navTrainerBuilder").addEventListener("click", () => {
   showTrainerView("trainerBuilderView");
   if (typeof loadTrainerDrafts === "function") loadTrainerDrafts();
+  if (typeof syncSaveCloudButtonState === "function") syncSaveCloudButtonState();
 });
 
 document.getElementById("btnBackToClients").addEventListener("click", () => {
@@ -101,6 +105,7 @@ document.getElementById("btnAnamnesisToBuilder").addEventListener("click", () =>
     document.getElementById("athleteName").value = fullName;
     loadBtn.classList.add("hidden");
   }
+  if (typeof syncSaveCloudButtonState === "function") syncSaveCloudButtonState();
 });
 
 window.markTrainerNotificationSeen = async function(notifId) {
@@ -276,7 +281,7 @@ function renderConnectedClientsList() {
   }
 
   container.innerHTML = "";
-  filtered.forEach(({ client, badgeHtml, hasUnreadUpdate, hasAnamnesis }) => {
+  filtered.forEach(({ client, badgeHtml, hasUnreadUpdate, hasUnreviewedCheckin, hasAnamnesis }) => {
     const card = document.createElement("div");
     card.className = "client-card";
     card.innerHTML = `
@@ -289,6 +294,7 @@ function renderConnectedClientsList() {
         ${badgeHtml}
       </div>
       <div class="client-actions">
+        <button class="btn btn-outline btn-sm" style="${hasUnreviewedCheckin ? 'border-color: #10b981; color: #10b981;' : ''}" onclick="openTrainerAthleteCheckins('${client.id}', '${escapeHtml(client.full_name)}')">✅ Check-in${hasUnreviewedCheckin ? ' ●' : ''}</button>
         <button class="btn btn-outline btn-sm" style="${hasAnamnesis ? 'border-color: var(--primary); color: var(--primary);' : ''}" onclick="openClientAnamnesis('${client.id}', '${escapeHtml(client.full_name)}')">🩺 Anamnesi</button>
         <button class="btn btn-outline btn-sm" onclick="viewClientWorkouts('${client.id}', '${escapeHtml(client.full_name)}')">📋 Schede</button>
         <button class="btn btn-outline btn-sm" onclick="viewClientProgress('${client.id}', '${escapeHtml(client.full_name)}')">📊 Progressi</button>
@@ -395,6 +401,7 @@ async function loadTrainerClients() {
     enrichedClientsCache = [];
     renderConnectedClientsList();
     select.innerHTML = `<option value="">-- Nessun atleta collegato (Solo PDF) --</option>`;
+    if (typeof syncSaveCloudButtonState === "function") syncSaveCloudButtonState();
     updateNotificationCenter(coachAlerts);
     return;
   }
@@ -403,10 +410,11 @@ async function loadTrainerClients() {
 
   select.innerHTML = `<option value="">-- Nessun atleta collegato (Solo PDF) --</option>` +
     clients.map(c => `<option value="${c.id}">${escapeHtml(c.full_name)} (${c.email})</option>`).join("");
+  if (typeof syncSaveCloudButtonState === "function") syncSaveCloudButtonState();
 
   const clientIds = clients.map(c => c.id);
 
-  const [{ data: workouts }, { data: unreadLogs }] = await Promise.all([
+  const [{ data: workouts }, { data: unreadLogs }, { data: unreviewedCheckins }] = await Promise.all([
     supabaseClient
       .from('workouts')
       .select('*')
@@ -417,7 +425,13 @@ async function loadTrainerClients() {
       .select('id, athlete_id, logged_at, athlete_notes')
       .in('athlete_id', clientIds)
       .is('trainer_seen_at', null)
-      .order('logged_at', { ascending: false })
+      .order('logged_at', { ascending: false }),
+    supabaseClient
+      .from('weekly_checkins')
+      .select('id, athlete_id, checkin_date')
+      .eq('trainer_id', currentProfile.id)
+      .is('reviewed_at', null)
+      .order('checkin_date', { ascending: false })
   ]);
 
   const today = new Date();
@@ -474,7 +488,24 @@ async function loadTrainerClients() {
       });
     }
 
-    enrichedClients.push({ client, badgeHtml, priority, hasUnreadUpdate: clientUnreadLogs.length > 0, hasAnamnesis });
+    const clientNewCheckins = (unreviewedCheckins || []).filter(c => c.athlete_id === client.id);
+    if (clientNewCheckins.length > 0) {
+      coachAlerts.push({
+        level: "info",
+        title: `✅ Nuovo Check-in da ${escapeHtml(client.full_name)}`,
+        message: `Report settimanale inviato e in attesa di tua revisione.`,
+        actionHtml: `<button class="btn btn-primary btn-sm" onclick="document.getElementById('notificationsSection').classList.add('hidden'); openTrainerAthleteCheckins('${client.id}', '${escapeHtml(client.full_name)}')">Apri Check-in</button>`
+      });
+    }
+
+    enrichedClients.push({
+      client,
+      badgeHtml,
+      priority,
+      hasUnreadUpdate: clientUnreadLogs.length > 0,
+      hasUnreviewedCheckin: clientNewCheckins.length > 0,
+      hasAnamnesis
+    });
   });
 
   enrichedClients.sort((a, b) => a.priority - b.priority);
@@ -544,11 +575,11 @@ function openAnamnesisEditor({ athleteId = null, recordId = null, defaultName = 
 
   if (athleteId) {
     titleEl.textContent = `🩺 Anamnesi: ${defaultName}`;
-    subtitleEl.textContent = "🔒 Scheda privata riservata al coach • Atleta collegato all'app";
+    subtitleEl.textContent = "Scheda privata riservata al coach • Atleta collegato all'app";
     nameInput.value = record && record.full_name ? record.full_name : defaultName;
   } else {
     titleEl.textContent = record ? `🩺 Anamnesi: ${record.full_name}` : "🩺 Nuova Anamnesi (Atleta Esterno)";
-    subtitleEl.textContent = "🔒 Scheda privata riservata al coach • Atleta esterno";
+    subtitleEl.textContent = "Scheda privata riservata al coach • Atleta esterno";
     nameInput.value = record ? record.full_name : defaultName;
   }
 
@@ -697,6 +728,7 @@ window.openBuilderForExternal = function(externalName) {
   document.getElementById("builderAthleteSelect").value = "";
   document.getElementById("athleteName").value = externalName;
   document.getElementById("btnLoadExistingWorkout").classList.add("hidden");
+  if (typeof syncSaveCloudButtonState === "function") syncSaveCloudButtonState();
 };
 
 window.viewClientWorkouts = async function(clientId, clientName) {
@@ -956,8 +988,8 @@ window.cloneWorkoutToBuilder = async function(workoutId, clientId, clientName) {
     day: row.day_name,
     name: row.exercises ? row.exercises.name : "Esercizio",
     muscle: row.exercises ? row.exercises.muscle : "",
-    imgStart: row.exercises ? row.exercises.img_start : "",
-    imgEnd: row.exercises ? (row.exercises.img_end || row.exercises.img_start) : "",
+    imgStart: row.exercises ? (row.exercises.img_start || "") : "",
+    imgEnd: row.exercises ? (row.exercises.img_end || row.exercises.img_start || "") : "",
     setsReps: row.sets_reps,
     rest: row.rest,
     rir: row.rir,
@@ -1109,12 +1141,12 @@ window.viewClientProgress = async function(clientId, clientName) {
             <div class="progress-split">
               <div class="exercise-top">
                 <div class="item-photos">
-                  ${start === end ? `
+                  ${start ? (start === end ? `
                     <img src="${start}" class="item-img" style="width: 82px; object-fit: contain;">
                   ` : `
                     <img src="${start}" class="item-img">
                     <img src="${end}" class="item-img">
-                  `}
+                  `) : ''}
                 </div>
                 <div class="item-details">
                   <strong>${idx + 1}. ${escapeHtml(ex ? ex.name : 'Esercizio')}</strong>
@@ -1188,4 +1220,5 @@ window.openBuilderForClient = function(clientId, clientName) {
   document.getElementById("builderAthleteSelect").value = clientId;
   document.getElementById("athleteName").value = clientName;
   document.getElementById("btnLoadExistingWorkout").classList.remove("hidden");
+  if (typeof syncSaveCloudButtonState === "function") syncSaveCloudButtonState();
 };

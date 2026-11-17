@@ -37,7 +37,7 @@
       </div>
     </header>
 
-    <!-- PANNELLO IMPOSTAZIONI (Tema Chiaro/Scuro + Logo Trainer + Elimina Account) -->
+    <!-- PANNELLO IMPOSTAZIONI (Tema Chiaro/Scuro + Logo Trainer + Guida + Elimina Account) -->
     <div id="settingsSection" class="card hidden">
       <div class="section-title">
         <span>⚙️ Impostazioni</span>
@@ -70,6 +70,21 @@
         <div class="grid-2">
           <button type="button" class="btn btn-primary btn-sm" id="btnSaveLogo" style="width: 100%;">💾 Salva Logo</button>
           <button type="button" class="btn btn-outline btn-sm" id="btnResetLogo" style="width: 100%;">Ripristina Default</button>
+        </div>
+      </div>
+
+      <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <div>
+            <strong style="font-size: 0.88rem; display: block;">Guida Applicazione</strong>
+            <span style="font-size: 0.76rem; color: var(--text-muted);">Manuale rapido su tutte le funzionalità</span>
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" id="btnOpenAppGuide" style="width: auto;">📖 Apri Guida</button>
+        </div>
+
+        <!-- PANNELLO GUIDA / MANUALE UTENTE -->
+        <div id="appGuideSection" class="hidden" style="margin-top: 12px;">
+          <div id="appGuideContent" style="font-size: 0.84rem; line-height: 1.55; display: flex; flex-direction: column; gap: 10px;"></div>
         </div>
       </div>
 
@@ -237,7 +252,7 @@
         <div class="section-title">
           <div>
             <span id="anamnesisViewTitle">🩺 Scheda Anamnesi</span>
-            <div id="anamnesisViewSubtitle" style="font-size: 0.74rem; color: var(--text-muted); font-weight: 400; margin-top: 2px;">🔒 Visibile solo a te (privata)</div>
+            <div id="anamnesisViewSubtitle" style="font-size: 0.74rem; color: var(--text-muted); font-weight: 400; margin-top: 2px;">Visibile solo a te (privata)</div>
           </div>
           <button type="button" class="btn btn-outline btn-sm" id="btnBackFromAnamnesis">← Indietro</button>
         </div>
@@ -318,6 +333,20 @@
         </div>
       </div>
 
+      <!-- VISTA B5: CHECK-IN SETTIMANALI ATLETA (TRAINER) -->
+      <div id="trainerCheckinsView" class="card hidden">
+        <div class="section-title">
+          <div>
+            <span id="trainerCheckinsTitle">✅ Check-in Settimanali</span>
+            <div id="trainerCheckinsSubtitle" style="font-size: 0.74rem; color: var(--text-muted); font-weight: 400; margin-top: 2px;">Storico report e feedback settimanali</div>
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" id="btnBackFromTrainerCheckins">← Indietro</button>
+        </div>
+        <div id="trainerCheckinsListContainer">
+          <div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento check-in...</div>
+        </div>
+      </div>
+
       <!-- VISTA C: WORKOUT BUILDER -->
       <div id="trainerBuilderView" class="hidden" style="display: flex; flex-direction: column; gap: 14px;">
         
@@ -358,7 +387,61 @@
         </div>
 
         <div class="card">
-          <div class="section-title">2. Aggiungi Esercizio</div>
+          <div class="section-title">
+            <span>2. Aggiungi Esercizio</span>
+            <button type="button" class="btn btn-primary btn-sm" id="btnToggleNewExerciseBox" style="width: auto;">➕ Nuovo Esercizio</button>
+          </div>
+
+          <!-- PANNELLO CREAZIONE ESERCIZIO PERSONALIZZATO / GLOBALE -->
+          <div id="newExerciseBox" class="hidden" style="background: var(--subcard-bg); border: 1.5px solid var(--primary); border-radius: 8px; padding: 12px; margin-bottom: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <strong style="font-size: 0.88rem; color: var(--primary);" id="newExerciseBoxTitle">➕ Crea Nuovo Esercizio</strong>
+              <button type="button" class="btn btn-outline btn-sm" id="btnCloseNewExerciseBox" style="width: auto;">✖</button>
+            </div>
+            <p id="newExerciseScopeHint" style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 10px;">
+              Questo esercizio sarà visibile solo nella tua libreria personale.
+            </p>
+
+            <div class="grid-2">
+              <div class="field">
+                <label>Nome Esercizio *</label>
+                <input type="text" id="newExName" placeholder="es. Bulgarian Split Squat Manubri">
+              </div>
+              <div class="field">
+                <label>Gruppo Muscolare *</label>
+                <select id="newExMuscle">
+                  <option value="Petto">Petto</option>
+                  <option value="Dorso">Dorso</option>
+                  <option value="Gambe">Gambe</option>
+                  <option value="Spalle">Spalle</option>
+                  <option value="Braccia">Braccia</option>
+                  <option value="Addome">Addome</option>
+                  <option value="Skill">Skill</option>
+                  <option value="Cardio">Cardio</option>
+                  <option value="Funzionali">Funzionali</option>
+                  <option value="TRX">TRX</option>
+                  <option value="Mobilità">Mobilità</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="grid-2">
+              <div class="field">
+                <label>Immagine 1 / Partenza (opzionale)</label>
+                <input type="file" id="newExImgStart" accept="image/*" style="font-size: 0.78rem; padding: 6px;">
+              </div>
+              <div class="field">
+                <label>Immagine 2 / Arrivo (opzionale)</label>
+                <input type="file" id="newExImgEnd" accept="image/*" style="font-size: 0.78rem; padding: 6px;">
+              </div>
+            </div>
+            <div style="font-size: 0.73rem; color: var(--text-muted); margin-bottom: 10px;">
+              Puoi caricare 2 immagini (Partenza e Arrivo), anche solo 1 immagine singola, oppure nessuna.
+            </div>
+
+            <button type="button" class="btn btn-success btn-sm" id="btnSaveNewExercise" style="width: 100%;">💾 Salva Esercizio in Libreria</button>
+          </div>
+
           <div class="field">
             <label>Giorno / Seduta</label>
             <select id="exerciseDay">
@@ -375,6 +458,7 @@
           <div class="filter-row">
             <select id="muscleFilter">
               <option value="ALL">Tutti</option>
+              <option value="PERSONAL" id="optPersonalExercises">Solo Personali</option>
               <option value="Petto">Petto</option>
               <option value="Dorso">Dorso</option>
               <option value="Gambe">Gambe</option>
@@ -393,8 +477,8 @@
 
           <select id="exerciseSelect" style="margin-bottom: 8px;"></select>
 
-          <div class="preview-box">
-            <div class="preview-photos">
+          <div class="preview-box" id="exercisePreviewBox">
+            <div class="preview-photos" id="previewPhotosContainer">
               <div class="preview-photo-wrap" id="wrapImgStart">
                 <img id="previewImgStart" class="preview-thumb" src="" alt="Partenza">
                 <span class="photo-tag" id="tagImgStart">Partenza</span>
@@ -404,10 +488,11 @@
                 <span class="photo-tag" id="tagImgEnd">Arrivo</span>
               </div>
             </div>
-            <div class="preview-info">
+            <div class="preview-info" style="flex: 1;">
               <strong id="previewName">-</strong><br>
               <span style="color: var(--primary);" id="previewMuscle">-</span>
             </div>
+            <button type="button" class="btn btn-outline btn-sm hidden" id="btnDeleteCustomExercise" title="Elimina questo esercizio" style="border-color: var(--danger); color: var(--danger); width: auto; flex-shrink: 0;">🗑️</button>
           </div>
 
           <div class="grid-3">
@@ -477,6 +562,11 @@
     <!-- 3. AREA ATLETA -->
     <div id="athleteSection" class="hidden" style="display: flex; flex-direction: column; gap: 14px;">
       
+      <div id="athleteNavTabs" class="grid-2 hidden">
+        <button type="button" class="btn btn-primary" id="navAthleteWorkout">🏋️ La Mia Scheda</button>
+        <button type="button" class="btn btn-outline" id="navAthleteCheckin">✅ Check-in Settimanale</button>
+      </div>
+
       <div id="athleteLinkCoachCard" class="card hidden">
         <div class="section-title">Collega il tuo Personal Trainer</div>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 10px;">
@@ -498,7 +588,7 @@
 
         <!-- Toggle Vista Pulita / Modalità Allenamento in cima -->
         <div id="athleteCleanViewToggleWrap" class="hidden" style="margin-bottom: 12px;">
-          <button type="button" class="btn btn-outline btn-sm" id="btnToggleAthleteCleanView" style="width: 100%;">👁️ Scheda Pulita</button>
+          <button type="button" class="btn btn-outline btn-sm" id="btnToggleAthleteCleanView" style="width: 100%;">Scheda Pulita</button>
         </div>
 
         <div id="athleteGeneralNotes" style="background: var(--notes-bg); color: var(--notes-text); border: 1px solid var(--border); padding: 10px; border-radius: 8px; font-size: 0.82rem; margin-bottom: 12px; white-space: pre-wrap;"></div>
@@ -510,6 +600,88 @@
           <button type="button" class="btn btn-outline btn-sm" id="btnAthleteDownloadPdf" style="width: 100%;">📄 Scarica PDF</button>
         </div>
       </div>
+
+      <!-- PANNELLO CHECK-IN FINE SETTIMANA (ATLETA) -->
+      <div id="athleteCheckinCard" class="card hidden">
+        <div class="section-title">
+          <span>✅ Check-in di Fine Settimana</span>
+          <span style="font-size: 0.76rem; color: var(--text-muted);">Report per il Coach</span>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label>Data Check-in</label>
+            <input type="date" id="checkinDate">
+          </div>
+          <div class="field">
+            <label>Peso Corporeo (kg)</label>
+            <input type="number" step="0.1" id="checkinWeightKg" placeholder="es. 74.5" min="30" max="250">
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label>Aderenza Scheda (1–5)</label>
+            <select id="checkinAdherence">
+              <option value="5">5 - Ottima (90–100%)</option>
+              <option value="4" selected>4 - Buona (75–90%)</option>
+              <option value="3">3 - Discreta (60–75%)</option>
+              <option value="2">2 - Bassa (&lt; 60%)</option>
+              <option value="1">1 - Settimana saltata</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Qualità del Sonno (1–5)</label>
+            <select id="checkinSleep">
+              <option value="5">5 - Riposato</option>
+              <option value="4" selected>4 - Buono</option>
+              <option value="3">3 - Nella media</option>
+              <option value="2">2 - Disturbato / Scarso</option>
+              <option value="1">1 - Pessimo / Insonnia</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label>Energia & Recupero (1–5)</label>
+            <select id="checkinEnergy">
+              <option value="5">5 - Energia altissima</option>
+              <option value="4" selected>4 - Buona energia</option>
+              <option value="3">3 - Normale</option>
+              <option value="2">2 - Stanchezza accumulata</option>
+              <option value="1">1 - Esausto / Spossato</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Stress & Dolori Articolari (1–5)</label>
+            <select id="checkinStress">
+              <option value="5">5 - Dolori forti / Molto stressato</option>
+              <option value="4">4 - Stress alto / Fastidi</option>
+              <option value="3">3 - Moderato</option>
+              <option value="2" selected>2 - Leggero affaticamento</option>
+              <option value="1">1 - Nessun dolore / Zero stress</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Note Settimanali per il Coach</label>
+          <textarea id="checkinAthleteNotes" rows="3" style="min-height: 75px;" placeholder="Come ti sei sentito negli allenamenti? Fame, digestione, carichi, eventuali fastidi o richieste..."></textarea>
+        </div>
+
+        <button type="button" class="btn btn-success" id="btnSubmitWeeklyCheckin">📤 Invia Check-in al Coach</button>
+
+        <div style="margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border);">
+          <div class="section-title">
+            <span>Storico Check-in Inviati</span>
+          </div>
+          <div id="athleteCheckinsHistoryContainer">
+            <div style="text-align: center; color: var(--text-muted); font-size: 0.82rem; padding: 8px;">Nessun check-in inviato.</div>
+          </div>
+        </div>
+      </div>
+
     </div>
 
   </div>
@@ -555,6 +727,7 @@
   <script src="analytics.js"></script>
   <script src="builder.js"></script>
   <script src="athlete.js"></script>
+  <script src="checkins.js"></script>
   <script>
     loadExercisesFromCloud();
     checkSession();

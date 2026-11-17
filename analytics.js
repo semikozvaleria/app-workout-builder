@@ -187,7 +187,7 @@ window.viewClientStats = async function(clientId, clientName) {
     } else if (diff < -0.5) {
       rirInsight = "🔥 Intensità più alta del previsto (meno buffer del target): monitora la fatica.";
     } else {
-      rirInsight = "💡 Buffer più ampio del target: margini per aumentare leggermente i carichi.";
+      rirInsight = "Buffer più ampio del target: margini per aumentare leggermente i carichi.";
     }
   }
 

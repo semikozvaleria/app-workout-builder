@@ -1,5 +1,5 @@
 
-const CACHE_NAME = "workout-builder-v45";
+const CACHE_NAME = "workout-builder-v57";
 const ASSETS_TO_CACHE = [
   "./",
   "./index.html",
@@ -14,6 +14,7 @@ const ASSETS_TO_CACHE = [
   "./athlete.js",
   "./logo_W.jpeg",
   "./manifest.json"
+  "./checkins.js"
 ];
 
 self.addEventListener("install", (event) => {
