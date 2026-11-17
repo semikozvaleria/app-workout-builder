@@ -544,11 +544,11 @@ function openAnamnesisEditor({ athleteId = null, recordId = null, defaultName = 
 
   if (athleteId) {
     titleEl.textContent = `🩺 Anamnesi: ${defaultName}`;
-    subtitleEl.textContent = "🔒 Scheda privata riservata al coach • Atleta collegato all'app";
+    subtitleEl.textContent = "Scheda privata riservata al coach • Atleta collegato all'app";
     nameInput.value = record && record.full_name ? record.full_name : defaultName;
   } else {
     titleEl.textContent = record ? `🩺 Anamnesi: ${record.full_name}` : "🩺 Nuova Anamnesi (Atleta Esterno)";
-    subtitleEl.textContent = "🔒 Scheda privata riservata al coach • Atleta esterno";
+    subtitleEl.textContent = "Scheda privata riservata al coach • Atleta esterno";
     nameInput.value = record ? record.full_name : defaultName;
   }
 
