@@ -9,13 +9,22 @@ function getAthleteFirstName(fullName, fallback = "") {
 }
 
 async function initAthleteArea() {
+  const navTabs = document.getElementById("athleteNavTabs");
+  const checkinCard = document.getElementById("athleteCheckinCard");
+
   if (!currentProfile.trainer_id) {
+    if (navTabs) navTabs.classList.add("hidden");
+    if (checkinCard) checkinCard.classList.add("hidden");
     document.getElementById("athleteLinkCoachCard").classList.remove("hidden");
     document.getElementById("athleteWorkoutCard").classList.add("hidden");
     updateNotificationCenter([]);
   } else {
     document.getElementById("athleteLinkCoachCard").classList.add("hidden");
     document.getElementById("athleteWorkoutCard").classList.remove("hidden");
+    if (checkinCard) checkinCard.classList.add("hidden");
+    if (typeof initAthleteCheckinTabs === "function") {
+      initAthleteCheckinTabs();
+    }
     await loadAthleteWorkout();
   }
 }
