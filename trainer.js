@@ -62,6 +62,7 @@ document.getElementById("navTrainerClients").addEventListener("click", () => {
 document.getElementById("navTrainerBuilder").addEventListener("click", () => {
   showTrainerView("trainerBuilderView");
   if (typeof loadTrainerDrafts === "function") loadTrainerDrafts();
+  if (typeof syncSaveCloudButtonState === "function") syncSaveCloudButtonState();
 });
 
 document.getElementById("btnBackToClients").addEventListener("click", () => {
@@ -104,6 +105,7 @@ document.getElementById("btnAnamnesisToBuilder").addEventListener("click", () =>
     document.getElementById("athleteName").value = fullName;
     loadBtn.classList.add("hidden");
   }
+  if (typeof syncSaveCloudButtonState === "function") syncSaveCloudButtonState();
 });
 
 window.markTrainerNotificationSeen = async function(notifId) {
@@ -399,6 +401,7 @@ async function loadTrainerClients() {
     enrichedClientsCache = [];
     renderConnectedClientsList();
     select.innerHTML = `<option value="">-- Nessun atleta collegato (Solo PDF) --</option>`;
+    if (typeof syncSaveCloudButtonState === "function") syncSaveCloudButtonState();
     updateNotificationCenter(coachAlerts);
     return;
   }
@@ -407,6 +410,7 @@ async function loadTrainerClients() {
 
   select.innerHTML = `<option value="">-- Nessun atleta collegato (Solo PDF) --</option>` +
     clients.map(c => `<option value="${c.id}">${escapeHtml(c.full_name)} (${c.email})</option>`).join("");
+  if (typeof syncSaveCloudButtonState === "function") syncSaveCloudButtonState();
 
   const clientIds = clients.map(c => c.id);
 
@@ -724,6 +728,7 @@ window.openBuilderForExternal = function(externalName) {
   document.getElementById("builderAthleteSelect").value = "";
   document.getElementById("athleteName").value = externalName;
   document.getElementById("btnLoadExistingWorkout").classList.add("hidden");
+  if (typeof syncSaveCloudButtonState === "function") syncSaveCloudButtonState();
 };
 
 window.viewClientWorkouts = async function(clientId, clientName) {
@@ -983,8 +988,8 @@ window.cloneWorkoutToBuilder = async function(workoutId, clientId, clientName) {
     day: row.day_name,
     name: row.exercises ? row.exercises.name : "Esercizio",
     muscle: row.exercises ? row.exercises.muscle : "",
-    imgStart: row.exercises ? row.exercises.img_start : "",
-    imgEnd: row.exercises ? (row.exercises.img_end || row.exercises.img_start) : "",
+    imgStart: row.exercises ? (row.exercises.img_start || "") : "",
+    imgEnd: row.exercises ? (row.exercises.img_end || row.exercises.img_start || "") : "",
     setsReps: row.sets_reps,
     rest: row.rest,
     rir: row.rir,
@@ -1136,12 +1141,12 @@ window.viewClientProgress = async function(clientId, clientName) {
             <div class="progress-split">
               <div class="exercise-top">
                 <div class="item-photos">
-                  ${start === end ? `
+                  ${start ? (start === end ? `
                     <img src="${start}" class="item-img" style="width: 82px; object-fit: contain;">
                   ` : `
                     <img src="${start}" class="item-img">
                     <img src="${end}" class="item-img">
-                  `}
+                  `) : ''}
                 </div>
                 <div class="item-details">
                   <strong>${idx + 1}. ${escapeHtml(ex ? ex.name : 'Esercizio')}</strong>
@@ -1215,4 +1220,5 @@ window.openBuilderForClient = function(clientId, clientName) {
   document.getElementById("builderAthleteSelect").value = clientId;
   document.getElementById("athleteName").value = clientName;
   document.getElementById("btnLoadExistingWorkout").classList.remove("hidden");
+  if (typeof syncSaveCloudButtonState === "function") syncSaveCloudButtonState();
 };
