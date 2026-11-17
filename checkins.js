@@ -199,6 +199,26 @@ async function openTrainerAthleteCheckins(athleteId, athleteName) {
     return;
   }
 
+  // Segna automaticamente come rivisti i check-in non ancora letti e aggiorna la campanella
+  const hasUnreviewed = (data || []).some((item) => !item.reviewed_at);
+  if (hasUnreviewed) {
+    const nowIso = new Date().toISOString();
+    await supabaseClient
+      .from("weekly_checkins")
+      .update({ reviewed_at: nowIso })
+      .eq("athlete_id", athleteId)
+      .eq("trainer_id", currentProfile.id)
+      .is("reviewed_at", null);
+
+    (data || []).forEach((item) => {
+      if (!item.reviewed_at) item.reviewed_at = nowIso;
+    });
+
+    if (typeof loadTrainerClients === "function") {
+      loadTrainerClients();
+    }
+  }
+
   if (!data || data.length === 0) {
     container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">Questo atleta non ha ancora inviato nessun check-in settimanale.</div>`;
     return;
@@ -268,6 +288,9 @@ async function saveCoachCheckinFeedback(checkinId, athleteId, athleteName) {
   }
 
   alert("Feedback salvato e inviato all'atleta!");
+  if (typeof loadTrainerClients === "function") {
+    await loadTrainerClients();
+  }
   openTrainerAthleteCheckins(athleteId, athleteName);
 }
 
