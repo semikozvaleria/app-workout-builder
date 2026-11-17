@@ -21,6 +21,27 @@ if (exerciseSuggestions) {
   exerciseSuggestions.innerHTML = "";
 }
 
+function syncSaveCloudButtonState() {
+  const selectEl = document.getElementById("builderAthleteSelect");
+  const btnSaveCloud = document.getElementById("btnSaveCloud");
+  if (!selectEl || !btnSaveCloud) return;
+
+  const hasLinkedAthlete = Boolean(selectEl.value && selectEl.value.trim() !== "");
+  btnSaveCloud.disabled = !hasLinkedAthlete;
+
+  if (hasLinkedAthlete) {
+    btnSaveCloud.style.opacity = "1";
+    btnSaveCloud.style.cursor = "pointer";
+    btnSaveCloud.style.filter = "none";
+    btnSaveCloud.title = "Salva e invia la scheda all'app dell'atleta";
+  } else {
+    btnSaveCloud.style.opacity = "0.45";
+    btnSaveCloud.style.cursor = "not-allowed";
+    btnSaveCloud.style.filter = "grayscale(100%)";
+    btnSaveCloud.title = "Seleziona un atleta collegato all'app per abilitare l'invio";
+  }
+}
+
 function isGlobalExerciseAdmin() {
   const email = (currentProfile && currentProfile.email) || (currentUser && currentUser.email) || "";
   return email.trim().toLowerCase() === ADMIN_GLOBAL_EXERCISE_EMAIL;
@@ -187,8 +208,6 @@ if (btnSaveNewExercise) {
       let url1 = fileStart ? await uploadExerciseImageFile(fileStart, "start") : null;
       let url2 = fileEnd ? await uploadExerciseImageFile(fileEnd, "end") : null;
 
-      // Supporto flessibile per 0, 1 o 2 immagini:
-      // Se è stata caricata 1 sola immagine (in uno qualsiasi dei due slot), la usiamo come immagine singola
       let finalImgStart = null;
       let finalImgEnd = null;
       if (url1 && url2) {
@@ -227,7 +246,6 @@ if (btnSaveNewExercise) {
 
       await loadExercisesFromCloud();
 
-      // Seleziona automaticamente il nuovo esercizio appena creato
       muscleFilter.value = "ALL";
       exerciseSearch.value = "";
       populateDropdown();
@@ -280,6 +298,8 @@ if (btnDeleteCustomExercise) {
 }
 
 async function loadExercisesFromCloud() {
+  syncSaveCloudButtonState();
+
   const { data, error } = await supabaseClient
     .from('exercises')
     .select('*')
@@ -387,6 +407,8 @@ window.resumeDraft = async function(draftId) {
       document.getElementById("athleteName").value = (workout.title && workout.title !== "Bozza Scheda") ? workout.title : "";
       if (loadBtn) loadBtn.classList.add("hidden");
     }
+
+    syncSaveCloudButtonState();
 
     document.getElementById("durationWeeks").value = workout.duration_weeks || 4;
     document.getElementById("generalNotes").value = workout.general_notes || "";
@@ -529,6 +551,7 @@ document.getElementById("builderAthleteSelect").addEventListener("change", (e) =
   } else {
     loadBtn.classList.add("hidden");
   }
+  syncSaveCloudButtonState();
 });
 
 document.getElementById("btnLoadExistingWorkout").addEventListener("click", async () => {
@@ -993,7 +1016,7 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
 
   if (wError || !newWorkout) {
     alert("Errore salvataggio scheda: " + (wError ? wError.message : "sconosciuto"));
-    btn.disabled = false;
+    syncSaveCloudButtonState();
     btn.textContent = "☁️ Salva e Invia all'app dell'Atleta";
     return;
   }
@@ -1015,8 +1038,8 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
     .from('workout_exercises')
     .insert(rowsToInsert);
 
-  btn.disabled = false;
   btn.textContent = "☁️ Salva e Invia all'app dell'Atleta";
+  syncSaveCloudButtonState();
 
   if (exError) {
     alert("Scheda creata ma errore negli esercizi: " + exError.message);
@@ -1323,3 +1346,5 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
     btn.textContent = "📄 Scarica PDF";
   }
 });
+
+syncSaveCloudButtonState();
