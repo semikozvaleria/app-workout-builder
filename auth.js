@@ -194,6 +194,11 @@ async function checkSession() {
   currentProfile = profile;
   resetPasswordVisibility();
 
+  // Ricarica subito la libreria esercizi filtrata per il profilo loggato
+  if (typeof loadExercisesFromCloud === "function") {
+    await loadExercisesFromCloud();
+  }
+
   document.getElementById("authSection").classList.add("hidden");
   document.getElementById("btnLogout").classList.remove("hidden");
   document.getElementById("btnOpenNotifications").classList.remove("hidden");
