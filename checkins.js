@@ -182,7 +182,7 @@ async function openTrainerAthleteCheckins(athleteId, athleteName) {
 
   if (!checkinsView || !container) return;
   checkinsView.classList.remove("hidden");
-  if (titleEl) titleEl.textContent = `📋 Check-in — ${athleteName || "Atleta"}`;
+  if (titleEl) titleEl.textContent = `✅ Check-in — ${athleteName || "Atleta"}`;
 
   container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento check-in...</div>`;
 
