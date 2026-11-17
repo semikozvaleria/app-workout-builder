@@ -387,7 +387,61 @@
         </div>
 
         <div class="card">
-          <div class="section-title">2. Aggiungi Esercizio</div>
+          <div class="section-title">
+            <span>2. Aggiungi Esercizio</span>
+            <button type="button" class="btn btn-primary btn-sm" id="btnToggleNewExerciseBox" style="width: auto;">➕ Nuovo Esercizio</button>
+          </div>
+
+          <!-- PANNELLO CREAZIONE ESERCIZIO PERSONALIZZATO / GLOBALE -->
+          <div id="newExerciseBox" class="hidden" style="background: var(--subcard-bg); border: 1.5px solid var(--primary); border-radius: 8px; padding: 12px; margin-bottom: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <strong style="font-size: 0.88rem; color: var(--primary);" id="newExerciseBoxTitle">➕ Crea Nuovo Esercizio</strong>
+              <button type="button" class="btn btn-outline btn-sm" id="btnCloseNewExerciseBox" style="width: auto;">✖</button>
+            </div>
+            <p id="newExerciseScopeHint" style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 10px;">
+              Questo esercizio sarà visibile solo nella tua libreria personale.
+            </p>
+
+            <div class="grid-2">
+              <div class="field">
+                <label>Nome Esercizio *</label>
+                <input type="text" id="newExName" placeholder="es. Bulgarian Split Squat Manubri">
+              </div>
+              <div class="field">
+                <label>Gruppo Muscolare *</label>
+                <select id="newExMuscle">
+                  <option value="Petto">Petto</option>
+                  <option value="Dorso">Dorso</option>
+                  <option value="Gambe">Gambe</option>
+                  <option value="Spalle">Spalle</option>
+                  <option value="Braccia">Braccia</option>
+                  <option value="Addome">Addome</option>
+                  <option value="Skill">Skill</option>
+                  <option value="Cardio">Cardio</option>
+                  <option value="Funzionali">Funzionali</option>
+                  <option value="TRX">TRX</option>
+                  <option value="Mobilità">Mobilità</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="grid-2">
+              <div class="field">
+                <label>Immagine 1 / Partenza (opzionale)</label>
+                <input type="file" id="newExImgStart" accept="image/*" style="font-size: 0.78rem; padding: 6px;">
+              </div>
+              <div class="field">
+                <label>Immagine 2 / Arrivo (opzionale)</label>
+                <input type="file" id="newExImgEnd" accept="image/*" style="font-size: 0.78rem; padding: 6px;">
+              </div>
+            </div>
+            <div style="font-size: 0.73rem; color: var(--text-muted); margin-bottom: 10px;">
+              Puoi caricare 2 immagini (Partenza e Arrivo), anche solo 1 immagine singola, oppure nessuna.
+            </div>
+
+            <button type="button" class="btn btn-success btn-sm" id="btnSaveNewExercise" style="width: 100%;">💾 Salva Esercizio in Libreria</button>
+          </div>
+
           <div class="field">
             <label>Giorno / Seduta</label>
             <select id="exerciseDay">
@@ -404,6 +458,7 @@
           <div class="filter-row">
             <select id="muscleFilter">
               <option value="ALL">Tutti</option>
+              <option value="PERSONAL" id="optPersonalExercises">Solo Personali</option>
               <option value="Petto">Petto</option>
               <option value="Dorso">Dorso</option>
               <option value="Gambe">Gambe</option>
@@ -422,8 +477,8 @@
 
           <select id="exerciseSelect" style="margin-bottom: 8px;"></select>
 
-          <div class="preview-box">
-            <div class="preview-photos">
+          <div class="preview-box" id="exercisePreviewBox">
+            <div class="preview-photos" id="previewPhotosContainer">
               <div class="preview-photo-wrap" id="wrapImgStart">
                 <img id="previewImgStart" class="preview-thumb" src="" alt="Partenza">
                 <span class="photo-tag" id="tagImgStart">Partenza</span>
@@ -433,10 +488,11 @@
                 <span class="photo-tag" id="tagImgEnd">Arrivo</span>
               </div>
             </div>
-            <div class="preview-info">
+            <div class="preview-info" style="flex: 1;">
               <strong id="previewName">-</strong><br>
               <span style="color: var(--primary);" id="previewMuscle">-</span>
             </div>
+            <button type="button" class="btn btn-outline btn-sm hidden" id="btnDeleteCustomExercise" title="Elimina questo esercizio" style="border-color: var(--danger); color: var(--danger); width: auto; flex-shrink: 0;">🗑️</button>
           </div>
 
           <div class="grid-3">
@@ -611,10 +667,10 @@
 
         <div class="field">
           <label>Note Settimanali per il Coach</label>
-          <textarea id="checkinAthleteNotes" rows="3" style="min-height: 75px;" placeholder="Come ti sei sentito negli allenamenti? Carichi, eventuali fastidi o richieste..."></textarea>
+          <textarea id="checkinAthleteNotes" rows="3" style="min-height: 75px;" placeholder="Come ti sei sentito negli allenamenti? Fame, digestione, carichi, eventuali fastidi o richieste..."></textarea>
         </div>
 
-        <button type="button" class="btn btn-success" id="btnSubmitWeeklyCheckin">Invia Check-in al Coach</button>
+        <button type="button" class="btn btn-success" id="btnSubmitWeeklyCheckin">📤 Invia Check-in al Coach</button>
 
         <div style="margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border);">
           <div class="section-title">
