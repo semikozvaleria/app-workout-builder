@@ -1,5 +1,5 @@
 
-const CACHE_NAME = "workout-builder-v48";
+const CACHE_NAME = "workout-builder-v49";
 const ASSETS_TO_CACHE = [
   "./",
   "./index.html",
