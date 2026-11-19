@@ -1,5 +1,5 @@
 let currentAthleteCoachName = "";
-let isAthleteCleanView = false;
+let isAthleteCleanView = true;
 let currentAthleteWorkoutData = null;
 
 function getAthleteFirstName(fullName, fallback = "") {
@@ -8,9 +8,45 @@ function getAthleteFirstName(fullName, fallback = "") {
   return parts[0] || fallback;
 }
 
+function getCurrentWeekSundayKey() {
+  const now = new Date();
+  const dayOfWeek = now.getDay(); // 0 = Domenica, 1 = Lunedì ... 6 = Sabato
+  const diffToSunday = dayOfWeek === 0 ? 0 : (7 - dayOfWeek);
+  const sunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diffToSunday);
+  return `${sunday.getFullYear()}-${String(sunday.getMonth() + 1).padStart(2, '0')}-${String(sunday.getDate()).padStart(2, '0')}`;
+}
+
+function getCurrentWeekMondayStart() {
+  const now = new Date();
+  const dayOfWeek = now.getDay(); // 0 = Domenica, 1 = Lunedì ...
+  const diffFromMonday = dayOfWeek === 0 ? 6 : (dayOfWeek - 1);
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffFromMonday, 0, 0, 0, 0);
+}
+
+window.openAthleteCheckinFromNotif = function() {
+  document.getElementById("notificationsSection").classList.add("hidden");
+  const navCheckinBtn = document.getElementById("navAthleteCheckin");
+  if (navCheckinBtn) {
+    navCheckinBtn.click();
+  } else {
+    document.getElementById("athleteWorkoutCard").classList.add("hidden");
+    const checkinCard = document.getElementById("athleteCheckinCard");
+    if (checkinCard) checkinCard.classList.remove("hidden");
+  }
+};
+
+window.dismissWeeklyCheckinReminder = async function(sundayKey) {
+  if (currentProfile && currentProfile.id) {
+    localStorage.setItem(`wb_dismissed_checkin_${currentProfile.id}_${sundayKey}`, "1");
+  }
+  document.getElementById("notificationsSection").classList.add("hidden");
+  await loadAthleteWorkout();
+};
+
 async function initAthleteArea() {
   const navTabs = document.getElementById("athleteNavTabs");
   const checkinCard = document.getElementById("athleteCheckinCard");
+  isAthleteCleanView = true;
 
   if (!currentProfile.trainer_id) {
     if (navTabs) navTabs.classList.add("hidden");
@@ -541,6 +577,47 @@ function renderAthleteExercisesList(items, logsByExercise) {
   });
 }
 
+async function getSundayWeeklyCheckinAlertIfNeeded() {
+  if (!currentProfile || !currentProfile.id) return null;
+
+  const now = new Date();
+  // Mostra promemoria ogni Domenica (day === 0)
+  if (now.getDay() !== 0) return null;
+
+  const sundayKey = getCurrentWeekSundayKey();
+  const dismissStorageKey = `wb_dismissed_checkin_${currentProfile.id}_${sundayKey}`;
+  if (localStorage.getItem(dismissStorageKey) === "1") {
+    return null;
+  }
+
+  const mondayStart = getCurrentWeekMondayStart();
+  const mondayDateStr = `${mondayStart.getFullYear()}-${String(mondayStart.getMonth() + 1).padStart(2, '0')}-${String(mondayStart.getDate()).padStart(2, '0')}`;
+
+  const { data: recentCheckins } = await supabaseClient
+    .from('weekly_checkins')
+    .select('id')
+    .eq('athlete_id', currentProfile.id)
+    .gte('checkin_date', mondayDateStr)
+    .limit(1);
+
+  if (recentCheckins && recentCheckins.length > 0) {
+    return null;
+  }
+
+  return {
+    level: "info",
+    pushTitle: "Workout Builder - Check-in Domenicale",
+    title: "✅ Check-in Settimanale",
+    message: "È domenica! Aggiorna il tuo report settimanale per il coach.",
+    actionHtml: `
+      <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+        <button type="button" class="btn btn-primary btn-sm" onclick="openAthleteCheckinFromNotif()">Compila Ora</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="dismissWeeklyCheckinReminder('${sundayKey}')">Segna come letto</button>
+      </div>
+    `
+  };
+}
+
 async function loadAthleteWorkout() {
   const { data: coach } = await supabaseClient
     .from('profiles')
@@ -553,6 +630,8 @@ async function loadAthleteWorkout() {
     document.getElementById("athleteCoachName").textContent = `Coach: ${coach.full_name}`;
     applyBrandLogo(coach.logo_url);
   }
+
+  const sundayCheckinAlert = await getSundayWeeklyCheckinAlertIfNeeded();
 
   const { data: workout, error } = await supabaseClient
     .from('workouts')
@@ -576,11 +655,13 @@ async function loadAthleteWorkout() {
     metaEl.textContent = "In attesa che il tuo Personal Trainer ti assegni una scheda.";
     notesEl.classList.add("hidden");
     container.innerHTML = "";
-    updateNotificationCenter([{
+    const noWorkoutAlerts = [{
       level: "warning",
       title: "Nessuna scheda attiva",
       message: "Il tuo coach non ha ancora pubblicato una scheda attiva sul tuo profilo."
-    }]);
+    }];
+    if (sundayCheckinAlert) noWorkoutAlerts.unshift(sundayCheckinAlert);
+    updateNotificationCenter(noWorkoutAlerts);
     return;
   }
 
@@ -589,6 +670,10 @@ async function loadAthleteWorkout() {
   metaEl.textContent = `Durata: ${workout.duration_weeks} settimane • Scadenza: ${endStr}`;
 
   const athleteAlerts = [];
+  if (sundayCheckinAlert) {
+    athleteAlerts.push(sundayCheckinAlert);
+  }
+
   if (end) {
     const diffDays = Math.ceil((end - new Date()) / (1000 * 60 * 60 * 24));
     if (diffDays < 0) {
