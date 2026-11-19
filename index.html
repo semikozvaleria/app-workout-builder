@@ -181,7 +181,7 @@
           <button class="btn btn-primary btn-sm" id="btnCopyCode">Copia</button>
         </div>
 
-        <!-- RICERCA RAPIDA ATLETI (COLLEGATI + ANAMNESI) -->
+        <!-- RICERCA RAPIDA ATLETI (COLLEGATI + ESTERNI) -->
         <div style="position: relative; margin-bottom: 14px;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none;">
             <circle cx="11" cy="11" r="8"></circle>
@@ -199,17 +199,17 @@
           <div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento atleti...</div>
         </div>
 
-        <!-- SEZIONE ANAMNESI ATLETI ESTERNI -->
+        <!-- SEZIONE ATLETI ESTERNI -->
         <div style="margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border);">
           <div class="section-title">
-            <span>🩺 Anamnesi Atleti Esterni</span>
+            <span>👤 Atleti Esterni</span>
             <button type="button" class="btn btn-primary btn-sm" id="btnNewExternalAnamnesis">➕ Nuova Anamnesi</button>
           </div>
           <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 10px;">
-            Archivio privato riservato a te per clienti non iscritti all'app a cui prepari schede in PDF.
+            Clienti non iscritti all'app: gestisci la loro anamnesi privata e lo storico delle schede generate in PDF.
           </p>
           <div id="externalAnamnesisListContainer">
-            <div style="text-align: center; color: var(--text-muted); font-size: 0.82rem; padding: 8px;">Nessuna anamnesi esterna salvata.</div>
+            <div style="text-align: center; color: var(--text-muted); font-size: 0.82rem; padding: 8px;">Nessun atleta esterno ancora inserito.</div>
           </div>
         </div>
       </div>
@@ -232,6 +232,17 @@
           <button class="btn btn-outline btn-sm" id="btnBackFromWorkouts">← Indietro</button>
         </div>
         <div id="athleteWorkoutsHistoryContainer">
+          <div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento schede...</div>
+        </div>
+      </div>
+
+      <!-- VISTA B2-EXT: STORICO SCHEDE ATLETA ESTERNO -->
+      <div id="trainerExternalWorkoutsView" class="card hidden">
+        <div class="section-title">
+          <span id="externalWorkoutsTitle">📋 Schede Atleta Esterno</span>
+          <button type="button" class="btn btn-outline btn-sm" id="btnBackFromExternalWorkouts">← Indietro</button>
+        </div>
+        <div id="externalWorkoutsHistoryContainer">
           <div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento schede...</div>
         </div>
       </div>
@@ -724,6 +735,7 @@
   <script src="notifications.js"></script>
   <script src="auth.js"></script>
   <script src="trainer.js"></script>
+  <script src="anamnesis.js"></script>
   <script src="analytics.js"></script>
   <script src="builder.js"></script>
   <script src="athlete.js"></script>
