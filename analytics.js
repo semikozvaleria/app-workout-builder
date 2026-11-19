@@ -21,7 +21,7 @@ function parsePrescribedSets(setsRepsStr) {
   return match ? Math.max(1, parseInt(match[1], 10)) : 1;
 }
 
-// Calcola ripetizioni totali e media reps per serie da input atleta (es. "S1: 80 kg × 10 | S2: 80 kg × 9")
+// Calcola ripetizioni totali e media reps per serie da input atleta
 function parseLoggedReps(repsStr, fallbackSets = 1) {
   if (!repsStr || repsStr === "-") return { totalReps: 0, setsCount: 0, maxSingleSetReps: 0 };
   const raw = String(repsStr).trim();
@@ -187,23 +187,23 @@ window.viewClientStats = async function(clientId, clientName) {
   const muscleSetsMap = {};
   const exerciseHistoryMap = {};
   const activeWorkoutExerciseMap = {};
-
   const activeWeIdsSet = new Set();
-    if (activeWorkout) {
-      (activeWorkout.workout_exercises || [])
-        .sort((a, b) => a.order_index - b.order_index)
-        .forEach(we => {
-          activeWeIdsSet.add(we.id);
-          const exKey = we.exercise_id || (we.exercises ? we.exercises.id : we.id);
-          if (!activeWorkoutExerciseMap[exKey]) {
-            activeWorkoutExerciseMap[exKey] = {
-              name: we.exercises ? we.exercises.name : 'Esercizio',
-              setsReps: we.sets_reps,
-              points: []
-            };
-          }
-        });
-    }
+
+  if (activeWorkout) {
+    (activeWorkout.workout_exercises || [])
+      .sort((a, b) => a.order_index - b.order_index)
+      .forEach(we => {
+        activeWeIdsSet.add(we.id);
+        const exKey = we.exercise_id || (we.exercises ? we.exercises.id : we.id);
+        if (!activeWorkoutExerciseMap[exKey]) {
+          activeWorkoutExerciseMap[exKey] = {
+            name: we.exercises ? we.exercises.name : 'Esercizio',
+            setsReps: we.sets_reps,
+            points: []
+          };
+        }
+      });
+  }
 
   // 3. RECUPERO (RIR)
   let targetRirSum = 0;
@@ -247,20 +247,21 @@ window.viewClientStats = async function(clientId, clientName) {
       });
     }
 
-  if (activeWeIdsSet.has(log.workout_exercise_id) && (weight > 0 || totalReps > 0)) {
-        const exKey = we?.exercise_id || exInfo?.id || log.workout_exercise_id;
-        if (activeWorkoutExerciseMap[exKey]) {
-          activeWorkoutExerciseMap[exKey].points.push({
-            date: dateLabel,
-            weight,
-            totalReps,
-            maxSetReps: maxSingleSetReps
-          });
-        }
+    if (activeWeIdsSet.has(log.workout_exercise_id) && (weight > 0 || totalReps > 0)) {
+      const exKey = we?.exercise_id || exInfo?.id || log.workout_exercise_id;
+      if (activeWorkoutExerciseMap[exKey]) {
+        activeWorkoutExerciseMap[exKey].points.push({
+          date: dateLabel,
+          weight,
+          totalReps,
+          maxSetReps: maxSingleSetReps
+        });
       }
+    }
+  });
 
-  const activeWeWithDataIds = Object.keys(activeWorkoutExerciseMap).filter(
-    weId => activeWorkoutExerciseMap[weId].points.length > 0
+  const activeExWithDataIds = Object.keys(activeWorkoutExerciseMap).filter(
+    exKey => activeWorkoutExerciseMap[exKey].points.length > 0
   );
 
   const avgTargetRir = targetRirCount > 0 ? (targetRirSum / targetRirCount).toFixed(1) : "-";
@@ -369,10 +370,10 @@ window.viewClientStats = async function(clientId, clientName) {
       <div id="infoBlockActiveEx" class="stat-info-box hidden">
         <strong>A cosa serve:</strong> mostra la progressione seduta dopo seduta sul singolo esercizio della <em>scheda attualmente attiva</em>, permettendoti di vedere sia il carico massimo usato (Kg) sia le ripetizioni totali svolte.
       </div>
-      ${activeWeWithDataIds.length > 0 ? `
+      ${activeExWithDataIds.length > 0 ? `
         <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;">
           <select id="statsActiveExerciseSelect" style="flex: 1; min-width: 170px; padding: 6px 8px; font-size: 0.78rem;">
-            ${activeWeWithDataIds.map(weId => `<option value="${weId}">${escapeHtml(activeWorkoutExerciseMap[weId].name)}</option>`).join("")}
+            ${activeExWithDataIds.map(exKey => `<option value="${exKey}">${escapeHtml(activeWorkoutExerciseMap[exKey].name)}</option>`).join("")}
           </select>
           <select id="statsActiveMetricMode" style="width: auto; padding: 6px 8px; font-size: 0.78rem;">
             <option value="both">Kg + Ripetizioni</option>
@@ -475,7 +476,7 @@ window.viewClientStats = async function(clientId, clientName) {
     renderWeightProgressionChart(weightPoints);
   }
 
-  if (activeWeWithDataIds.length > 0) {
+  if (activeExWithDataIds.length > 0) {
     const selActive = document.getElementById("statsActiveExerciseSelect");
     const modeActive = document.getElementById("statsActiveMetricMode");
     const updateActiveChart = () => renderActiveWorkoutExerciseChart(selActive.value, modeActive.value);
@@ -495,9 +496,9 @@ window.viewClientStats = async function(clientId, clientName) {
   }
 };
 
-function renderActiveWorkoutExerciseChart(weId, mode = "both") {
+function renderActiveWorkoutExerciseChart(exKey, mode = "both") {
   if (!currentStatsDataset || !currentStatsDataset.activeWorkoutExerciseMap) return;
-  const entry = currentStatsDataset.activeWorkoutExerciseMap[weId];
+  const entry = currentStatsDataset.activeWorkoutExerciseMap[exKey];
   if (!entry) return;
 
   const summaryEl = document.getElementById("statsActiveExSummary");
