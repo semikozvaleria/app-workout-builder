@@ -604,25 +604,25 @@
       <!-- PANNELLO CHECK-IN FINE SETTIMANA (ATLETA) -->
       <div id="athleteCheckinCard" class="card hidden">
         <div class="section-title">
-          <span>✅ Check-in di Fine Settimana</span>
-          <span style="font-size: 0.76rem; color: var(--text-muted);">Report per il Coach</span>
+          <span>✅ Check-in Settimanale</span>
+          <span style="font-size: 0.76rem; color: var(--text-muted);">Report Coach</span>
         </div>
 
-        <div class="grid-2">
+        <div class="grid-2" style="align-items: end;">
           <div class="field">
-            <label>Data Check-in</label>
-            <input type="date" id="checkinDate">
+            <label style="white-space: nowrap;">Data Check-in</label>
+            <input type="date" id="checkinDate" style="height: 40px; min-height: 40px; box-sizing: border-box;">
           </div>
           <div class="field">
-            <label>Peso Corporeo (kg)</label>
-            <input type="number" step="0.1" id="checkinWeightKg" placeholder="es. 74.5" min="30" max="250">
+            <label style="white-space: nowrap;">Peso Corporeo (kg)</label>
+            <input type="number" step="0.1" id="checkinWeightKg" placeholder="es. 74.5" min="30" max="250" style="height: 40px; min-height: 40px; box-sizing: border-box;">
           </div>
         </div>
 
-        <div class="grid-2">
+        <div class="grid-2" style="align-items: end;">
           <div class="field">
-            <label>Aderenza Scheda (1–5)</label>
-            <select id="checkinAdherence">
+            <label style="white-space: nowrap;">Aderenza (1–5)</label>
+            <select id="checkinAdherence" style="height: 40px;">
               <option value="5">5 - Ottima (90–100%)</option>
               <option value="4" selected>4 - Buona (75–90%)</option>
               <option value="3">3 - Discreta (60–75%)</option>
@@ -631,36 +631,36 @@
             </select>
           </div>
           <div class="field">
-            <label>Qualità del Sonno (1–5)</label>
-            <select id="checkinSleep">
+            <label style="white-space: nowrap;">Sonno (1–5)</label>
+            <select id="checkinSleep" style="height: 40px;">
               <option value="5">5 - Riposato</option>
               <option value="4" selected>4 - Buono</option>
               <option value="3">3 - Nella media</option>
-              <option value="2">2 - Disturbato / Scarso</option>
-              <option value="1">1 - Pessimo / Insonnia</option>
+              <option value="2">2 - Scarso</option>
+              <option value="1">1 - Pessimo</option>
             </select>
           </div>
         </div>
 
-        <div class="grid-2">
+        <div class="grid-2" style="align-items: end;">
           <div class="field">
-            <label>Energia & Recupero (1–5)</label>
-            <select id="checkinEnergy">
-              <option value="5">5 - Energia altissima</option>
-              <option value="4" selected>4 - Buona energia</option>
+            <label style="white-space: nowrap;">Energia (1–5)</label>
+            <select id="checkinEnergy" style="height: 40px;">
+              <option value="5">5 - Altissima</option>
+              <option value="4" selected>4 - Buona</option>
               <option value="3">3 - Normale</option>
-              <option value="2">2 - Stanchezza accumulata</option>
-              <option value="1">1 - Esausto / Spossato</option>
+              <option value="2">2 - Stanco</option>
+              <option value="1">1 - Esausto</option>
             </select>
           </div>
           <div class="field">
-            <label>Stress & Dolori Articolari (1–5)</label>
-            <select id="checkinStress">
-              <option value="5">5 - Dolori forti / Molto stressato</option>
-              <option value="4">4 - Stress alto / Fastidi</option>
+            <label style="white-space: nowrap;">Stress / Dolori (1–5)</label>
+            <select id="checkinStress" style="height: 40px;">
+              <option value="5">5 - Dolori forti</option>
+              <option value="4">4 - Stress alto</option>
               <option value="3">3 - Moderato</option>
-              <option value="2" selected>2 - Leggero affaticamento</option>
-              <option value="1">1 - Nessun dolore / Zero stress</option>
+              <option value="2" selected>2 - Lieve fatica</option>
+              <option value="1">1 - Nessun dolore</option>
             </select>
           </div>
         </div>
