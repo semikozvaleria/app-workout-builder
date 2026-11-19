@@ -1,5 +1,6 @@
 let chartLoadInstance = null;
 let chartMuscleInstance = null;
+let chartWeightInstance = null;
 let currentStatsDataset = null;
 
 document.getElementById("btnBackFromStats").addEventListener("click", () => {
@@ -63,13 +64,21 @@ function estimate1RM(weightKg, reps) {
   return +(weightKg * (1 + reps / 30)).toFixed(1);
 }
 
+function formatShortItDateFromIso(dateStr) {
+  if (!dateStr) return "-";
+  const clean = String(dateStr).split("T")[0];
+  const parts = clean.split("-");
+  if (parts.length !== 3) return clean;
+  return `${parts[2]}/${parts[1]}/${parts[0].slice(2)}`;
+}
+
 window.viewClientStats = async function(clientId, clientName) {
   showTrainerView("trainerStatsView");
   document.getElementById("statsAthleteTitle").textContent = `📈 Statistiche: ${clientName}`;
   const container = document.getElementById("statsDashboardContainer");
   container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">Elaborazione grafici e metriche in corso...</div>`;
 
-  const [{ data: workouts }, { data: logs }] = await Promise.all([
+  const [{ data: workouts }, { data: logs }, { data: checkins }] = await Promise.all([
     supabaseClient
       .from('workouts')
       .select('*, workout_exercises(*, exercises(id, name, muscle))')
@@ -80,19 +89,35 @@ window.viewClientStats = async function(clientId, clientName) {
       .from('workout_logs')
       .select('*')
       .eq('athlete_id', clientId)
-      .order('logged_at', { ascending: true })
+      .order('logged_at', { ascending: true }),
+    supabaseClient
+      .from('weekly_checkins')
+      .select('id, checkin_date, weight_kg, adherence_score, sleep_score, energy_score, stress_score, created_at')
+      .eq('athlete_id', clientId)
+      .eq('trainer_id', currentProfile.id)
+      .order('checkin_date', { ascending: true })
+      .order('created_at', { ascending: true })
   ]);
 
-  if (!workouts || workouts.length === 0) {
-    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">Nessuna scheda assegnata a ${escapeHtml(clientName)}.</div>`;
+  const weightPoints = (checkins || [])
+    .filter(c => c.weight_kg !== null && c.weight_kg !== undefined && !isNaN(parseFloat(c.weight_kg)))
+    .map(c => ({
+      dateLabel: formatShortItDateFromIso(c.checkin_date),
+      rawDate: c.checkin_date,
+      weight: +(parseFloat(c.weight_kg).toFixed(1))
+    }));
+
+  if ((!workouts || workouts.length === 0) && weightPoints.length === 0) {
+    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">Nessuna scheda o check-in registrato per ${escapeHtml(clientName)}.</div>`;
     return;
   }
 
-  const activeWorkout = workouts.find(w => w.status === 'active') || workouts[0];
+  const hasWorkouts = workouts && workouts.length > 0;
+  const activeWorkout = hasWorkouts ? (workouts.find(w => w.status === 'active') || workouts[0]) : null;
   const allLogs = logs || [];
 
   const weMap = {};
-  workouts.forEach(w => {
+  (workouts || []).forEach(w => {
     (w.workout_exercises || []).forEach(we => {
       weMap[we.id] = we;
     });
@@ -103,19 +128,25 @@ window.viewClientStats = async function(clientId, clientName) {
     allLogs.map(l => new Date(l.logged_at).toISOString().split("T")[0])
   );
 
-  const activeItems = activeWorkout.workout_exercises || [];
-  const distinctDaysPerWeek = Math.max(1, new Set(activeItems.map(i => i.day_name)).size);
-  const startDate = activeWorkout.start_date ? new Date(activeWorkout.start_date) : new Date(activeWorkout.created_at);
   const now = new Date();
-  const elapsedWeeks = Math.max(1, Math.min(activeWorkout.duration_weeks || 4, Math.ceil((now - startDate) / (1000 * 60 * 60 * 24 * 7))));
-  const expectedSessions = distinctDaysPerWeek * elapsedWeeks;
+  let adherencePct = 0;
+  let expectedSessions = 0;
+  let activeLogsDates = new Set();
 
-  const activeLogsDates = new Set(
-    allLogs
-      .filter(l => new Date(l.logged_at) >= startDate)
-      .map(l => new Date(l.logged_at).toISOString().split("T")[0])
-  );
-  const adherencePct = Math.min(100, Math.round((activeLogsDates.size / expectedSessions) * 100));
+  if (activeWorkout) {
+    const activeItems = activeWorkout.workout_exercises || [];
+    const distinctDaysPerWeek = Math.max(1, new Set(activeItems.map(i => i.day_name)).size);
+    const startDate = activeWorkout.start_date ? new Date(activeWorkout.start_date) : new Date(activeWorkout.created_at);
+    const elapsedWeeks = Math.max(1, Math.min(activeWorkout.duration_weeks || 4, Math.ceil((now - startDate) / (1000 * 60 * 60 * 24 * 7))));
+    expectedSessions = distinctDaysPerWeek * elapsedWeeks;
+
+    activeLogsDates = new Set(
+      allLogs
+        .filter(l => new Date(l.logged_at) >= startDate)
+        .map(l => new Date(l.logged_at).toISOString().split("T")[0])
+    );
+    adherencePct = Math.min(100, Math.round((activeLogsDates.size / expectedSessions) * 100));
+  }
 
   const last28Days = [];
   for (let i = 27; i >= 0; i--) {
@@ -191,15 +222,36 @@ window.viewClientStats = async function(clientId, clientName) {
     }
   }
 
+  // 4. METRICHE PESO CORPOREO (STORICO COMPLETO CHECK-IN)
+  let weightBannerHtml = "";
+  if (weightPoints.length > 0) {
+    const firstW = weightPoints[0].weight;
+    const latestW = weightPoints[weightPoints.length - 1].weight;
+    const deltaW = +(latestW - firstW).toFixed(1);
+    const deltaSign = deltaW > 0 ? "+" : "";
+    const minW = Math.min(...weightPoints.map(p => p.weight));
+    const maxW = Math.max(...weightPoints.map(p => p.weight));
+    const deltaColor = deltaW === 0 ? "var(--text-muted)" : "var(--primary)";
+
+    weightBannerHtml = `
+      <div style="display: flex; gap: 10px; flex-wrap: wrap; font-size: 0.78rem; margin-bottom: 8px; padding: 8px 10px; border-radius: 6px; background: var(--subcard-bg); border: 1px solid var(--border);">
+        <span>Attuale: <strong style="color: var(--primary);">${latestW} kg</strong></span>
+        <span>• Iniziale: <strong>${firstW} kg</strong></span>
+        <span>• Variazione: <strong style="color: ${deltaColor};">${deltaSign}${deltaW} kg</strong></span>
+        <span>• Range: <strong>${minW}–${maxW} kg</strong> (${weightPoints.length} pesate)</span>
+      </div>
+    `;
+  }
+
   const exerciseIds = Object.keys(exerciseHistoryMap);
-  currentStatsDataset = { exerciseHistoryMap, muscleSetsMap };
+  currentStatsDataset = { exerciseHistoryMap, muscleSetsMap, weightPoints };
 
   container.innerHTML = `
-<!-- KPI PRINCIPALI -->
+    <!-- KPI PRINCIPALI -->
     <div class="stats-kpi-grid">
       <div class="kpi-box">
         <button type="button" class="btn-stat-info" onclick="toggleStatInfo('infoKpiAdherence')" title="Info">i</button>
-        <span class="kpi-value">${adherencePct}%</span>
+        <span class="kpi-value">${hasWorkouts ? adherencePct + '%' : '-'}</span>
         <span class="kpi-label">Costanza Scheda</span>
       </div>
       <div class="kpi-box">
@@ -231,6 +283,23 @@ window.viewClientStats = async function(clientId, clientName) {
     </div>
     <div id="infoKpiRir" class="stat-info-box hidden">
       <strong>RIR Reale vs Target:</strong> confronta il buffer medio percepito dall'atleta (<em>RIR Reale</em>) con quello assegnato nella scheda (<em>Target</em>). Serve a capire se si sta allenando con la giusta intensità o se accumula troppa fatica.
+    </div>
+
+    <!-- 0. ANDAMENTO PESO CORPOREO (STORICO COMPLETO CHECK-IN) -->
+    <div class="stats-card-block">
+      <div class="stats-block-title">
+        <span>
+          ⚖️ Andamento Peso Corporeo
+          <button type="button" class="btn-stat-info" onclick="toggleStatInfo('infoBlockWeight')" title="Info">i</button>
+        </span>
+      </div>
+      <div id="infoBlockWeight" class="stat-info-box hidden">
+        <strong>A cosa serve:</strong> traccia l'evoluzione del peso corporeo nel lungo periodo attraverso tutte le pesate inviate nei check-in settimanali (anche oltre gli ultimi 30 giorni visibili nella sezione Check-in).
+      </div>
+      ${weightPoints.length > 0 ? `
+        ${weightBannerHtml}
+        <div class="chart-canvas-wrap"><canvas id="canvasWeightProgression"></canvas></div>
+      ` : `<div style="font-size: 0.8rem; color: var(--text-muted);">Nessun peso ancora registrato nei check-in settimanali.</div>`}
     </div>
 
     <!-- 1. PROGRESSIONE CARICHI & STIMA 1RM -->
@@ -322,6 +391,10 @@ window.viewClientStats = async function(clientId, clientName) {
     </div>
   `;
 
+  if (weightPoints.length > 0) {
+    renderWeightProgressionChart(weightPoints);
+  }
+
   if (exerciseIds.length > 0) {
     const sel = document.getElementById("statsExerciseSelect");
     renderLoadProgressionChart(sel.value);
@@ -332,6 +405,43 @@ window.viewClientStats = async function(clientId, clientName) {
     renderMuscleVolumeChart(muscleSetsMap);
   }
 };
+
+function renderWeightProgressionChart(weightPoints) {
+  const canvas = document.getElementById("canvasWeightProgression");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (chartWeightInstance) chartWeightInstance.destroy();
+
+  const textColor = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim() || '#8e8e93';
+
+  chartWeightInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: weightPoints.map(p => p.dateLabel),
+      datasets: [
+        {
+          label: 'Peso Corporeo (kg)',
+          data: weightPoints.map(p => p.weight),
+          borderColor: '#10b981',
+          backgroundColor: 'rgba(16, 185, 129, 0.16)',
+          pointBackgroundColor: '#10b981',
+          pointRadius: 4,
+          tension: 0.25,
+          fill: true
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: textColor, font: { size: 11 } } } },
+      scales: {
+        x: { ticks: { color: textColor, font: { size: 10 } } },
+        y: { ticks: { color: textColor, font: { size: 10 } } }
+      }
+    }
+  });
+}
 
 function renderLoadProgressionChart(exerciseId) {
   if (!currentStatsDataset) return;
