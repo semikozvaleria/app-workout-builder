@@ -188,18 +188,22 @@ window.viewClientStats = async function(clientId, clientName) {
   const exerciseHistoryMap = {};
   const activeWorkoutExerciseMap = {};
 
-  if (activeWorkout) {
-    (activeWorkout.workout_exercises || [])
-      .sort((a, b) => a.order_index - b.order_index)
-      .forEach(we => {
-        activeWorkoutExerciseMap[we.id] = {
-          weId: we.id,
-          name: `${we.day_name} • ${we.exercises ? we.exercises.name : 'Esercizio'}`,
-          setsReps: we.sets_reps,
-          points: []
-        };
-      });
-  }
+  const activeWeIdsSet = new Set();
+    if (activeWorkout) {
+      (activeWorkout.workout_exercises || [])
+        .sort((a, b) => a.order_index - b.order_index)
+        .forEach(we => {
+          activeWeIdsSet.add(we.id);
+          const exKey = we.exercise_id || (we.exercises ? we.exercises.id : we.id);
+          if (!activeWorkoutExerciseMap[exKey]) {
+            activeWorkoutExerciseMap[exKey] = {
+              name: we.exercises ? we.exercises.name : 'Esercizio',
+              setsReps: we.sets_reps,
+              points: []
+            };
+          }
+        });
+    }
 
   // 3. RECUPERO (RIR)
   let targetRirSum = 0;
@@ -243,15 +247,17 @@ window.viewClientStats = async function(clientId, clientName) {
       });
     }
 
-    if (activeWorkoutExerciseMap[log.workout_exercise_id] && (weight > 0 || totalReps > 0)) {
-      activeWorkoutExerciseMap[log.workout_exercise_id].points.push({
-        date: dateLabel,
-        weight,
-        totalReps,
-        maxSetReps: maxSingleSetReps
-      });
-    }
-  });
+  if (activeWeIdsSet.has(log.workout_exercise_id) && (weight > 0 || totalReps > 0)) {
+        const exKey = we?.exercise_id || exInfo?.id || log.workout_exercise_id;
+        if (activeWorkoutExerciseMap[exKey]) {
+          activeWorkoutExerciseMap[exKey].points.push({
+            date: dateLabel,
+            weight,
+            totalReps,
+            maxSetReps: maxSingleSetReps
+          });
+        }
+      }
 
   const activeWeWithDataIds = Object.keys(activeWorkoutExerciseMap).filter(
     weId => activeWorkoutExerciseMap[weId].points.length > 0
