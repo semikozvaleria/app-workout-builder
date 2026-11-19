@@ -1,4 +1,3 @@
-let trainerAnamnesisList = [];
 let enrichedClientsCache = [];
 let trainerClientsSearchTerm = "";
 
@@ -24,7 +23,7 @@ if (trainerSearchInputEl) {
       btnClearTrainerSearchEl.classList.toggle("hidden", trainerClientsSearchTerm.length === 0);
     }
     renderConnectedClientsList();
-    renderExternalAnamnesisList();
+    if (typeof renderExternalAthletesList === "function") renderExternalAthletesList();
   });
 }
 
@@ -34,7 +33,7 @@ if (btnClearTrainerSearchEl) {
     if (trainerSearchInputEl) trainerSearchInputEl.value = "";
     btnClearTrainerSearchEl.classList.add("hidden");
     renderConnectedClientsList();
-    renderExternalAnamnesisList();
+    if (typeof renderExternalAthletesList === "function") renderExternalAthletesList();
   });
 }
 
@@ -45,6 +44,8 @@ function showTrainerView(viewId) {
   document.getElementById("trainerWorkoutsView").classList.add("hidden");
   document.getElementById("trainerStatsView").classList.add("hidden");
   document.getElementById("trainerAnamnesisView").classList.add("hidden");
+  const extWorkoutsView = document.getElementById("trainerExternalWorkoutsView");
+  if (extWorkoutsView) extWorkoutsView.classList.add("hidden");
   const checkinsView = document.getElementById("trainerCheckinsView");
   if (checkinsView) checkinsView.classList.add("hidden");
 
@@ -72,40 +73,6 @@ document.getElementById("btnBackToClients").addEventListener("click", () => {
 
 document.getElementById("btnBackFromWorkouts").addEventListener("click", () => {
   showTrainerView("trainerClientsView");
-});
-
-document.getElementById("btnBackFromAnamnesis").addEventListener("click", () => {
-  showTrainerView("trainerClientsView");
-  loadTrainerClients();
-});
-
-document.getElementById("btnNewExternalAnamnesis").addEventListener("click", () => {
-  openAnamnesisEditor({ athleteId: null, recordId: null, defaultName: "" });
-});
-
-document.getElementById("btnSaveAnamnesis").addEventListener("click", saveTrainerAnamnesis);
-
-document.getElementById("btnDeleteAnamnesis").addEventListener("click", deleteTrainerAnamnesis);
-
-document.getElementById("btnAnamnesisToBuilder").addEventListener("click", () => {
-  const athleteId = document.getElementById("anamnesisAthleteId").value || "";
-  const fullName = document.getElementById("anamFullName").value.trim();
-  showTrainerView("trainerBuilderView");
-  if (typeof loadTrainerDrafts === "function") loadTrainerDrafts();
-
-  const selectEl = document.getElementById("builderAthleteSelect");
-  const loadBtn = document.getElementById("btnLoadExistingWorkout");
-
-  if (athleteId) {
-    selectEl.value = athleteId;
-    document.getElementById("athleteName").value = fullName;
-    loadBtn.classList.remove("hidden");
-  } else {
-    selectEl.value = "";
-    document.getElementById("athleteName").value = fullName;
-    loadBtn.classList.add("hidden");
-  }
-  if (typeof syncSaveCloudButtonState === "function") syncSaveCloudButtonState();
 });
 
 window.markTrainerNotificationSeen = async function(notifId) {
@@ -257,11 +224,12 @@ function renderConnectedClientsList() {
   }
 
   const term = trainerClientsSearchTerm;
+  const anamList = (typeof trainerAnamnesisList !== "undefined") ? trainerAnamnesisList : [];
   const filtered = term
     ? enrichedClientsCache.filter(({ client }) => {
         const nameMatch = (client.full_name || "").toLowerCase().includes(term);
         const emailMatch = (client.email || "").toLowerCase().includes(term);
-        const anam = (trainerAnamnesisList || []).find(a => a.athlete_id === client.id);
+        const anam = anamList.find(a => a.athlete_id === client.id);
         const anamMatch = anam
           ? ((anam.goal || "").toLowerCase().includes(term) || (anam.private_notes || "").toLowerCase().includes(term))
           : false;
@@ -306,65 +274,8 @@ function renderConnectedClientsList() {
   });
 }
 
-function renderExternalAnamnesisList() {
-  const container = document.getElementById("externalAnamnesisListContainer");
-  if (!container) return;
-
-  const externalRecords = (trainerAnamnesisList || []).filter(a => !a.athlete_id);
-
-  if (externalRecords.length === 0) {
-    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.82rem; padding: 8px;">Nessuna anamnesi esterna salvata.</div>`;
-    return;
-  }
-
-  const term = trainerClientsSearchTerm;
-  const filtered = term
-    ? externalRecords.filter(rec =>
-        (rec.full_name || "").toLowerCase().includes(term) ||
-        (rec.goal || "").toLowerCase().includes(term) ||
-        (rec.availability || "").toLowerCase().includes(term) ||
-        (rec.private_notes || "").toLowerCase().includes(term)
-      )
-    : externalRecords;
-
-  if (filtered.length === 0) {
-    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.82rem; padding: 8px;">Nessuna anamnesi esterna corrisponde a "${escapeHtml(trainerClientsSearchTerm)}".</div>`;
-    return;
-  }
-
-  container.innerHTML = "";
-  filtered.forEach(rec => {
-    const updatedStr = rec.updated_at
-      ? new Date(rec.updated_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' })
-      : '';
-    const subParts = [];
-    if (rec.goal) subParts.push(rec.goal);
-    if (rec.availability) subParts.push(rec.availability);
-    const subLine = subParts.length > 0 ? subParts.join(" • ") : "Scheda anamnesi salvata";
-
-    const card = document.createElement("div");
-    card.className = "client-card";
-    card.innerHTML = `
-      <div>
-        <strong style="font-size: 0.92rem; display: block;">
-          ${escapeHtml(rec.full_name)}
-          <span style="font-size: 0.68rem; background: rgba(59, 130, 246, 0.16); color: var(--primary); padding: 1px 6px; border-radius: 4px; margin-left: 4px;">Esterno</span>
-        </strong>
-        <span style="font-size: 0.76rem; color: var(--text-muted); display: block; margin-top: 2px;">
-          ${escapeHtml(subLine)}${updatedStr ? ` • Agg. ${updatedStr}` : ''}
-        </span>
-      </div>
-      <div class="client-actions">
-        <button type="button" class="btn btn-outline btn-sm" onclick="openExternalAnamnesis('${rec.id}')">🩺 Apri</button>
-        <button type="button" class="btn btn-primary btn-sm" onclick="openBuilderForExternal('${escapeHtml(rec.full_name)}')">Crea Scheda</button>
-      </div>
-    `;
-    container.appendChild(card);
-  });
-}
-
 async function loadTrainerClients() {
-  const [{ data: clients, error }, { data: systemNotifs }, { data: allAnamnesis }] = await Promise.all([
+  const [{ data: clients, error }, { data: systemNotifs }] = await Promise.all([
     supabaseClient
       .from('profiles')
       .select('*')
@@ -375,15 +286,14 @@ async function loadTrainerClients() {
       .eq('trainer_id', currentProfile.id)
       .is('seen_at', null)
       .order('created_at', { ascending: false }),
-    supabaseClient
-      .from('athlete_anamnesis')
-      .select('*')
-      .eq('trainer_id', currentProfile.id)
-      .order('updated_at', { ascending: false })
+    typeof fetchTrainerAnamnesisAndExternalWorkouts === "function"
+      ? fetchTrainerAnamnesisAndExternalWorkouts()
+      : Promise.resolve()
   ]);
 
-  trainerAnamnesisList = allAnamnesis || [];
-  renderExternalAnamnesisList();
+  if (typeof renderExternalAthletesList === "function") {
+    renderExternalAthletesList();
+  }
 
   const select = document.getElementById("builderAthleteSelect");
   const coachAlerts = [];
@@ -436,10 +346,11 @@ async function loadTrainerClients() {
 
   const today = new Date();
   const enrichedClients = [];
+  const anamList = (typeof trainerAnamnesisList !== "undefined") ? trainerAnamnesisList : [];
 
   clients.forEach(client => {
     const activeWorkout = (workouts || []).find(w => w.athlete_id === client.id);
-    const hasAnamnesis = trainerAnamnesisList.some(a => a.athlete_id === client.id);
+    const hasAnamnesis = anamList.some(a => a.athlete_id === client.id);
     let badgeHtml = `<span class="status-badge status-none">Nessuna scheda attiva</span>`;
     let priority = 2;
 
@@ -514,222 +425,6 @@ async function loadTrainerClients() {
 
   updateNotificationCenter(coachAlerts);
 }
-
-window.openClientAnamnesis = async function(clientId, clientName) {
-  let existing = (trainerAnamnesisList || []).find(a => a.athlete_id === clientId) || null;
-  if (!existing) {
-    const { data } = await supabaseClient
-      .from('athlete_anamnesis')
-      .select('*')
-      .eq('trainer_id', currentProfile.id)
-      .eq('athlete_id', clientId)
-      .maybeSingle();
-    existing = data || null;
-  }
-
-  openAnamnesisEditor({
-    athleteId: clientId,
-    recordId: existing ? existing.id : null,
-    defaultName: clientName,
-    record: existing
-  });
-};
-
-window.openExternalAnamnesis = async function(recordId) {
-  let existing = (trainerAnamnesisList || []).find(a => a.id === recordId) || null;
-  if (!existing) {
-    const { data } = await supabaseClient
-      .from('athlete_anamnesis')
-      .select('*')
-      .eq('trainer_id', currentProfile.id)
-      .eq('id', recordId)
-      .single();
-    existing = data || null;
-  }
-
-  if (!existing) {
-    alert("Anamnesi non trovata.");
-    return;
-  }
-
-  openAnamnesisEditor({
-    athleteId: null,
-    recordId: existing.id,
-    defaultName: existing.full_name,
-    record: existing
-  });
-};
-
-function openAnamnesisEditor({ athleteId = null, recordId = null, defaultName = "", record = null }) {
-  showTrainerView("trainerAnamnesisView");
-
-  const titleEl = document.getElementById("anamnesisViewTitle");
-  const subtitleEl = document.getElementById("anamnesisViewSubtitle");
-  const deleteBtn = document.getElementById("btnDeleteAnamnesis");
-  const secondaryActionsEl = document.getElementById("anamnesisSecondaryActions");
-  const metaEl = document.getElementById("anamnesisUpdatedMeta");
-  const nameInput = document.getElementById("anamFullName");
-
-  document.getElementById("anamnesisRecordId").value = record ? record.id : (recordId || "");
-  document.getElementById("anamnesisAthleteId").value = athleteId || "";
-
-  if (athleteId) {
-    titleEl.textContent = `🩺 Anamnesi: ${defaultName}`;
-    subtitleEl.textContent = "Scheda privata riservata al coach • Atleta collegato all'app";
-    nameInput.value = record && record.full_name ? record.full_name : defaultName;
-  } else {
-    titleEl.textContent = record ? `🩺 Anamnesi: ${record.full_name}` : "🩺 Nuova Anamnesi (Atleta Esterno)";
-    subtitleEl.textContent = "Scheda privata riservata al coach • Atleta esterno";
-    nameInput.value = record ? record.full_name : defaultName;
-  }
-
-  document.getElementById("anamBirthDate").value = record && record.birth_date ? record.birth_date : "";
-  document.getElementById("anamGender").value = record && record.gender ? record.gender : "";
-  document.getElementById("anamHeightCm").value = record && record.height_cm !== null && record.height_cm !== undefined ? record.height_cm : "";
-  document.getElementById("anamWeightKg").value = record && record.weight_kg !== null && record.weight_kg !== undefined ? record.weight_kg : "";
-  document.getElementById("anamOccupation").value = record && record.occupation ? record.occupation : "";
-  document.getElementById("anamAvailability").value = record && record.availability ? record.availability : "";
-  document.getElementById("anamGoal").value = record && record.goal ? record.goal : "";
-  document.getElementById("anamInjuries").value = record && record.injuries ? record.injuries : "";
-  document.getElementById("anamExperience").value = record && record.experience ? record.experience : "";
-  document.getElementById("anamPrivateNotes").value = record && record.private_notes ? record.private_notes : "";
-
-  if (record && record.updated_at) {
-    const dt = new Date(record.updated_at).toLocaleDateString('it-IT', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-    metaEl.textContent = `Ultimo aggiornamento: ${dt}`;
-    deleteBtn.classList.remove("hidden");
-    if (secondaryActionsEl) {
-      secondaryActionsEl.className = "grid-2";
-      secondaryActionsEl.style.cssText = "";
-    }
-  } else {
-    metaEl.textContent = "Compila i campi e premi Salva Anamnesi.";
-    deleteBtn.classList.add("hidden");
-    if (secondaryActionsEl) {
-      secondaryActionsEl.className = "";
-      secondaryActionsEl.style.cssText = "display: flex; flex-direction: column; gap: 8px;";
-    }
-  }
-}
-
-async function saveTrainerAnamnesis() {
-  const fullName = document.getElementById("anamFullName").value.trim();
-  if (!fullName) {
-    alert("Inserisci il Nome e Cognome dell'atleta.");
-    return;
-  }
-
-  const btn = document.getElementById("btnSaveAnamnesis");
-  btn.disabled = true;
-  btn.textContent = "Salvataggio...";
-
-  const recordId = document.getElementById("anamnesisRecordId").value.trim() || null;
-  const athleteId = document.getElementById("anamnesisAthleteId").value.trim() || null;
-
-  const heightRaw = document.getElementById("anamHeightCm").value.trim();
-  const weightRaw = document.getElementById("anamWeightKg").value.trim();
-
-  const payload = {
-    trainer_id: currentProfile.id,
-    athlete_id: athleteId,
-    full_name: fullName,
-    birth_date: document.getElementById("anamBirthDate").value || null,
-    gender: document.getElementById("anamGender").value || null,
-    height_cm: heightRaw ? parseFloat(heightRaw) : null,
-    weight_kg: weightRaw ? parseFloat(weightRaw) : null,
-    occupation: document.getElementById("anamOccupation").value.trim() || null,
-    availability: document.getElementById("anamAvailability").value.trim() || null,
-    goal: document.getElementById("anamGoal").value.trim() || null,
-    injuries: document.getElementById("anamInjuries").value.trim() || null,
-    experience: document.getElementById("anamExperience").value.trim() || null,
-    private_notes: document.getElementById("anamPrivateNotes").value.trim() || null,
-    updated_at: new Date().toISOString()
-  };
-
-  let savedData = null;
-  let error = null;
-
-  if (recordId) {
-    const res = await supabaseClient
-      .from('athlete_anamnesis')
-      .update(payload)
-      .eq('id', recordId)
-      .eq('trainer_id', currentProfile.id)
-      .select()
-      .single();
-    savedData = res.data;
-    error = res.error;
-  } else {
-    const res = await supabaseClient
-      .from('athlete_anamnesis')
-      .insert(payload)
-      .select()
-      .single();
-    savedData = res.data;
-    error = res.error;
-  }
-
-  btn.disabled = false;
-  btn.textContent = "💾 Salva Anamnesi";
-
-  if (error || !savedData) {
-    alert("Errore salvataggio anamnesi: " + (error ? error.message : "sconosciuto"));
-    return;
-  }
-
-  const idx = trainerAnamnesisList.findIndex(a => a.id === savedData.id);
-  if (idx >= 0) {
-    trainerAnamnesisList[idx] = savedData;
-  } else {
-    trainerAnamnesisList.unshift(savedData);
-  }
-
-  openAnamnesisEditor({
-    athleteId: savedData.athlete_id,
-    recordId: savedData.id,
-    defaultName: savedData.full_name,
-    record: savedData
-  });
-
-  alert("✅ Scheda anamnesi salvata!");
-}
-
-async function deleteTrainerAnamnesis() {
-  const recordId = document.getElementById("anamnesisRecordId").value.trim();
-  if (!recordId) return;
-
-  if (!confirm("Vuoi eliminare definitivamente questa scheda anamnesi?")) return;
-
-  const { error } = await supabaseClient
-    .from('athlete_anamnesis')
-    .delete()
-    .eq('id', recordId)
-    .eq('trainer_id', currentProfile.id);
-
-  if (error) {
-    alert("Errore durante l'eliminazione: " + error.message);
-    return;
-  }
-
-  trainerAnamnesisList = trainerAnamnesisList.filter(a => a.id !== recordId);
-  showTrainerView("trainerClientsView");
-  await loadTrainerClients();
-}
-
-window.openBuilderForExternal = function(externalName) {
-  showTrainerView("trainerBuilderView");
-  if (typeof loadTrainerDrafts === "function") loadTrainerDrafts();
-  document.getElementById("builderAthleteSelect").value = "";
-  document.getElementById("athleteName").value = externalName;
-  document.getElementById("btnLoadExistingWorkout").classList.add("hidden");
-  if (typeof syncSaveCloudButtonState === "function") syncSaveCloudButtonState();
-};
 
 window.viewClientWorkouts = async function(clientId, clientName) {
   showTrainerView("trainerWorkoutsView");
