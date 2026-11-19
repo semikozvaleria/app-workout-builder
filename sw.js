@@ -1,50 +1,54 @@
-
-const CACHE_NAME = "workout-builder-v60";
+const CACHE_NAME = 'workout-builder-v61';
 const ASSETS_TO_CACHE = [
-  "./",
-  "./index.html",
-  "./style.css",
-  "./config.js",
-  "./settings.js",
-  "./notifications.js",
-  "./auth.js",
-  "./trainer.js",
-  "./analytics.js",
-  "./builder.js",
-  "./athlete.js",
-  "./logo_W.jpeg",
-  "./manifest.json"
-  "./checkins.js"
+  './',
+  './index.html',
+  './style.css',
+  './config.js',
+  './settings.js',
+  './notifications.js',
+  './auth.js',
+  './trainer.js',
+  './anamnesis.js',
+  './analytics.js',
+  './builder.js',
+  './athlete.js',
+  './checkins.js',
+  './manifest.json',
+  './logo_W.jpeg'
 ];
 
-self.addEventListener("install", (event) => {
+// Installazione: salva i file principali in cache e attiva subito il nuovo SW
+self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS_TO_CACHE))
   );
   self.skipWaiting();
 });
 
-self.addEventListener("activate", (event) => {
+// Attivazione: elimina tutte le vecchie cache e prende il controllo immediato
+self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+      Promise.all(
+        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+      )
     )
   );
   self.clients.claim();
 });
 
-self.addEventListener("fetch", (event) => {
-  // Le richieste API (Supabase / CDN esterne) vanno sempre in rete
-  if (!event.request.url.startsWith(self.location.origin)) {
-    return;
-  }
+// Strategia Network-First per HTML/JS/CSS così ogni deploy su Vercel arriva subito senza cache vecchia
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
 
-  // Network-first con fallback su cache per i file locali (così gli aggiornamenti su GitHub arrivano subito)
+  const url = new URL(event.request.url);
+  if (url.origin !== location.origin) return;
+
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        const cloned = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, cloned));
         return response;
       })
       .catch(() => caches.match(event.request))
