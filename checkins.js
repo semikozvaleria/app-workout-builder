@@ -18,6 +18,12 @@ function formatCheckinDateIt(dateStr) {
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
+function getThirtyDaysAgoDateStr() {
+  const d = new Date();
+  d.setDate(d.getDate() - 30);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 // --- INIZIALIZZAZIONE TAB ATLETA ---
 function initAthleteCheckinTabs() {
   const navTabs = document.getElementById("athleteNavTabs");
@@ -56,17 +62,20 @@ function initAthleteCheckinTabs() {
   };
 }
 
-// --- CARICAMENTO STORICO ATLETA ---
+// --- CARICAMENTO STORICO ATLETA (ULTIMI 30 GIORNI) ---
 async function loadAthleteCheckinsHistory() {
   const container = document.getElementById("athleteCheckinsHistoryContainer");
   if (!container || !currentProfile) return;
 
   container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.82rem; padding: 8px;">Caricamento storico...</div>`;
 
+  const cutoffDate = getThirtyDaysAgoDateStr();
+
   const { data, error } = await supabaseClient
     .from("weekly_checkins")
     .select("*")
     .eq("athlete_id", currentProfile.id)
+    .gte("checkin_date", cutoffDate)
     .order("checkin_date", { ascending: false })
     .order("created_at", { ascending: false });
 
@@ -76,7 +85,7 @@ async function loadAthleteCheckinsHistory() {
   }
 
   if (!data || data.length === 0) {
-    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.82rem; padding: 8px;">Nessun check-in inviato finora.</div>`;
+    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.82rem; padding: 8px;">Nessun check-in inviato negli ultimi 30 giorni.</div>`;
     return;
   }
 
@@ -158,10 +167,13 @@ if (btnSubmitWeeklyCheckin) {
     document.getElementById("checkinAthleteNotes").value = "";
     alert("Check-in inviato con successo al tuo coach!");
     loadAthleteCheckinsHistory();
+    if (typeof loadAthleteWorkout === "function") {
+      loadAthleteWorkout();
+    }
   });
 }
 
-// --- APERTURA VISTA CHECK-IN ATLETA LATO TRAINER ---
+// --- APERTURA VISTA CHECK-IN ATLETA LATO TRAINER (ULTIMI 30 GIORNI) ---
 async function openTrainerAthleteCheckins(athleteId, athleteName) {
   const viewsToHide = [
     "trainerClientsView",
@@ -186,11 +198,14 @@ async function openTrainerAthleteCheckins(athleteId, athleteName) {
 
   container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento check-in...</div>`;
 
+  const cutoffDate = getThirtyDaysAgoDateStr();
+
   const { data, error } = await supabaseClient
     .from("weekly_checkins")
     .select("*")
     .eq("athlete_id", athleteId)
     .eq("trainer_id", currentProfile.id)
+    .gte("checkin_date", cutoffDate)
     .order("checkin_date", { ascending: false })
     .order("created_at", { ascending: false });
 
@@ -220,7 +235,7 @@ async function openTrainerAthleteCheckins(athleteId, athleteName) {
   }
 
   if (!data || data.length === 0) {
-    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">Questo atleta non ha ancora inviato nessun check-in settimanale.</div>`;
+    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">Nessun check-in inviato negli ultimi 30 giorni. Lo storico completo del peso resta disponibile nelle Statistiche.</div>`;
     return;
   }
 

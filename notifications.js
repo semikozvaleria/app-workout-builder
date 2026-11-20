@@ -28,7 +28,7 @@ function updateNotificationCenter(alertsList) {
   if (activeAlerts.length === 0) {
     container.innerHTML = `
       <div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">
-        ✅ Nessuna scadenza imminente! Tutte le schede sono in regola.
+        ✅ Nessuna notifica al momento. Tutto aggiornato!
       </div>
     `;
     return;
@@ -37,7 +37,7 @@ function updateNotificationCenter(alertsList) {
   container.innerHTML = activeAlerts.map(al => `
     <div class="alert-item-card ${al.level === 'danger' ? 'urgent' : ''}">
       <div style="flex: 1; min-width: 180px;">
-        <strong style="font-size: 0.86rem; display: block; color: ${al.level === 'danger' ? 'var(--danger)' : 'var(--warning)'};">
+        <strong style="font-size: 0.86rem; display: block; color: ${al.level === 'danger' ? 'var(--danger)' : (al.level === 'info' ? 'var(--primary)' : 'var(--warning)')};">
           ${al.title}
         </strong>
         <span style="font-size: 0.78rem; color: var(--text-muted);">${al.message}</span>
@@ -76,7 +76,9 @@ function triggerBrowserPushIfAllowed(alertsList, force = false) {
   localStorage.setItem(storageKey, "1");
   const first = alertsList[0];
   const extra = alertsList.length > 1 ? ` (+ altri ${alertsList.length - 1} avvisi)` : "";
-new Notification("Workout Builder - Scadenza Scheda", {
+  const notifTitle = first.pushTitle || "Workout Builder - Avviso";
+
+  new Notification(notifTitle, {
     body: `${first.title}: ${first.message}${extra}`,
     icon: currentProfile?.logo_url || "logo_W.jpeg"
   });
