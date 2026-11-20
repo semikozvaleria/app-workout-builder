@@ -696,22 +696,20 @@ window.cloneWorkoutToBuilder = async function(workoutId, clientId, clientName) {
   renderList();
 };
 
-window.viewClientProgress = async function(clientId, clientName) {
+window.viewClientProgress = async function(clientId, clientName, selectedWorkoutId = null) {
   showTrainerView("trainerProgressView");
   document.getElementById("progressAthleteTitle").textContent = `📊 Progressi: ${clientName}`;
   const container = document.getElementById("progressLogsContainer");
-  container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento scheda e riscontri atleta...</div>`;
+  container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento schede e riscontri atleta...</div>`;
 
-  const [{ data: workout }, { data: logs }] = await Promise.all([
+  const [{ data: allWorkouts }, { data: logs }] = await Promise.all([
     supabaseClient
       .from('workouts')
       .select('*')
       .eq('trainer_id', currentProfile.id)
       .eq('athlete_id', clientId)
-      .eq('status', 'active')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single(),
+      .in('status', ['active', 'archived'])
+      .order('created_at', { ascending: false }),
     supabaseClient
       .from('workout_logs')
       .select('*')
@@ -731,31 +729,70 @@ window.viewClientProgress = async function(clientId, clientName) {
     loadTrainerClients();
   }
 
-  if (!workout) {
-    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">Nessuna scheda attiva trovata per ${escapeHtml(clientName)}.</div>`;
+  const workoutsList = allWorkouts || [];
+  if (workoutsList.length === 0) {
+    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">Nessuna scheda attiva o archiviata trovata per ${escapeHtml(clientName)}.</div>`;
     return;
   }
+
+  const sortedWorkouts = [...workoutsList].sort((a, b) => {
+    if (a.status === 'active' && b.status !== 'active') return -1;
+    if (a.status !== 'active' && b.status === 'active') return 1;
+    return new Date(b.created_at) - new Date(a.created_at);
+  });
+
+  const targetWorkout = selectedWorkoutId
+    ? (sortedWorkouts.find(w => w.id === selectedWorkoutId) || sortedWorkouts[0])
+    : sortedWorkouts[0];
+
+  const isTargetActive = targetWorkout.status === 'active';
+
+  let archivedIdx = sortedWorkouts.filter(w => w.status === 'archived').length;
+  const selectorOptionsHtml = sortedWorkouts.map(w => {
+    const sDate = w.start_date ? new Date(w.start_date).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-';
+    const eDate = w.end_date ? new Date(w.end_date).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-';
+    let label = "";
+    if (w.status === 'active') {
+      label = `● ATTIVA — ${w.title || 'Scheda'} (${sDate} → ${eDate})`;
+    } else {
+      label = `📁 ARCHIVIATA #${archivedIdx--} — ${w.title || 'Scheda'} (${sDate} → ${eDate})`;
+    }
+    return `<option value="${w.id}" ${w.id === targetWorkout.id ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+  }).join("");
 
   const { data: items } = await supabaseClient
     .from('workout_exercises')
     .select('*, exercises(*)')
-    .eq('workout_id', workout.id)
+    .eq('workout_id', targetWorkout.id)
     .order('order_index', { ascending: true });
 
-  if (!items || items.length === 0) {
-    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">La scheda attiva non contiene esercizi.</div>`;
-    return;
-  }
+  const startStr = targetWorkout.start_date ? new Date(targetWorkout.start_date).toLocaleDateString('it-IT') : '-';
+  const endStr = targetWorkout.end_date ? new Date(targetWorkout.end_date).toLocaleDateString('it-IT') : '-';
 
-  const endStr = workout.end_date ? new Date(workout.end_date).toLocaleDateString('it-IT') : '-';
   let html = `
-    <div style="font-size: 0.8rem; color: var(--primary); margin-bottom: 8px;">
-      Durata: ${workout.duration_weeks} settimane • Scadenza: ${endStr}
+    <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 12px;">
+      <label style="font-size: 0.74rem; color: var(--text-muted); display: block; margin-bottom: 4px;">
+        Seleziona Scheda da consultare (${sortedWorkouts.length} totali):
+      </label>
+      <select id="progressWorkoutSelector" style="width: 100%; font-size: 0.82rem; font-weight: 600;">
+        ${selectorOptionsHtml}
+      </select>
+      <div style="font-size: 0.78rem; color: ${isTargetActive ? 'var(--primary)' : 'var(--text-muted)'}; margin-top: 6px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px;">
+        <span>Periodo: <strong>${startStr} – ${endStr}</strong> (${targetWorkout.duration_weeks} sett.)</span>
+        <span>${isTargetActive ? '🟢 Scheda in corso' : '📁 Storico archiviato'}</span>
+      </div>
     </div>
   `;
 
-  if (workout.general_notes) {
-    html += `<div style="background: var(--notes-bg); color: var(--notes-text); border: 1px solid var(--border); padding: 10px; border-radius: 8px; font-size: 0.82rem; margin-bottom: 12px; white-space: pre-wrap;"><strong>NOTE ASSEGNATE:</strong>\n${escapeHtml(workout.general_notes)}</div>`;
+  if (!items || items.length === 0) {
+    container.innerHTML = html + `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 14px;">Questa scheda non contiene esercizi.</div>`;
+    const selEl = document.getElementById("progressWorkoutSelector");
+    if (selEl) selEl.addEventListener("change", (e) => viewClientProgress(clientId, clientName, e.target.value));
+    return;
+  }
+
+  if (targetWorkout.general_notes) {
+    html += `<div style="background: var(--notes-bg); color: var(--notes-text); border: 1px solid var(--border); padding: 10px; border-radius: 8px; font-size: 0.82rem; margin-bottom: 12px; white-space: pre-wrap;"><strong>NOTE ASSEGNATE:</strong>\n${escapeHtml(targetWorkout.general_notes)}</div>`;
   }
 
   const grouped = {};
@@ -783,7 +820,7 @@ window.viewClientProgress = async function(clientId, clientName) {
         if (!latest) {
           feedbackHtml = `
             <div class="athlete-feedback-box empty">
-              Nessun dato ancora registrato dall'atleta per questo esercizio.
+              Nessun dato registrato dall'atleta per questo esercizio in questa scheda.
             </div>
           `;
         } else {
@@ -815,17 +852,18 @@ window.viewClientProgress = async function(clientId, clientName) {
             </details>
           ` : "";
 
+          const replyFormHtml = isTargetActive ? `
+            <div class="coach-reply-form" style="align-items: flex-end;">
+              <textarea id="coachReplyInput_${latest.id}" rows="2" placeholder="Aggiungi messaggio del coach..." style="flex: 1; min-height: 44px; font-size: 0.78rem; padding: 6px 8px; resize: vertical;"></textarea>
+              <button type="button" class="btn btn-sm" style="background:#ef4444; color:#fff; width:auto; flex-shrink:0; align-self: stretch;" onclick="saveCoachNoteOnLog('${latest.id}', '${clientId}', '${escapeHtml(clientName)}')">Invia</button>
+            </div>
+          ` : "";
+
           feedbackHtml = `
             <div class="athlete-feedback-box" style="${outerBorderStyle}">
               <div class="note-athlete-box" style="${latestBoxExtraStyle}">${latestSummary}</div>
-
               ${latestCoachHtml}
-
-              <div class="coach-reply-form" style="align-items: flex-end;">
-                <textarea id="coachReplyInput_${latest.id}" rows="2" placeholder="Aggiungi messaggio del coach..." style="flex: 1; min-height: 44px; font-size: 0.78rem; padding: 6px 8px; resize: vertical;"></textarea>
-                <button type="button" class="btn btn-sm" style="background:#ef4444; color:#fff; width:auto; flex-shrink:0; align-self: stretch;" onclick="saveCoachNoteOnLog('${latest.id}', '${clientId}', '${escapeHtml(clientName)}')">Invia</button>
-              </div>
-
+              ${replyFormHtml}
               ${olderHtml}
             </div>
           `;
@@ -860,6 +898,13 @@ window.viewClientProgress = async function(clientId, clientName) {
 
   html += `</div>`;
   container.innerHTML = html;
+
+  const selEl = document.getElementById("progressWorkoutSelector");
+  if (selEl) {
+    selEl.addEventListener("change", (e) => {
+      viewClientProgress(clientId, clientName, e.target.value);
+    });
+  }
 };
 
 window.saveCoachNoteOnLog = async function(logId, clientId, clientName) {
