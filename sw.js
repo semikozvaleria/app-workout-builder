@@ -1,4 +1,4 @@
-const CACHE_NAME = 'workout-builder-v64';
+const CACHE_NAME = 'workout-builder-v45';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -17,7 +17,6 @@ const ASSETS_TO_CACHE = [
   './logo_W.jpeg'
 ];
 
-// Installazione: salva i file principali in cache e attiva subito il nuovo SW
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS_TO_CACHE))
@@ -25,7 +24,6 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// Attivazione: elimina tutte le vecchie cache e prende il controllo immediato
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
@@ -37,7 +35,6 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Strategia Network-First per HTML/JS/CSS così ogni deploy su Vercel arriva subito senza cache vecchia
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
@@ -52,5 +49,51 @@ self.addEventListener('fetch', (event) => {
         return response;
       })
       .catch(() => caches.match(event.request))
+  );
+});
+
+// Ricezione Notifica Push dal server Supabase (anche ad app chiusa)
+self.addEventListener('push', (event) => {
+  let data = {
+    title: 'Workout Builder',
+    body: 'Hai un nuovo aggiornamento dal tuo coach.',
+    url: './'
+  };
+
+  if (event.data) {
+    try {
+      data = { ...data, ...event.data.json() };
+    } catch (_) {
+      data.body = event.data.text();
+    }
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: './logo_W.jpeg',
+      badge: './logo_W.jpeg',
+      data: { url: data.url || './' }
+    })
+  );
+});
+
+// Apertura app al tap sulla notifica
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = (event.notification.data && event.notification.data.url) || './';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ('focus' in client) {
+          client.navigate(targetUrl);
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow(targetUrl);
+      }
+    })
   );
 });
