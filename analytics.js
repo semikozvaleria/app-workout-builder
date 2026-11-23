@@ -14,16 +14,41 @@ window.toggleStatInfo = function(infoId) {
   if (el) el.classList.toggle("hidden");
 };
 
-// Estrae numero di serie da stringhe tipo "4x8-10" o "3x12"
-function parsePrescribedSets(setsRepsStr) {
-  if (!setsRepsStr) return 1;
-  const match = String(setsRepsStr).trim().match(/^(\d+)\s*[xX×*]/);
-  return match ? Math.max(1, parseInt(match[1], 10)) : 1;
+// Estrae serie, ripetizioni per serie e ripetizioni totali dalla prescrizione del coach (es. "4x8-10", "3x12", "5x5")
+function parsePrescribedSetsAndReps(setsRepsStr) {
+  if (!setsRepsStr || setsRepsStr === "-") {
+    return { sets: 1, repsPerSet: 0, totalReps: 0 };
+  }
+  const s = String(setsRepsStr).trim();
+  const match = s.match(/^(\d+)\s*[xX×*]\s*(\d+)/);
+  if (match) {
+    const sets = Math.max(1, parseInt(match[1], 10));
+    const repsPerSet = Math.max(0, parseInt(match[2], 10));
+    return { sets, repsPerSet, totalReps: sets * repsPerSet };
+  }
+  const singleNum = s.match(/^(\d+)/);
+  if (singleNum) {
+    const sets = Math.max(1, parseInt(singleNum[1], 10));
+    return { sets, repsPerSet: 0, totalReps: 0 };
+  }
+  return { sets: 1, repsPerSet: 0, totalReps: 0 };
 }
 
-// Calcola ripetizioni totali e media reps per serie da input atleta
-function parseLoggedReps(repsStr, fallbackSets = 1) {
-  if (!repsStr || repsStr === "-") return { totalReps: 0, setsCount: 0, maxSingleSetReps: 0 };
+// Calcola ripetizioni totali e media reps per serie da input atleta, con fallback automatico sulla prescrizione del coach
+function parseLoggedReps(repsStr, prescribedInfo = { sets: 1, repsPerSet: 0, totalReps: 0 }) {
+  const fallbackSets = prescribedInfo.sets || 1;
+  const fallbackTotal = prescribedInfo.totalReps || 0;
+  const fallbackSingle = prescribedInfo.repsPerSet || 0;
+
+  if (!repsStr || String(repsStr).trim() === "-" || String(repsStr).trim() === "") {
+    return {
+      totalReps: fallbackTotal,
+      setsCount: fallbackSets,
+      maxSingleSetReps: fallbackSingle,
+      usedPrescribedFallback: true
+    };
+  }
+
   const raw = String(repsStr).trim();
 
   if (raw.includes("S1:")) {
@@ -41,27 +66,51 @@ function parseLoggedReps(repsStr, fallbackSets = 1) {
         }
       }
     });
-    return { totalReps: total, setsCount: count, maxSingleSetReps: maxRep };
+    if (total > 0) {
+      return { totalReps: total, setsCount: count || fallbackSets, maxSingleSetReps: maxRep, usedPrescribedFallback: false };
+    }
+    return {
+      totalReps: fallbackTotal,
+      setsCount: fallbackSets,
+      maxSingleSetReps: fallbackSingle,
+      usedPrescribedFallback: true
+    };
   }
 
   const nums = raw.match(/\d+/g);
-  if (!nums || nums.length === 0) return { totalReps: 0, setsCount: 0, maxSingleSetReps: 0 };
+  if (!nums || nums.length === 0) {
+    return {
+      totalReps: fallbackTotal,
+      setsCount: fallbackSets,
+      maxSingleSetReps: fallbackSingle,
+      usedPrescribedFallback: true
+    };
+  }
 
   const parsed = nums.map(n => parseInt(n, 10)).filter(n => n > 0);
-  if (parsed.length === 0) return { totalReps: 0, setsCount: 0, maxSingleSetReps: 0 };
+  if (parsed.length === 0) {
+    return {
+      totalReps: fallbackTotal,
+      setsCount: fallbackSets,
+      maxSingleSetReps: fallbackSingle,
+      usedPrescribedFallback: true
+    };
+  }
 
   if (parsed.length === 1) {
     return {
       totalReps: parsed[0] * fallbackSets,
       setsCount: fallbackSets,
-      maxSingleSetReps: parsed[0]
+      maxSingleSetReps: parsed[0],
+      usedPrescribedFallback: false
     };
   }
 
   return {
     totalReps: parsed.reduce((acc, v) => acc + v, 0),
     setsCount: parsed.length,
-    maxSingleSetReps: Math.max(...parsed)
+    maxSingleSetReps: Math.max(...parsed),
+    usedPrescribedFallback: false
   };
 }
 
@@ -188,6 +237,7 @@ window.viewClientStats = async function(clientId, clientName) {
   const exerciseHistoryMap = {};
   const activeWorkoutExerciseMap = {};
   const activeWeIdsSet = new Set();
+  const lastKnownWeightByExId = {};
 
   if (activeWorkout) {
     (activeWorkout.workout_exercises || [])
@@ -214,22 +264,39 @@ window.viewClientStats = async function(clientId, clientName) {
   allLogs.forEach(log => {
     const we = weMap[log.workout_exercise_id];
     const exInfo = we?.exercises;
-    const prescribedSets = parsePrescribedSets(we?.sets_reps);
-    const { totalReps, setsCount, maxSingleSetReps } = parseLoggedReps(log.reps_done, prescribedSets);
-    const weight = parseFloat(log.weight_kg) || 0;
+    const exKey = we?.exercise_id || exInfo?.id || log.workout_exercise_id;
+    const prescribedInfo = parsePrescribedSetsAndReps(we?.sets_reps);
+    const { totalReps, setsCount, maxSingleSetReps } = parseLoggedReps(log.reps_done, prescribedInfo);
+
+    // Se l'atleta non inserisce peso in questa seduta, usa l'ultimo peso noto su quell'esercizio (se disponibile)
+    const rawWeight = (log.weight_kg !== null && log.weight_kg !== undefined && log.weight_kg !== "")
+      ? parseFloat(log.weight_kg)
+      : NaN;
+    let weight = 0;
+    if (!isNaN(rawWeight) && rawWeight > 0) {
+      weight = rawWeight;
+      lastKnownWeightByExId[exKey] = rawWeight;
+    } else if (lastKnownWeightByExId[exKey]) {
+      weight = lastKnownWeightByExId[exKey];
+    }
 
     if (weight > 0 && totalReps > 0) {
       totalTonnageKg += weight * totalReps;
     }
 
     const muscle = exInfo?.muscle || "Altro";
-    const effectiveSets = setsCount > 0 ? setsCount : prescribedSets;
+    const effectiveSets = setsCount > 0 ? setsCount : prescribedInfo.sets;
     muscleSetsMap[muscle] = (muscleSetsMap[muscle] || 0) + effectiveSets;
 
+    // Se l'atleta non compila il RIR, considera il RIR prescritto dal coach come rispettato
     const tRir = parseTargetRir(we?.rir);
-    if (tRir !== null && log.rir !== null && log.rir !== undefined) {
+    const hasLoggedRir = log.rir !== null && log.rir !== undefined && String(log.rir).trim() !== "";
+    if (tRir !== null) {
       targetRirSum += tRir;
       targetRirCount++;
+      loggedRirSum += hasLoggedRir ? parseFloat(log.rir) : tRir;
+      loggedRirCount++;
+    } else if (hasLoggedRir) {
       loggedRirSum += parseFloat(log.rir);
       loggedRirCount++;
     }
@@ -248,7 +315,6 @@ window.viewClientStats = async function(clientId, clientName) {
     }
 
     if (activeWeIdsSet.has(log.workout_exercise_id) && (weight > 0 || totalReps > 0)) {
-      const exKey = we?.exercise_id || exInfo?.id || log.workout_exercise_id;
       if (activeWorkoutExerciseMap[exKey]) {
         activeWorkoutExerciseMap[exKey].points.push({
           date: dateLabel,
@@ -268,7 +334,7 @@ window.viewClientStats = async function(clientId, clientName) {
   const avgLoggedRir = loggedRirCount > 0 ? (loggedRirSum / loggedRirCount).toFixed(1) : "-";
 
   let rirInsight = "Dati RIR non ancora sufficienti per il confronto.";
-  if (targetRirCount > 0) {
+  if (targetRirCount > 0 && loggedRirCount > 0) {
     const diff = +(avgLoggedRir - avgTargetRir).toFixed(1);
     if (Math.abs(diff) <= 0.5) {
       rirInsight = "✅ Ottimo allineamento: l'atleta rispetta l'intensità target prescritta.";
@@ -336,10 +402,10 @@ window.viewClientStats = async function(clientId, clientName) {
       <strong>Sedute Svolte:</strong> conta il numero totale di giornate distinte in cui l'atleta ha salvato almeno una registrazione nel diario carichi dall'inizio del percorso.
     </div>
     <div id="infoKpiTonnage" class="stat-info-box hidden">
-      <strong>Tonnellaggio Totale (kg):</strong> indica il carico meccanico complessivo sollevato. Si calcola sommando <em>Peso (kg) × Ripetizioni totali</em> di ogni esercizio registrato.
+      <strong>Tonnellaggio Totale (kg):</strong> indica il carico meccanico complessivo sollevato. Si calcola sommando <em>Peso (kg) × Ripetizioni totali</em> di ogni esercizio registrato (se l'atleta non inserisce modifiche, vengono considerate serie, ripetizioni e carico di riferimento prescritti).
     </div>
     <div id="infoKpiRir" class="stat-info-box hidden">
-      <strong>RIR Reale vs Target:</strong> confronta il buffer medio percepito dall'atleta (<em>RIR Reale</em>) con quello assegnato nella scheda (<em>Target</em>).
+      <strong>RIR Reale vs Target:</strong> confronta il buffer medio percepito dall'atleta (<em>RIR Reale</em>) con quello assegnato nella scheda (<em>Target</em>). Se non vengono inserite variazioni, il target prescritto viene considerato rispettato.
     </div>
 
     <!-- 0. ANDAMENTO PESO CORPOREO -->
@@ -368,7 +434,7 @@ window.viewClientStats = async function(clientId, clientName) {
         </span>
       </div>
       <div id="infoBlockActiveEx" class="stat-info-box hidden">
-        <strong>A cosa serve:</strong> mostra la progressione seduta dopo seduta sul singolo esercizio della <em>scheda attualmente attiva</em>, permettendoti di vedere sia il carico massimo usato (Kg) sia le ripetizioni totali svolte.
+        <strong>A cosa serve:</strong> mostra la progressione seduta dopo seduta sul singolo esercizio della <em>scheda attualmente attiva</em>, considerando automaticamente le ripetizioni prescritte dal coach qualora l'atleta non abbia segnalato variazioni.
       </div>
       ${activeExWithDataIds.length > 0 ? `
         <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;">
