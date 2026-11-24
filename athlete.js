@@ -94,6 +94,17 @@ document.getElementById("btnLinkCoach").addEventListener("click", async () => {
   } else {
     currentProfile.trainer_id = coach.id;
     applyBrandLogo(coach.logo_url);
+
+    // Invio email automatica di notifica al Coach (non bloccante)
+    supabaseClient.functions.invoke("send-email", {
+      body: {
+        type: "athlete_linked",
+        coachId: coach.id,
+        athleteName: currentProfile.full_name,
+        athleteEmail: currentProfile.email
+      }
+    }).catch(() => {});
+
     alert(`Collegato con successo al coach ${coach.full_name}!`);
     initAthleteArea();
   }
