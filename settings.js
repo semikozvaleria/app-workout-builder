@@ -48,13 +48,16 @@ document.getElementById("btnOpenSettings").addEventListener("click", () => {
 
   const profileNameBox = document.getElementById("profileNameSettingsBox");
   const inputFullName = document.getElementById("inputSettingsFullName");
+  const appGuideBox = document.getElementById("appGuideSettingsBox");
   const trainerLogoBox = document.getElementById("trainerLogoSettingsBox");
 
   if (currentProfile) {
     if (profileNameBox) profileNameBox.classList.remove("hidden");
     if (inputFullName) inputFullName.value = currentProfile.full_name || "";
+    if (appGuideBox) appGuideBox.classList.remove("hidden");
   } else {
     if (profileNameBox) profileNameBox.classList.add("hidden");
+    if (appGuideBox) appGuideBox.classList.add("hidden");
   }
 
   if (currentProfile && currentProfile.role === "trainer") {
