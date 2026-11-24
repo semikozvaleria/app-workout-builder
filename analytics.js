@@ -14,16 +14,63 @@ window.toggleStatInfo = function(infoId) {
   if (el) el.classList.toggle("hidden");
 };
 
-// Estrae numero di serie da stringhe tipo "4x8-10" o "3x12"
-function parsePrescribedSets(setsRepsStr) {
-  if (!setsRepsStr) return 1;
-  const match = String(setsRepsStr).trim().match(/^(\d+)\s*[xX×*]/);
-  return match ? Math.max(1, parseInt(match[1], 10)) : 1;
+// Estrae serie, ripetizioni per serie e ripetizioni totali dalla prescrizione del coach (es. "4x8-10", "3x12", "8/10'")
+function parsePrescribedSetsAndReps(setsRepsStr) {
+  if (!setsRepsStr || setsRepsStr === "-") {
+    return { sets: 1, repsPerSet: 0, totalReps: 0 };
+  }
+  const s = String(setsRepsStr).trim();
+
+  // Caso cardio/tempo in minuti (es. "8/10'", "10'", "15 min")
+  const timeMatch = s.match(/^(\d+)(?:\s*\/\s*(\d+))?\s*(?:'|min\b)/i);
+  if (timeMatch) {
+    const mins = parseInt(timeMatch[2] || timeMatch[1], 10);
+    return { sets: 1, repsPerSet: mins, totalReps: mins };
+  }
+
+  const match = s.match(/^(\d+)\s*[xX×*]\s*(\d+)/);
+  if (match) {
+    const sets = Math.max(1, parseInt(match[1], 10));
+    const repsPerSet = Math.max(0, parseInt(match[2], 10));
+    return { sets, repsPerSet, totalReps: sets * repsPerSet };
+  }
+  const singleNum = s.match(/^(\d+)/);
+  if (singleNum) {
+    const sets = Math.max(1, parseInt(singleNum[1], 10));
+    return { sets, repsPerSet: 0, totalReps: 0 };
+  }
+  return { sets: 1, repsPerSet: 0, totalReps: 0 };
 }
 
-// Calcola ripetizioni totali e media reps per serie da input atleta
-function parseLoggedReps(repsStr, fallbackSets = 1) {
-  if (!repsStr || repsStr === "-") return { totalReps: 0, setsCount: 0, maxSingleSetReps: 0 };
+// Estrae eventuali Kg prescritti dal coach dentro sets_reps o notes (es. "4x8 @ 60kg", "50 kg", "62.5kg")
+function parsePrescribedWeightKg(setsRepsStr, notesStr) {
+  const sources = [setsRepsStr, notesStr];
+  for (const src of sources) {
+    if (!src || src === "-") continue;
+    const match = String(src).match(/(\d+(?:[.,]\d+)?)\s*kg\b/i);
+    if (match) {
+      const val = parseFloat(match[1].replace(",", "."));
+      if (!isNaN(val) && val > 0) return val;
+    }
+  }
+  return 0;
+}
+
+// Calcola ripetizioni totali e media reps per serie da input atleta, con fallback automatico sulla prescrizione del coach
+function parseLoggedReps(repsStr, prescribedInfo = { sets: 1, repsPerSet: 0, totalReps: 0 }) {
+  const fallbackSets = prescribedInfo.sets || 1;
+  const fallbackTotal = prescribedInfo.totalReps || 0;
+  const fallbackSingle = prescribedInfo.repsPerSet || 0;
+
+  if (!repsStr || String(repsStr).trim() === "-" || String(repsStr).trim() === "") {
+    return {
+      totalReps: fallbackTotal,
+      setsCount: fallbackSets,
+      maxSingleSetReps: fallbackSingle,
+      usedPrescribedFallback: true
+    };
+  }
+
   const raw = String(repsStr).trim();
 
   if (raw.includes("S1:")) {
@@ -41,27 +88,51 @@ function parseLoggedReps(repsStr, fallbackSets = 1) {
         }
       }
     });
-    return { totalReps: total, setsCount: count, maxSingleSetReps: maxRep };
+    if (total > 0) {
+      return { totalReps: total, setsCount: count || fallbackSets, maxSingleSetReps: maxRep, usedPrescribedFallback: false };
+    }
+    return {
+      totalReps: fallbackTotal,
+      setsCount: fallbackSets,
+      maxSingleSetReps: fallbackSingle,
+      usedPrescribedFallback: true
+    };
   }
 
   const nums = raw.match(/\d+/g);
-  if (!nums || nums.length === 0) return { totalReps: 0, setsCount: 0, maxSingleSetReps: 0 };
+  if (!nums || nums.length === 0) {
+    return {
+      totalReps: fallbackTotal,
+      setsCount: fallbackSets,
+      maxSingleSetReps: fallbackSingle,
+      usedPrescribedFallback: true
+    };
+  }
 
   const parsed = nums.map(n => parseInt(n, 10)).filter(n => n > 0);
-  if (parsed.length === 0) return { totalReps: 0, setsCount: 0, maxSingleSetReps: 0 };
+  if (parsed.length === 0) {
+    return {
+      totalReps: fallbackTotal,
+      setsCount: fallbackSets,
+      maxSingleSetReps: fallbackSingle,
+      usedPrescribedFallback: true
+    };
+  }
 
   if (parsed.length === 1) {
     return {
       totalReps: parsed[0] * fallbackSets,
       setsCount: fallbackSets,
-      maxSingleSetReps: parsed[0]
+      maxSingleSetReps: parsed[0],
+      usedPrescribedFallback: false
     };
   }
 
   return {
     totalReps: parsed.reduce((acc, v) => acc + v, 0),
     setsCount: parsed.length,
-    maxSingleSetReps: Math.max(...parsed)
+    maxSingleSetReps: Math.max(...parsed),
+    usedPrescribedFallback: false
   };
 }
 
@@ -91,6 +162,12 @@ function formatShortItDateFromIso(dateStr) {
   const parts = clean.split("-");
   if (parts.length !== 3) return clean;
   return `${parts[2]}/${parts[1]}/${parts[0].slice(2)}`;
+}
+
+function formatDayMonthFromIso(dateIso) {
+  const parts = String(dateIso).split("-");
+  if (parts.length !== 3) return dateIso;
+  return `${parts[2]}/${parts[1]}`;
 }
 
 window.viewClientStats = async function(clientId, clientName) {
@@ -138,7 +215,9 @@ window.viewClientStats = async function(clientId, clientName) {
   const allLogs = logs || [];
 
   const weMap = {};
+  const workoutById = {};
   (workouts || []).forEach(w => {
+    workoutById[w.id] = w;
     (w.workout_exercises || []).forEach(we => {
       weMap[we.id] = we;
     });
@@ -182,59 +261,123 @@ window.viewClientStats = async function(clientId, clientName) {
     });
   }
 
-  // 2. VOLUME DI LAVORO & STORICO ESERCIZI (TOTALE + SCHEDA IN CORSO)
+  // 2. RICOSTRUZIONE SEDUTE PER DATA (DEDUPLICATA PER GIORNO CALENDARIO)
+  const logsByDate = {};
+  allLogs.forEach(log => {
+    const dateIso = new Date(log.logged_at).toISOString().split("T")[0];
+    if (!logsByDate[dateIso]) logsByDate[dateIso] = [];
+    logsByDate[dateIso].push(log);
+  });
+
+  const effectiveEntries = [];
+  Object.keys(logsByDate).sort().forEach(dateIso => {
+    const dayLogs = logsByDate[dateIso];
+    const loggedByWeId = {};
+    dayLogs.forEach(l => {
+      loggedByWeId[l.workout_exercise_id] = l;
+    });
+
+    const sessionDayKeys = new Map();
+    dayLogs.forEach(l => {
+      const we = weMap[l.workout_exercise_id];
+      if (we && we.workout_id && we.day_name) {
+        sessionDayKeys.set(`${we.workout_id}::${we.day_name}`, {
+          workoutId: we.workout_id,
+          dayName: we.day_name,
+          loggedAt: l.logged_at
+        });
+      }
+    });
+
+    const coveredWeIds = new Set();
+
+    sessionDayKeys.forEach(({ workoutId, dayName, loggedAt }) => {
+      const w = workoutById[workoutId];
+      if (!w || !Array.isArray(w.workout_exercises)) return;
+
+      const dayExercises = w.workout_exercises
+        .filter(we => we.day_name === dayName)
+        .sort((a, b) => a.order_index - b.order_index);
+
+      dayExercises.forEach(we => {
+        coveredWeIds.add(we.id);
+        const existingLog = loggedByWeId[we.id];
+        effectiveEntries.push({
+          dateIso,
+          workout_exercise_id: we.id,
+          logged_at: existingLog ? existingLog.logged_at : loggedAt,
+          weight_kg: existingLog ? existingLog.weight_kg : null,
+          reps_done: existingLog ? existingLog.reps_done : null,
+          rir: existingLog ? existingLog.rir : null
+        });
+      });
+    });
+
+    dayLogs.forEach(l => {
+      if (!coveredWeIds.has(l.workout_exercise_id)) {
+        effectiveEntries.push({
+          ...l,
+          dateIso
+        });
+      }
+    });
+  });
+
+  // 3. VOLUME DI LAVORO & STORICO ESERCIZI
   let totalTonnageKg = 0;
   const muscleSetsMap = {};
   const exerciseHistoryMap = {};
-  const activeWorkoutExerciseMap = {};
-  const activeWeIdsSet = new Set();
+  const lastKnownWeightByExId = {};
 
-  if (activeWorkout) {
-    (activeWorkout.workout_exercises || [])
-      .sort((a, b) => a.order_index - b.order_index)
-      .forEach(we => {
-        activeWeIdsSet.add(we.id);
-        const exKey = we.exercise_id || (we.exercises ? we.exercises.id : we.id);
-        if (!activeWorkoutExerciseMap[exKey]) {
-          activeWorkoutExerciseMap[exKey] = {
-            name: we.exercises ? we.exercises.name : 'Esercizio',
-            setsReps: we.sets_reps,
-            points: []
-          };
-        }
-      });
-  }
-
-  // 3. RECUPERO (RIR)
   let targetRirSum = 0;
   let targetRirCount = 0;
   let loggedRirSum = 0;
   let loggedRirCount = 0;
 
-  allLogs.forEach(log => {
+  effectiveEntries.forEach(log => {
     const we = weMap[log.workout_exercise_id];
     const exInfo = we?.exercises;
-    const prescribedSets = parsePrescribedSets(we?.sets_reps);
-    const { totalReps, setsCount, maxSingleSetReps } = parseLoggedReps(log.reps_done, prescribedSets);
-    const weight = parseFloat(log.weight_kg) || 0;
+    const exKey = we?.exercise_id || exInfo?.id || log.workout_exercise_id;
+    const prescribedInfo = parsePrescribedSetsAndReps(we?.sets_reps);
+    const { totalReps, setsCount, maxSingleSetReps } = parseLoggedReps(log.reps_done, prescribedInfo);
+
+    const rawWeight = (log.weight_kg !== null && log.weight_kg !== undefined && String(log.weight_kg).trim() !== "")
+      ? parseFloat(String(log.weight_kg).replace(",", "."))
+      : NaN;
+    const prescribedWeight = parsePrescribedWeightKg(we?.sets_reps, we?.notes);
+
+    let weight = 0;
+    if (!isNaN(rawWeight) && rawWeight > 0) {
+      weight = rawWeight;
+      lastKnownWeightByExId[exKey] = rawWeight;
+    } else if (prescribedWeight > 0) {
+      weight = prescribedWeight;
+      lastKnownWeightByExId[exKey] = prescribedWeight;
+    } else if (lastKnownWeightByExId[exKey]) {
+      weight = lastKnownWeightByExId[exKey];
+    }
 
     if (weight > 0 && totalReps > 0) {
       totalTonnageKg += weight * totalReps;
     }
 
     const muscle = exInfo?.muscle || "Altro";
-    const effectiveSets = setsCount > 0 ? setsCount : prescribedSets;
+    const effectiveSets = setsCount > 0 ? setsCount : prescribedInfo.sets;
     muscleSetsMap[muscle] = (muscleSetsMap[muscle] || 0) + effectiveSets;
 
     const tRir = parseTargetRir(we?.rir);
-    if (tRir !== null && log.rir !== null && log.rir !== undefined) {
+    const hasLoggedRir = log.rir !== null && log.rir !== undefined && String(log.rir).trim() !== "";
+    if (tRir !== null) {
       targetRirSum += tRir;
       targetRirCount++;
-      loggedRirSum += parseFloat(log.rir);
+      loggedRirSum += hasLoggedRir ? parseFloat(String(log.rir).replace(",", ".")) : tRir;
+      loggedRirCount++;
+    } else if (hasLoggedRir) {
+      loggedRirSum += parseFloat(String(log.rir).replace(",", "."));
       loggedRirCount++;
     }
 
-    const dateLabel = new Date(log.logged_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+    const dateLabel = formatDayMonthFromIso(log.dateIso);
 
     if (exInfo && (weight > 0 || maxSingleSetReps > 0)) {
       if (!exerciseHistoryMap[exInfo.id]) {
@@ -246,19 +389,85 @@ window.viewClientStats = async function(clientId, clientName) {
         est1rm: estimate1RM(weight, maxSingleSetReps || 1)
       });
     }
-
-    if (activeWeIdsSet.has(log.workout_exercise_id) && (weight > 0 || totalReps > 0)) {
-      const exKey = we?.exercise_id || exInfo?.id || log.workout_exercise_id;
-      if (activeWorkoutExerciseMap[exKey]) {
-        activeWorkoutExerciseMap[exKey].points.push({
-          date: dateLabel,
-          weight,
-          totalReps,
-          maxSetReps: maxSingleSetReps
-        });
-      }
-    }
   });
+
+  // 3B. COSTRUZIONE SERIE SCHEDA IN CORSO: 1 PUNTO PER OGNI GIORNATA DI ALLENAMENTO (ES. 3 SEDUTE = 3 PUNTI PER OGNI ESERCIZIO)
+  const activeWorkoutExerciseMap = {};
+  if (activeWorkout) {
+    const activeWeList = (activeWorkout.workout_exercises || [])
+      .slice()
+      .sort((a, b) => a.order_index - b.order_index);
+
+    const activeWeIds = new Set(activeWeList.map(we => we.id));
+    const activeLogs = allLogs.filter(l => activeWeIds.has(l.workout_exercise_id));
+
+    // Date uniche ordinate in cui l'atleta si è allenato sulla scheda attiva (es. ["2026-11-20", "2026-11-21", "2026-11-23"])
+    const sessionDatesSorted = Array.from(
+      new Set(activeLogs.map(l => new Date(l.logged_at).toISOString().split("T")[0]))
+    ).sort();
+
+    // Raggruppa gli esercizi della scheda attiva per exercise_id (evitando duplicati se un esercizio compare in più giorni)
+    const uniqueExercisesInActive = {};
+    activeWeList.forEach(we => {
+      const exKey = we.exercise_id || (we.exercises ? we.exercises.id : we.id);
+      if (!uniqueExercisesInActive[exKey]) {
+        uniqueExercisesInActive[exKey] = {
+          exKey,
+          name: we.exercises ? we.exercises.name : 'Esercizio',
+          setsReps: we.sets_reps,
+          notes: we.notes,
+          weIds: new Set([we.id])
+        };
+      } else {
+        uniqueExercisesInActive[exKey].weIds.add(we.id);
+      }
+    });
+
+    if (sessionDatesSorted.length > 0) {
+      Object.values(uniqueExercisesInActive).forEach(exMeta => {
+        const prescribedInfo = parsePrescribedSetsAndReps(exMeta.setsReps);
+        const prescribedWeight = parsePrescribedWeightKg(exMeta.setsReps, exMeta.notes);
+        let rollingWeight = prescribedWeight || lastKnownWeightByExId[exMeta.exKey] || 0;
+
+        const points = sessionDatesSorted.map(dateIso => {
+          // Cerca se in questa data l'atleta ha loggato questo esercizio (prende l'ultimo log della giornata)
+          const matchingLogs = activeLogs.filter(l => {
+            const lDate = new Date(l.logged_at).toISOString().split("T")[0];
+            return lDate === dateIso && exMeta.weIds.has(l.workout_exercise_id);
+          });
+          const latestLog = matchingLogs.length > 0 ? matchingLogs[matchingLogs.length - 1] : null;
+
+          const { totalReps, maxSingleSetReps } = parseLoggedReps(
+            latestLog ? latestLog.reps_done : null,
+            prescribedInfo
+          );
+
+          const rawWeight = (latestLog && latestLog.weight_kg !== null && latestLog.weight_kg !== undefined && String(latestLog.weight_kg).trim() !== "")
+            ? parseFloat(String(latestLog.weight_kg).replace(",", "."))
+            : NaN;
+
+          let weight = rollingWeight;
+          if (!isNaN(rawWeight) && rawWeight > 0) {
+            weight = rawWeight;
+            rollingWeight = rawWeight;
+          }
+
+          return {
+            date: formatDayMonthFromIso(dateIso),
+            weight,
+            totalReps,
+            maxSetReps: maxSingleSetReps
+          };
+        });
+
+        activeWorkoutExerciseMap[exMeta.exKey] = {
+          name: exMeta.name,
+          setsReps: exMeta.setsReps,
+          points
+        };
+      });
+    }
+  }
 
   const activeExWithDataIds = Object.keys(activeWorkoutExerciseMap).filter(
     exKey => activeWorkoutExerciseMap[exKey].points.length > 0
@@ -268,7 +477,7 @@ window.viewClientStats = async function(clientId, clientName) {
   const avgLoggedRir = loggedRirCount > 0 ? (loggedRirSum / loggedRirCount).toFixed(1) : "-";
 
   let rirInsight = "Dati RIR non ancora sufficienti per il confronto.";
-  if (targetRirCount > 0) {
+  if (targetRirCount > 0 && loggedRirCount > 0) {
     const diff = +(avgLoggedRir - avgTargetRir).toFixed(1);
     if (Math.abs(diff) <= 0.5) {
       rirInsight = "✅ Ottimo allineamento: l'atleta rispetta l'intensità target prescritta.";
@@ -336,10 +545,10 @@ window.viewClientStats = async function(clientId, clientName) {
       <strong>Sedute Svolte:</strong> conta il numero totale di giornate distinte in cui l'atleta ha salvato almeno una registrazione nel diario carichi dall'inizio del percorso.
     </div>
     <div id="infoKpiTonnage" class="stat-info-box hidden">
-      <strong>Tonnellaggio Totale (kg):</strong> indica il carico meccanico complessivo sollevato. Si calcola sommando <em>Peso (kg) × Ripetizioni totali</em> di ogni esercizio registrato.
+      <strong>Tonnellaggio Totale (kg):</strong> indica il carico meccanico complessivo sollevato. Si calcola sommando <em>Peso (kg) × Ripetizioni totali</em> di ogni esercizio della seduta svolta (usando automaticamente serie, ripetizioni e carico prescritti dal coach se l'atleta non segnala variazioni).
     </div>
     <div id="infoKpiRir" class="stat-info-box hidden">
-      <strong>RIR Reale vs Target:</strong> confronta il buffer medio percepito dall'atleta (<em>RIR Reale</em>) con quello assegnato nella scheda (<em>Target</em>).
+      <strong>RIR Reale vs Target:</strong> confronta il buffer medio percepito dall'atleta (<em>RIR Reale</em>) con quello assegnato nella scheda (<em>Target</em>). Se non vengono inserite variazioni, il target prescritto viene considerato rispettato.
     </div>
 
     <!-- 0. ANDAMENTO PESO CORPOREO -->
@@ -368,7 +577,7 @@ window.viewClientStats = async function(clientId, clientName) {
         </span>
       </div>
       <div id="infoBlockActiveEx" class="stat-info-box hidden">
-        <strong>A cosa serve:</strong> mostra la progressione seduta dopo seduta sul singolo esercizio della <em>scheda attualmente attiva</em>, permettendoti di vedere sia il carico massimo usato (Kg) sia le ripetizioni totali svolte.
+        <strong>A cosa serve:</strong> mostra la progressione seduta dopo seduta su ciascun esercizio della <em>scheda attualmente attiva</em>, considerando automaticamente serie, ripetizioni e carico prescritti dal coach nelle sedute in cui l'atleta non segnala variazioni.
       </div>
       ${activeExWithDataIds.length > 0 ? `
         <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;">

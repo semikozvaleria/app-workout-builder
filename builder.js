@@ -124,7 +124,7 @@ chkCircuitEnd.addEventListener("change", () => {
   }
 });
 
-// --- GESTIONE CREAZIONE NUOVO ESERCIZIO (PERSONALE O GLOBALE ADMIN) ---
+// --- GESTIONE CREAZIONE NUOVO ESERCIZIO (SOLO ADMIN carlo.ratto250889@gmail.com) ---
 const btnToggleNewExBox = document.getElementById("btnToggleNewExerciseBox");
 const btnCloseNewExBox = document.getElementById("btnCloseNewExerciseBox");
 const newExerciseBox = document.getElementById("newExerciseBox");
@@ -133,20 +133,30 @@ function syncNewExerciseScopeUi() {
   const hintEl = document.getElementById("newExerciseScopeHint");
   const titleEl = document.getElementById("newExerciseBoxTitle");
   const optPersonal = document.getElementById("optPersonalExercises");
+  const isAdmin = isGlobalExerciseAdmin();
 
-  if (isGlobalExerciseAdmin()) {
+  if (btnToggleNewExBox) {
+    btnToggleNewExBox.classList.toggle("hidden", !isAdmin);
+  }
+  if (!isAdmin && newExerciseBox) {
+    newExerciseBox.classList.add("hidden");
+  }
+  if (optPersonal) {
+    optPersonal.classList.add("hidden");
+    if (muscleFilter && muscleFilter.value === "PERSONAL") {
+      muscleFilter.value = "ALL";
+    }
+  }
+
+  if (isAdmin) {
     if (titleEl) titleEl.textContent = "➕ Crea Nuovo Esercizio (Catalogo Globale)";
     if (hintEl) hintEl.textContent = "Stai creando un esercizio globale: sarà visibile a tutti i Personal Trainer dell'app.";
-    if (optPersonal) optPersonal.classList.add("hidden");
-  } else {
-    if (titleEl) titleEl.textContent = "➕ Crea Nuovo Esercizio Personale";
-    if (hintEl) hintEl.textContent = "Questo esercizio sarà visibile solo nella tua libreria personale.";
-    if (optPersonal) optPersonal.classList.remove("hidden");
   }
 }
 
 if (btnToggleNewExBox && newExerciseBox) {
   btnToggleNewExBox.addEventListener("click", () => {
+    if (!isGlobalExerciseAdmin()) return;
     syncNewExerciseScopeUi();
     newExerciseBox.classList.toggle("hidden");
   });
@@ -186,8 +196,8 @@ async function uploadExerciseImageFile(file, slotLabel) {
 const btnSaveNewExercise = document.getElementById("btnSaveNewExercise");
 if (btnSaveNewExercise) {
   btnSaveNewExercise.addEventListener("click", async () => {
-    if (!currentProfile || currentProfile.role !== "trainer") {
-      alert("Solo i Personal Trainer possono creare esercizi.");
+    if (!isGlobalExerciseAdmin()) {
+      alert("Non hai i permessi per aggiungere esercizi al catalogo.");
       return;
     }
 
@@ -218,8 +228,6 @@ if (btnSaveNewExercise) {
         finalImgEnd = finalImgStart;
       }
 
-      const isAdmin = isGlobalExerciseAdmin();
-      const targetTrainerId = isAdmin ? null : currentProfile.id;
       const customId = `custom_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
       const { data: createdEx, error: insertErr } = await supabaseClient
@@ -230,7 +238,7 @@ if (btnSaveNewExercise) {
           muscle: muscleVal,
           img_start: finalImgStart,
           img_end: finalImgEnd,
-          trainer_id: targetTrainerId
+          trainer_id: null
         }])
         .select()
         .single();
@@ -252,10 +260,7 @@ if (btnSaveNewExercise) {
       exerciseSelect.value = createdEx.id;
       updatePreview();
 
-      alert(isAdmin
-        ? `✅ Esercizio "${createdEx.name}" aggiunto al catalogo globale!`
-        : `✅ Esercizio personale "${createdEx.name}" salvato nella tua libreria!`
-      );
+      alert(`✅ Esercizio "${createdEx.name}" aggiunto al catalogo globale!`);
     } catch (err) {
       alert(err.message);
     } finally {
@@ -271,13 +276,8 @@ if (btnDeleteCustomExercise) {
     const selected = EXERCISE_DB.find(ex => ex.id === exerciseSelect.value);
     if (!selected) return;
 
-    const canDelete = Boolean(
-      (selected.trainer_id && currentProfile && selected.trainer_id === currentProfile.id) ||
-      (!selected.trainer_id && isGlobalExerciseAdmin())
-    );
-
-    if (!canDelete) {
-      alert("Non puoi eliminare questo esercizio.");
+    if (!isGlobalExerciseAdmin()) {
+      alert("Non hai i permessi per eliminare esercizi dal catalogo.");
       return;
     }
 
@@ -299,6 +299,7 @@ if (btnDeleteCustomExercise) {
 
 async function loadExercisesFromCloud() {
   syncSaveCloudButtonState();
+  syncNewExerciseScopeUi();
 
   const { data, error } = await supabaseClient
     .from('exercises')
@@ -620,11 +621,7 @@ function populateDropdown() {
   const search = exerciseSearch.value.trim().toLowerCase();
 
   const filtered = EXERCISE_DB.filter(ex => {
-    const matchMuscle = filter === "ALL"
-      ? true
-      : filter === "PERSONAL"
-        ? Boolean(ex.trainer_id)
-        : ex.muscle === filter;
+    const matchMuscle = filter === "ALL" ? true : ex.muscle === filter;
     const matchSearch = !search || ex.name.toLowerCase().includes(search);
     return matchMuscle && matchSearch;
   });
@@ -636,10 +633,7 @@ function populateDropdown() {
   }
 
   exerciseSelect.innerHTML = filtered
-    .map(ex => {
-      const personalTag = ex.trainer_id ? " [Personale]" : "";
-      return `<option value="${ex.id}">${escapeHtml(ex.name)} (${escapeHtml(ex.muscle)})${personalTag}</option>`;
-    })
+    .map(ex => `<option value="${ex.id}">${escapeHtml(ex.name)} (${escapeHtml(ex.muscle)})</option>`)
     .join("");
 
   updatePreview();
@@ -666,9 +660,8 @@ function updatePreview() {
   const wrapEndEl = document.getElementById("wrapImgEnd");
   const tagStartEl = document.getElementById("tagImgStart");
 
-  const personalSuffix = selected.trainer_id ? " • Personale" : "";
   document.getElementById("previewName").textContent = selected.name;
-  document.getElementById("previewMuscle").textContent = `${selected.muscle}${personalSuffix}`;
+  document.getElementById("previewMuscle").textContent = selected.muscle;
 
   if (!startSrc) {
     if (photosContainer) photosContainer.style.display = "none";
@@ -690,11 +683,7 @@ function updatePreview() {
   }
 
   if (deleteBtn) {
-    const canDelete = Boolean(
-      (selected.trainer_id && currentProfile && selected.trainer_id === currentProfile.id) ||
-      (!selected.trainer_id && isGlobalExerciseAdmin())
-    );
-    deleteBtn.classList.toggle("hidden", !canDelete);
+    deleteBtn.classList.toggle("hidden", !isGlobalExerciseAdmin());
   }
 }
 
