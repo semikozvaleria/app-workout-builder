@@ -9,16 +9,58 @@ const circuitLabelWrap = document.getElementById("circuitLabelWrap");
 const inCircuitLabel = document.getElementById("inCircuitLabel");
 
 const ADMIN_GLOBAL_EXERCISE_EMAIL = "carlo.ratto250889@gmail.com";
+const EXERCISE_CACHE_KEY = "wb_exercise_db_cache_v1";
 
 let currentDraftId = null;
 let editingItemUid = null;
 let searchDebounceTimer = null;
+let EXERCISE_MAP = new Map();
+let isLoadingExercises = false;
 
 if (exerciseSearch) {
   exerciseSearch.removeAttribute("list");
 }
 if (exerciseSuggestions) {
   exerciseSuggestions.innerHTML = "";
+}
+
+function rebuildExerciseMap(list) {
+  EXERCISE_MAP = new Map();
+  (list || []).forEach(ex => {
+    if (ex && ex.id) EXERCISE_MAP.set(ex.id, ex);
+  });
+}
+
+function resolveExerciseImages(exOrId, fallbackStart = "", fallbackEnd = "") {
+  const exObj = typeof exOrId === "string"
+    ? EXERCISE_MAP.get(exOrId)
+    : (exOrId && exOrId.id && EXERCISE_MAP.get(exOrId.id)) || exOrId;
+
+  const start = (exObj && exObj.img_start) || fallbackStart || "";
+  const end = (exObj && (exObj.img_end || exObj.img_start)) || fallbackEnd || start;
+  return { imgStart: start, imgEnd: end };
+}
+
+function preloadExerciseImages(startUrl, endUrl) {
+  [startUrl, endUrl].filter(Boolean).forEach(url => {
+    const img = new Image();
+    img.decoding = "async";
+    img.src = url;
+  });
+}
+
+function buildItemPhotosHtml(imgStart, imgEnd, singleWidth = "82px") {
+  if (!imgStart) return "";
+  const isSingle = imgStart === imgEnd;
+  const onErrAttr = `onerror="if(!this.dataset.retried){this.dataset.retried='1';const s=this.src;this.src='';setTimeout(()=>{this.src=s;},350);}else{this.style.display='none';}"`;
+
+  if (isSingle) {
+    return `<img src="${imgStart}" class="item-img" loading="lazy" decoding="async" style="width: ${singleWidth}; object-fit: contain;" ${onErrAttr}>`;
+  }
+  return `
+    <img src="${imgStart}" class="item-img" loading="lazy" decoding="async" ${onErrAttr}>
+    <img src="${imgEnd}" class="item-img" loading="lazy" decoding="async" ${onErrAttr}>
+  `;
 }
 
 function syncSaveCloudButtonState() {
@@ -168,18 +210,70 @@ if (btnCloseNewExBox && newExerciseBox) {
   });
 }
 
+// Comprime automaticamente immagini pesanti prima dell'upload (da MB a ~60KB)
+async function compressImageBeforeUpload(file, maxDim = 720, quality = 0.82) {
+  if (!file || !file.type || !file.type.startsWith("image/") || file.type === "image/gif") {
+    return file;
+  }
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width <= maxDim && height <= maxDim && file.size < 250 * 1024) {
+          resolve(file);
+          return;
+        }
+        if (width > height && width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else if (height >= width && height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              resolve(file);
+              return;
+            }
+            const compressed = new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), {
+              type: "image/jpeg",
+              lastModified: Date.now()
+            });
+            resolve(compressed);
+          },
+          "image/jpeg",
+          quality
+        );
+      };
+      img.onerror = () => resolve(file);
+      img.src = ev.target.result;
+    };
+    reader.onerror = () => resolve(file);
+    reader.readAsDataURL(file);
+  });
+}
+
 async function uploadExerciseImageFile(file, slotLabel) {
   if (!file || !currentProfile) return null;
-  const rawExt = (file.name && file.name.includes(".")) ? file.name.split(".").pop().toLowerCase() : "jpg";
+  const optimizedFile = await compressImageBeforeUpload(file);
+  const rawExt = (optimizedFile.name && optimizedFile.name.includes(".")) ? optimizedFile.name.split(".").pop().toLowerCase() : "jpg";
   const safeExt = rawExt.replace(/[^a-z0-9]/g, "") || "jpg";
   const filePath = `${currentProfile.id}/${Date.now()}_${slotLabel}_${Math.random().toString(36).slice(2, 7)}.${safeExt}`;
 
   const { error: uploadErr } = await supabaseClient.storage
     .from("exercise-images")
-    .upload(filePath, file, {
-      cacheControl: "3600",
+    .upload(filePath, optimizedFile, {
+      cacheControl: "31536000",
       upsert: false,
-      contentType: file.type || "image/jpeg"
+      contentType: optimizedFile.type || "image/jpeg"
     });
 
   if (uploadErr) {
@@ -215,8 +309,10 @@ if (btnSaveNewExercise) {
     btnSaveNewExercise.textContent = "Salvataggio in corso...";
 
     try {
-      let url1 = fileStart ? await uploadExerciseImageFile(fileStart, "start") : null;
-      let url2 = fileEnd ? await uploadExerciseImageFile(fileEnd, "end") : null;
+      const [url1, url2] = await Promise.all([
+        fileStart ? uploadExerciseImageFile(fileStart, "start") : Promise.resolve(null),
+        fileEnd ? uploadExerciseImageFile(fileEnd, "end") : Promise.resolve(null)
+      ]);
 
       let finalImgStart = null;
       let finalImgEnd = null;
@@ -252,8 +348,12 @@ if (btnSaveNewExercise) {
       document.getElementById("newExImgEnd").value = "";
       if (newExerciseBox) newExerciseBox.classList.add("hidden");
 
-      await loadExercisesFromCloud();
+      EXERCISE_DB.push(createdEx);
+      EXERCISE_DB.sort((a, b) => a.name.localeCompare(b.name, "it"));
+      rebuildExerciseMap(EXERCISE_DB);
+      try { localStorage.setItem(EXERCISE_CACHE_KEY, JSON.stringify(EXERCISE_DB)); } catch (_) {}
 
+      document.getElementById("dbCount").textContent = `${EXERCISE_DB.length} esercizi`;
       muscleFilter.value = "ALL";
       exerciseSearch.value = "";
       populateDropdown();
@@ -273,7 +373,7 @@ if (btnSaveNewExercise) {
 const btnDeleteCustomExercise = document.getElementById("btnDeleteCustomExercise");
 if (btnDeleteCustomExercise) {
   btnDeleteCustomExercise.addEventListener("click", async () => {
-    const selected = EXERCISE_DB.find(ex => ex.id === exerciseSelect.value);
+    const selected = EXERCISE_MAP.get(exerciseSelect.value);
     if (!selected) return;
 
     if (!isGlobalExerciseAdmin()) {
@@ -293,32 +393,69 @@ if (btnDeleteCustomExercise) {
       return;
     }
 
-    await loadExercisesFromCloud();
+    EXERCISE_DB = EXERCISE_DB.filter(ex => ex.id !== selected.id);
+    rebuildExerciseMap(EXERCISE_DB);
+    try { localStorage.setItem(EXERCISE_CACHE_KEY, JSON.stringify(EXERCISE_DB)); } catch (_) {}
+    document.getElementById("dbCount").textContent = `${EXERCISE_DB.length} esercizi`;
+    populateDropdown();
   });
 }
 
-async function loadExercisesFromCloud() {
+async function loadExercisesFromCloud(forceRefresh = false) {
   syncSaveCloudButtonState();
   syncNewExerciseScopeUi();
 
-  const { data, error } = await supabaseClient
-    .from('exercises')
-    .select('*')
-    .order('name', { ascending: true });
-
-  if (error) {
-    console.error("Errore caricamento esercizi:", error.message);
-    document.getElementById("dbCount").textContent = "Err DB";
-    return;
+  // Mostra subito la cache locale se disponibile (zero attesa al boot)
+  if (!forceRefresh && (!Array.isArray(EXERCISE_DB) || EXERCISE_DB.length === 0)) {
+    try {
+      const cachedRaw = localStorage.getItem(EXERCISE_CACHE_KEY);
+      if (cachedRaw) {
+        const cachedList = JSON.parse(cachedRaw);
+        if (Array.isArray(cachedList) && cachedList.length > 0) {
+          EXERCISE_DB = cachedList;
+          rebuildExerciseMap(EXERCISE_DB);
+          document.getElementById("dbCount").textContent = `${EXERCISE_DB.length} esercizi`;
+          populateDropdown();
+        }
+      }
+    } catch (_) {}
   }
 
-  if (data) {
-    EXERCISE_DB = data;
-    document.getElementById("dbCount").textContent = `${EXERCISE_DB.length} esercizi`;
-    syncNewExerciseScopeUi();
-    populateDropdown();
+  if (isLoadingExercises) return;
+  isLoadingExercises = true;
+
+  try {
+    const { data, error } = await supabaseClient
+      .from('exercises')
+      .select('id, name, muscle, img_start, img_end, trainer_id')
+      .order('name', { ascending: true });
+
+    if (error) {
+      console.error("Errore caricamento esercizi:", error.message);
+      if (!EXERCISE_DB || EXERCISE_DB.length === 0) {
+        document.getElementById("dbCount").textContent = "Err DB";
+      }
+      return;
+    }
+
+    if (data) {
+      const prevSelected = exerciseSelect ? exerciseSelect.value : "";
+      EXERCISE_DB = data;
+      rebuildExerciseMap(EXERCISE_DB);
+      try { localStorage.setItem(EXERCISE_CACHE_KEY, JSON.stringify(EXERCISE_DB)); } catch (_) {}
+
+      document.getElementById("dbCount").textContent = `${EXERCISE_DB.length} esercizi`;
+      syncNewExerciseScopeUi();
+      populateDropdown();
+      if (prevSelected && EXERCISE_MAP.has(prevSelected)) {
+        exerciseSelect.value = prevSelected;
+        updatePreview();
+      }
+    }
+  } finally {
+    isLoadingExercises = false;
+    syncCircuitCheckboxes();
   }
-  syncCircuitCheckboxes();
 }
 
 async function loadTrainerDrafts() {
@@ -326,7 +463,7 @@ async function loadTrainerDrafts() {
 
   const { data: drafts, error } = await supabaseClient
     .from('workouts')
-    .select('*, workout_exercises(count)')
+    .select('id, athlete_id, title, duration_weeks, created_at, workout_exercises(count)')
     .eq('trainer_id', currentProfile.id)
     .eq('status', 'draft')
     .order('created_at', { ascending: false });
@@ -372,7 +509,7 @@ window.resumeDraft = async function(draftId) {
   try {
     const { data: workout, error } = await supabaseClient
       .from('workouts')
-      .select('*, workout_exercises(*, exercises(*))')
+      .select('id, athlete_id, title, duration_weeks, general_notes, workout_exercises(id, exercise_id, day_name, sets_reps, rest, rir, notes, order_index, circuit_role, circuit_label)')
       .eq('id', draftId)
       .single();
 
@@ -416,15 +553,16 @@ window.resumeDraft = async function(draftId) {
 
     const sortedItems = (workout.workout_exercises || []).sort((a, b) => a.order_index - b.order_index);
     currentWorkout = sortedItems.map((row, idx) => {
-      const exFromDb = row.exercises || (typeof EXERCISE_DB !== "undefined" ? EXERCISE_DB.find(e => e.id === row.exercise_id) : null);
+      const exFromDb = EXERCISE_MAP.get(row.exercise_id) || null;
+      const imgs = resolveExerciseImages(exFromDb);
       return {
         uid: Date.now() + idx,
         id: row.exercise_id,
         day: row.day_name,
         name: exFromDb ? exFromDb.name : "Esercizio",
         muscle: exFromDb ? exFromDb.muscle : "",
-        imgStart: exFromDb ? (exFromDb.img_start || "") : "",
-        imgEnd: exFromDb ? (exFromDb.img_end || exFromDb.img_start || "") : "",
+        imgStart: imgs.imgStart,
+        imgEnd: imgs.imgEnd,
         setsReps: row.sets_reps,
         rest: row.rest,
         rir: row.rir,
@@ -435,7 +573,7 @@ window.resumeDraft = async function(draftId) {
     });
 
     renderList();
-    await loadTrainerDrafts();
+    loadTrainerDrafts();
   } catch (err) {
     console.error("Errore resumeDraft:", err);
     alert("Impossibile riprendere la bozza: " + err.message);
@@ -445,8 +583,10 @@ window.resumeDraft = async function(draftId) {
 window.deleteDraft = async function(draftId) {
   if (!confirm("Eliminare questa bozza?")) return;
 
-  await supabaseClient.from('workout_exercises').delete().eq('workout_id', draftId);
-  await supabaseClient.from('workouts').delete().eq('id', draftId).eq('trainer_id', currentProfile.id);
+  await Promise.all([
+    supabaseClient.from('workout_exercises').delete().eq('workout_id', draftId),
+    supabaseClient.from('workouts').delete().eq('id', draftId).eq('trainer_id', currentProfile.id)
+  ]);
 
   if (currentDraftId === draftId) currentDraftId = null;
   loadTrainerDrafts();
@@ -462,83 +602,90 @@ document.getElementById("btnSaveDraft").addEventListener("click", async () => {
   btn.disabled = true;
   btn.textContent = "Salvataggio...";
 
-  const athleteId = document.getElementById("builderAthleteSelect").value || null;
-  const pdfName = document.getElementById("athleteName").value.trim();
-  const durationWeeks = parseInt(document.getElementById("durationWeeks").value) || 4;
-  const generalNotes = document.getElementById("generalNotes").value.trim();
+  try {
+    const athleteId = document.getElementById("builderAthleteSelect").value || null;
+    const pdfName = document.getElementById("athleteName").value.trim();
+    const durationWeeks = parseInt(document.getElementById("durationWeeks").value) || 4;
+    const generalNotes = document.getElementById("generalNotes").value.trim();
 
-  let targetWorkoutId = currentDraftId;
+    let targetWorkoutId = currentDraftId;
 
-  if (targetWorkoutId) {
-    const { error: uErr } = await supabaseClient
-      .from('workouts')
-      .update({
-        athlete_id: athleteId,
-        title: pdfName || "Bozza Scheda",
-        general_notes: generalNotes,
-        duration_weeks: durationWeeks
-      })
-      .eq('id', targetWorkoutId)
-      .eq('trainer_id', currentProfile.id);
+    if (targetWorkoutId) {
+      // Esegue in parallelo aggiornamento testata bozza e pulizia vecchie righe
+      const [updateRes, deleteRes] = await Promise.all([
+        supabaseClient
+          .from('workouts')
+          .update({
+            athlete_id: athleteId,
+            title: pdfName || "Bozza Scheda",
+            general_notes: generalNotes,
+            duration_weeks: durationWeeks
+          })
+          .eq('id', targetWorkoutId)
+          .eq('trainer_id', currentProfile.id),
+        supabaseClient
+          .from('workout_exercises')
+          .delete()
+          .eq('workout_id', targetWorkoutId)
+      ]);
 
-    if (uErr) {
-      alert("Errore aggiornamento bozza: " + uErr.message);
-      btn.disabled = false;
-      btn.textContent = "📝 Salva Bozza";
-      return;
+      if (updateRes.error) {
+        alert("Errore aggiornamento bozza: " + updateRes.error.message);
+        return;
+      }
+      if (deleteRes.error) {
+        alert("Errore pulizia esercizi bozza: " + deleteRes.error.message);
+        return;
+      }
+    } else {
+      const { data: createdDraft, error: cErr } = await supabaseClient
+        .from('workouts')
+        .insert({
+          trainer_id: currentProfile.id,
+          athlete_id: athleteId,
+          title: pdfName || "Bozza Scheda",
+          general_notes: generalNotes,
+          duration_weeks: durationWeeks,
+          status: 'draft'
+        })
+        .select('id')
+        .single();
+
+      if (cErr || !createdDraft) {
+        alert("Errore salvataggio bozza: " + (cErr ? cErr.message : "sconosciuto"));
+        return;
+      }
+
+      targetWorkoutId = createdDraft.id;
+      currentDraftId = targetWorkoutId;
     }
 
-    await supabaseClient.from('workout_exercises').delete().eq('workout_id', targetWorkoutId);
-  } else {
-    const { data: createdDraft, error: cErr } = await supabaseClient
-      .from('workouts')
-      .insert({
-        trainer_id: currentProfile.id,
-        athlete_id: athleteId,
-        title: pdfName || "Bozza Scheda",
-        general_notes: generalNotes,
-        duration_weeks: durationWeeks,
-        status: 'draft'
-      })
-      .select()
-      .single();
+    const rowsToInsert = currentWorkout.map((ex, idx) => ({
+      workout_id: targetWorkoutId,
+      exercise_id: ex.id,
+      day_name: ex.day,
+      sets_reps: ex.setsReps,
+      rest: ex.rest,
+      rir: ex.rir,
+      notes: ex.notes,
+      order_index: idx,
+      circuit_role: ex.circuitRole || null,
+      circuit_label: ex.circuitLabel || null
+    }));
 
-    if (cErr || !createdDraft) {
-      alert("Errore salvataggio bozza: " + (cErr ? cErr.message : "sconosciuto"));
-      btn.disabled = false;
-      btn.textContent = "📝 Salva Bozza";
-      return;
+    const { error: exError } = await supabaseClient
+      .from('workout_exercises')
+      .insert(rowsToInsert);
+
+    if (exError) {
+      alert("Bozza salvata ma errore sugli esercizi: " + exError.message);
+    } else {
+      alert("📝 Bozza salvata! Puoi chiudere l'app e riprenderla quando vuoi.");
+      loadTrainerDrafts();
     }
-
-    targetWorkoutId = createdDraft.id;
-    currentDraftId = targetWorkoutId;
-  }
-
-  const rowsToInsert = currentWorkout.map((ex, idx) => ({
-    workout_id: targetWorkoutId,
-    exercise_id: ex.id,
-    day_name: ex.day,
-    sets_reps: ex.setsReps,
-    rest: ex.rest,
-    rir: ex.rir,
-    notes: ex.notes,
-    order_index: idx,
-    circuit_role: ex.circuitRole || null,
-    circuit_label: ex.circuitLabel || null
-  }));
-
-  const { error: exError } = await supabaseClient
-    .from('workout_exercises')
-    .insert(rowsToInsert);
-
-  btn.disabled = false;
-  btn.textContent = "📝 Salva Bozza";
-
-  if (exError) {
-    alert("Bozza salvata ma errore sugli esercizi: " + exError.message);
-  } else {
-    alert("📝 Bozza salvata! Puoi chiudere l'app e riprenderla quando vuoi.");
-    loadTrainerDrafts();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "📝 Salva Bozza";
   }
 });
 
@@ -565,7 +712,7 @@ document.getElementById("btnLoadExistingWorkout").addEventListener("click", asyn
 
   const { data: workout, error } = await supabaseClient
     .from('workouts')
-    .select('*, workout_exercises(*, exercises(*))')
+    .select('id, duration_weeks, general_notes, workout_exercises(id, exercise_id, day_name, sets_reps, rest, rir, notes, order_index, circuit_role, circuit_label)')
     .eq('trainer_id', currentProfile.id)
     .eq('athlete_id', athleteId)
     .eq('status', 'active')
@@ -587,21 +734,25 @@ document.getElementById("btnLoadExistingWorkout").addEventListener("click", asyn
   document.getElementById("generalNotes").value = workout.general_notes || "";
 
   const sortedItems = (workout.workout_exercises || []).sort((a, b) => a.order_index - b.order_index);
-  currentWorkout = sortedItems.map((row, idx) => ({
-    uid: Date.now() + idx,
-    id: row.exercise_id,
-    day: row.day_name,
-    name: row.exercises ? row.exercises.name : "Esercizio",
-    muscle: row.exercises ? row.exercises.muscle : "",
-    imgStart: row.exercises ? (row.exercises.img_start || "") : "",
-    imgEnd: row.exercises ? (row.exercises.img_end || row.exercises.img_start || "") : "",
-    setsReps: row.sets_reps,
-    rest: row.rest,
-    rir: row.rir,
-    notes: row.notes,
-    circuitRole: row.circuit_role || null,
-    circuitLabel: row.circuit_label || ""
-  }));
+  currentWorkout = sortedItems.map((row, idx) => {
+    const exFromDb = EXERCISE_MAP.get(row.exercise_id) || null;
+    const imgs = resolveExerciseImages(exFromDb);
+    return {
+      uid: Date.now() + idx,
+      id: row.exercise_id,
+      day: row.day_name,
+      name: exFromDb ? exFromDb.name : "Esercizio",
+      muscle: exFromDb ? exFromDb.muscle : "",
+      imgStart: imgs.imgStart,
+      imgEnd: imgs.imgEnd,
+      setsReps: row.sets_reps,
+      rest: row.rest,
+      rir: row.rir,
+      notes: row.notes,
+      circuitRole: row.circuit_role || null,
+      circuitLabel: row.circuit_label || ""
+    };
+  });
 
   renderList();
   loadTrainerDrafts();
@@ -640,7 +791,7 @@ function populateDropdown() {
 }
 
 function updatePreview() {
-  const selected = EXERCISE_DB.find(ex => ex.id === exerciseSelect.value);
+  const selected = EXERCISE_MAP.get(exerciseSelect.value);
   const photosContainer = document.getElementById("previewPhotosContainer");
   const deleteBtn = document.getElementById("btnDeleteCustomExercise");
 
@@ -656,6 +807,8 @@ function updatePreview() {
   const endSrc = selected.img_end || selected.img_start || "";
   const isSingle = startSrc === endSrc;
 
+  preloadExerciseImages(startSrc, endSrc);
+
   const imgStartEl = document.getElementById("previewImgStart");
   const wrapEndEl = document.getElementById("wrapImgEnd");
   const tagStartEl = document.getElementById("tagImgStart");
@@ -667,7 +820,16 @@ function updatePreview() {
     if (photosContainer) photosContainer.style.display = "none";
   } else {
     if (photosContainer) photosContainer.style.display = "flex";
+    imgStartEl.decoding = "async";
+    imgStartEl.onerror = () => {
+      if (!imgStartEl.dataset.retried) {
+        imgStartEl.dataset.retried = "1";
+        setTimeout(() => { imgStartEl.src = startSrc; }, 350);
+      }
+    };
+    imgStartEl.dataset.retried = "";
     imgStartEl.src = startSrc;
+
     if (isSingle) {
       wrapEndEl.style.display = "none";
       imgStartEl.style.width = "105px";
@@ -678,7 +840,16 @@ function updatePreview() {
       imgStartEl.style.width = "64px";
       imgStartEl.style.objectFit = "cover";
       tagStartEl.textContent = "Partenza";
-      document.getElementById("previewImgEnd").src = endSrc;
+      const imgEndEl = document.getElementById("previewImgEnd");
+      imgEndEl.decoding = "async";
+      imgEndEl.onerror = () => {
+        if (!imgEndEl.dataset.retried) {
+          imgEndEl.dataset.retried = "1";
+          setTimeout(() => { imgEndEl.src = endSrc; }, 350);
+        }
+      };
+      imgEndEl.dataset.retried = "";
+      imgEndEl.src = endSrc;
     }
   }
 
@@ -691,13 +862,13 @@ muscleFilter.addEventListener("change", populateDropdown);
 
 exerciseSearch.addEventListener("input", () => {
   clearTimeout(searchDebounceTimer);
-  searchDebounceTimer = setTimeout(populateDropdown, 120);
+  searchDebounceTimer = setTimeout(populateDropdown, 100);
 });
 
 exerciseSelect.addEventListener("change", updatePreview);
 
 document.getElementById("btnAddEx").addEventListener("click", () => {
-  const selected = EXERCISE_DB.find(ex => ex.id === exerciseSelect.value);
+  const selected = EXERCISE_MAP.get(exerciseSelect.value);
   if (!selected) return;
 
   const isStart = chkCircuitStart.checked && !chkCircuitStart.disabled;
@@ -706,14 +877,16 @@ document.getElementById("btnAddEx").addEventListener("click", () => {
   if (isStart) circuitRole = "start";
   else if (isEnd) circuitRole = "end";
 
+  const imgs = resolveExerciseImages(selected);
+
   currentWorkout.push({
     uid: Date.now(),
     id: selected.id,
     day: exerciseDaySelect.value,
     name: selected.name,
     muscle: selected.muscle,
-    imgStart: selected.img_start || "",
-    imgEnd: selected.img_end || selected.img_start || "",
+    imgStart: imgs.imgStart,
+    imgEnd: imgs.imgEnd,
     setsReps: document.getElementById("inSetsReps").value.trim() || "-",
     rest: document.getElementById("inRest").value.trim() || "-",
     rir: document.getElementById("inRir").value.trim() || "-",
@@ -735,7 +908,10 @@ document.getElementById("btnAddEx").addEventListener("click", () => {
 });
 
 function buildBuilderItemHtml(item, idx, totalInDay) {
-  const isSingle = item.imgStart === item.imgEnd;
+  const imgs = resolveExerciseImages(item.id, item.imgStart, item.imgEnd);
+  item.imgStart = imgs.imgStart;
+  item.imgEnd = imgs.imgEnd;
+
   const isEditing = editingItemUid === item.uid;
   let roleTag = "";
   if (item.circuitRole === "start") {
@@ -777,12 +953,7 @@ function buildBuilderItemHtml(item, idx, totalInDay) {
     <div class="exercise-item" style="${isEditing ? 'border-color: var(--primary);' : ''}">
       <div class="exercise-top">
         <div class="item-photos">
-          ${item.imgStart ? (isSingle ? `
-            <img src="${item.imgStart}" class="item-img" style="width: 82px; object-fit: contain;">
-          ` : `
-            <img src="${item.imgStart}" class="item-img">
-            <img src="${item.imgEnd}" class="item-img">
-          `) : ''}
+          ${buildItemPhotosHtml(imgs.imgStart, imgs.imgEnd, "82px")}
         </div>
         <div class="item-details">
           <strong>${idx + 1}. ${escapeHtml(item.name)}</strong> ${roleTag}
@@ -975,68 +1146,73 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   btn.disabled = true;
   btn.textContent = "Invio in corso...";
 
-  const durationWeeks = parseInt(document.getElementById("durationWeeks").value) || 4;
-  const generalNotes = document.getElementById("generalNotes").value.trim();
+  try {
+    const durationWeeks = parseInt(document.getElementById("durationWeeks").value) || 4;
+    const generalNotes = document.getElementById("generalNotes").value.trim();
 
-  const startDate = new Date();
-  const endDate = new Date();
-  endDate.setDate(startDate.getDate() + (durationWeeks * 7));
+    const startDate = new Date();
+    const endDate = new Date();
+    endDate.setDate(startDate.getDate() + (durationWeeks * 7));
 
-  await supabaseClient
-    .from('workouts')
-    .update({ status: 'archived' })
-    .eq('athlete_id', athleteId)
-    .eq('status', 'active');
+    // Archivia eventuale scheda precedente e crea la nuova in parallelo
+    const [, insertWorkoutRes] = await Promise.all([
+      supabaseClient
+        .from('workouts')
+        .update({ status: 'archived' })
+        .eq('athlete_id', athleteId)
+        .eq('status', 'active'),
+      supabaseClient
+        .from('workouts')
+        .insert({
+          trainer_id: currentProfile.id,
+          athlete_id: athleteId,
+          title: `Scheda ${durationWeeks} Settimane`,
+          general_notes: generalNotes,
+          duration_weeks: durationWeeks,
+          start_date: startDate.toISOString().split('T')[0],
+          end_date: endDate.toISOString().split('T')[0],
+          status: 'active'
+        })
+        .select('id')
+        .single()
+    ]);
 
-  const { data: newWorkout, error: wError } = await supabaseClient
-    .from('workouts')
-    .insert({
-      trainer_id: currentProfile.id,
-      athlete_id: athleteId,
-      title: `Scheda ${durationWeeks} Settimane`,
-      general_notes: generalNotes,
-      duration_weeks: durationWeeks,
-      start_date: startDate.toISOString().split('T')[0],
-      end_date: endDate.toISOString().split('T')[0],
-      status: 'active'
-    })
-    .select()
-    .single();
+    const { data: newWorkout, error: wError } = insertWorkoutRes;
 
-  if (wError || !newWorkout) {
-    alert("Errore salvataggio scheda: " + (wError ? wError.message : "sconosciuto"));
-    syncSaveCloudButtonState();
-    btn.textContent = "☁️ Salva e Invia all'app dell'Atleta";
-    return;
-  }
+    if (wError || !newWorkout) {
+      alert("Errore salvataggio scheda: " + (wError ? wError.message : "sconosciuto"));
+      return;
+    }
 
-  const rowsToInsert = currentWorkout.map((ex, idx) => ({
-    workout_id: newWorkout.id,
-    exercise_id: ex.id,
-    day_name: ex.day,
-    sets_reps: ex.setsReps,
-    rest: ex.rest,
-    rir: ex.rir,
-    notes: ex.notes,
-    order_index: idx,
-    circuit_role: ex.circuitRole || null,
-    circuit_label: ex.circuitLabel || null
-  }));
+    const rowsToInsert = currentWorkout.map((ex, idx) => ({
+      workout_id: newWorkout.id,
+      exercise_id: ex.id,
+      day_name: ex.day,
+      sets_reps: ex.setsReps,
+      rest: ex.rest,
+      rir: ex.rir,
+      notes: ex.notes,
+      order_index: idx,
+      circuit_role: ex.circuitRole || null,
+      circuit_label: ex.circuitLabel || null
+    }));
 
-  const { error: exError } = await supabaseClient
-    .from('workout_exercises')
-    .insert(rowsToInsert);
+    const { error: exError } = await supabaseClient
+      .from('workout_exercises')
+      .insert(rowsToInsert);
 
-  btn.textContent = "☁️ Salva e Invia all'app dell'Atleta";
-  syncSaveCloudButtonState();
+    if (exError) {
+      alert("Scheda creata ma errore negli esercizi: " + exError.message);
+      return;
+    }
 
-  if (exError) {
-    alert("Scheda creata ma errore negli esercizi: " + exError.message);
-  } else {
     if (currentDraftId) {
-      await supabaseClient.from('workout_exercises').delete().eq('workout_id', currentDraftId);
-      await supabaseClient.from('workouts').delete().eq('id', currentDraftId);
+      const draftToDelete = currentDraftId;
       currentDraftId = null;
+      await Promise.all([
+        supabaseClient.from('workout_exercises').delete().eq('workout_id', draftToDelete),
+        supabaseClient.from('workouts').delete().eq('id', draftToDelete)
+      ]);
     }
 
     alert("✅ Scheda salvata e inviata! L'atleta la vedrà immediatamente aprendo la sua app.");
@@ -1045,6 +1221,9 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
     renderList();
     showTrainerView("trainerClientsView");
     loadTrainerClients();
+  } finally {
+    btn.textContent = "☁️ Salva e Invia all'app dell'Atleta";
+    syncSaveCloudButtonState();
   }
 });
 
@@ -1108,7 +1287,8 @@ window.exportPaginatedWorkoutPdf = async function({
     let inCircuit = false;
 
     groupedDays[dayName].forEach((item, index) => {
-      const isSingle = item.imgStart === item.imgEnd;
+      const imgs = resolveExerciseImages(item.id, item.imgStart, item.imgEnd);
+      const isSingle = imgs.imgStart === imgs.imgEnd;
       const isCircuitStart = item.circuitRole === "start" || item.circuitRole === "single";
       const isCircuitEnd = item.circuitRole === "end" || item.circuitRole === "single";
 
@@ -1127,11 +1307,11 @@ window.exportPaginatedWorkoutPdf = async function({
       tr.innerHTML = `
         <td><strong>${index + 1}</strong></td>
         <td style="white-space: nowrap;">
-          ${item.imgStart ? (isSingle ? `
-            <img src="${item.imgStart}" class="pdf-thumb">
+          ${imgs.imgStart ? (isSingle ? `
+            <img src="${imgs.imgStart}" class="pdf-thumb">
           ` : `
-            <img src="${item.imgStart}" class="pdf-thumb">
-            <img src="${item.imgEnd}" class="pdf-thumb">
+            <img src="${imgs.imgStart}" class="pdf-thumb">
+            <img src="${imgs.imgEnd}" class="pdf-thumb">
           `) : '-'}
         </td>
         <td>
@@ -1309,7 +1489,7 @@ async function savePdfSnapshotToHistory({ athleteId, athleteName, durationWeeks,
         end_date: endDate.toISOString().split('T')[0],
         status: 'archived'
       })
-      .select()
+      .select('id')
       .single();
 
     if (!error && archivedWorkout && items.length > 0) {
@@ -1379,6 +1559,7 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
   currentWorkout.forEach(item => {
     if (!grouped[item.day]) grouped[item.day] = [];
     grouped[item.day].push({
+      id: item.id,
       name: item.name,
       muscle: item.muscle,
       imgStart: item.imgStart,
