@@ -37,7 +37,7 @@
       </div>
     </header>
 
-    <!-- PANNELLO IMPOSTAZIONI (Tema Chiaro/Scuro + Logo Trainer + Guida + Elimina Account) -->
+    <!-- PANNELLO IMPOSTAZIONI -->
     <div id="settingsSection" class="card hidden">
       <div class="section-title">
         <span>⚙️ Impostazioni</span>
@@ -52,6 +52,18 @@
         <div class="theme-toggle-pill">
           <button type="button" class="theme-opt active" id="btnThemeDark">🌙 Scuro</button>
           <button type="button" class="theme-opt" id="btnThemeLight">☀️ Chiaro</button>
+        </div>
+      </div>
+
+      <!-- Modifica Nome e Cognome (visibile a tutti gli utenti loggati: Atleti e Coach) -->
+      <div id="profileNameSettingsBox" class="hidden" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);">
+        <strong style="font-size: 0.88rem; display: block; margin-bottom: 4px;">Nome e Cognome Profilo</strong>
+        <span style="font-size: 0.76rem; color: var(--text-muted); display: block; margin-bottom: 8px;">
+          Correggi il nome visualizzato nell'app e nelle schede.
+        </span>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <input type="text" id="inputSettingsFullName" placeholder="es. Mario Rossi" style="flex: 1;">
+          <button type="button" class="btn btn-primary btn-sm" id="btnSaveProfileName" style="width: auto; white-space: nowrap;">💾 Salva Nome</button>
         </div>
       </div>
 
@@ -85,6 +97,17 @@
         <!-- PANNELLO GUIDA / MANUALE UTENTE -->
         <div id="appGuideSection" class="hidden" style="margin-top: 12px;">
           <div id="appGuideContent" style="font-size: 0.84rem; line-height: 1.55; display: flex; flex-direction: column; gap: 10px;"></div>
+        </div>
+      </div>
+
+      <!-- Segnala un problema / Supporto -->
+      <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <div>
+            <strong style="font-size: 0.88rem; display: block;">Segnala un problema o chiedi aiuto</strong>
+            <span style="font-size: 0.76rem; color: var(--text-muted);">Scrivi a <strong>info@workoutbuilder.it</strong> per assistenza o suggerimenti.</span>
+          </div>
+          <a id="btnContactSupportMail" href="mailto:info@workoutbuilder.it?subject=Supporto%20Workout%20Builder" class="btn btn-outline btn-sm" style="width: auto; text-decoration: none;">✉️ Scrivici</a>
         </div>
       </div>
 
@@ -400,17 +423,17 @@
         <div class="card">
           <div class="section-title">
             <span>2. Aggiungi Esercizio</span>
-            <button type="button" class="btn btn-primary btn-sm" id="btnToggleNewExerciseBox" style="width: auto;">➕ Nuovo Esercizio</button>
+            <button type="button" class="btn btn-primary btn-sm hidden" id="btnToggleNewExerciseBox" style="width: auto;">➕ Nuovo Esercizio</button>
           </div>
 
-          <!-- PANNELLO CREAZIONE ESERCIZIO PERSONALIZZATO / GLOBALE -->
+          <!-- PANNELLO CREAZIONE ESERCIZIO GLOBALE (SOLO ADMIN) -->
           <div id="newExerciseBox" class="hidden" style="background: var(--subcard-bg); border: 1.5px solid var(--primary); border-radius: 8px; padding: 12px; margin-bottom: 14px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
               <strong style="font-size: 0.88rem; color: var(--primary);" id="newExerciseBoxTitle">➕ Crea Nuovo Esercizio</strong>
               <button type="button" class="btn btn-outline btn-sm" id="btnCloseNewExerciseBox" style="width: auto;">✖</button>
             </div>
             <p id="newExerciseScopeHint" style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 10px;">
-              Questo esercizio sarà visibile solo nella tua libreria personale.
+              Stai creando un esercizio globale: sarà visibile a tutti i Personal Trainer dell'app.
             </p>
 
             <div class="grid-2">
@@ -469,7 +492,7 @@
           <div class="filter-row">
             <select id="muscleFilter">
               <option value="ALL">Tutti</option>
-              <option value="PERSONAL" id="optPersonalExercises">Solo Personali</option>
+              <option value="PERSONAL" id="optPersonalExercises" class="hidden">Solo Personali</option>
               <option value="Petto">Petto</option>
               <option value="Dorso">Dorso</option>
               <option value="Gambe">Gambe</option>
