@@ -1,10 +1,12 @@
 let isRegisterMode = false;
+let isPasswordRecoveryFlow = false;
 
 const tabLogin = document.getElementById("tabLogin");
 const tabRegister = document.getElementById("tabRegister");
 const registerFields = document.getElementById("registerFields");
 const btnAuthSubmit = document.getElementById("btnAuthSubmit");
 const authMessage = document.getElementById("authMessage");
+const btnForgotPassword = document.getElementById("btnForgotPassword");
 
 function resetPasswordVisibility() {
   const pwdInput = document.getElementById("authPassword");
@@ -38,6 +40,7 @@ function resetUIOnSignOut() {
   if (appGuideBox) appGuideBox.classList.add("hidden");
 
   document.getElementById("settingsSection").classList.add("hidden");
+  document.getElementById("resetPasswordSection").classList.add("hidden");
   document.getElementById("authSection").classList.remove("hidden");
   document.getElementById("trainerSection").classList.add("hidden");
   document.getElementById("athleteSection").classList.add("hidden");
@@ -47,6 +50,23 @@ function resetUIOnSignOut() {
   document.getElementById("notificationsSection").classList.add("hidden");
   document.getElementById("userRoleBadge").textContent = "Cloud Coaching System";
 }
+
+function showPasswordRecoveryScreen() {
+  isPasswordRecoveryFlow = true;
+  document.getElementById("authSection").classList.add("hidden");
+  document.getElementById("trainerSection").classList.add("hidden");
+  document.getElementById("athleteSection").classList.add("hidden");
+  document.getElementById("resetPasswordSection").classList.remove("hidden");
+  const msg = document.getElementById("resetPasswordMessage");
+  if (msg) msg.textContent = "";
+}
+
+// Intercetta l'evento PASSWORD_RECOVERY quando l'utente apre il link ricevuto via email
+supabaseClient.auth.onAuthStateChange((event) => {
+  if (event === "PASSWORD_RECOVERY") {
+    showPasswordRecoveryScreen();
+  }
+});
 
 document.getElementById("btnTogglePassword").addEventListener("click", () => {
   const pwdInput = document.getElementById("authPassword");
@@ -64,6 +84,7 @@ tabLogin.addEventListener("click", () => {
   tabLogin.classList.add("active");
   tabRegister.classList.remove("active");
   registerFields.classList.add("hidden");
+  if (btnForgotPassword) btnForgotPassword.classList.remove("hidden");
   btnAuthSubmit.textContent = "Accedi all'App";
   authMessage.textContent = "";
   resetPasswordVisibility();
@@ -74,9 +95,90 @@ tabRegister.addEventListener("click", () => {
   tabRegister.classList.add("active");
   tabLogin.classList.remove("active");
   registerFields.classList.remove("hidden");
+  if (btnForgotPassword) btnForgotPassword.classList.add("hidden");
   btnAuthSubmit.textContent = "Crea Account";
   authMessage.textContent = "";
   resetPasswordVisibility();
+});
+
+// Invio email per reimpostare la password
+if (btnForgotPassword) {
+  btnForgotPassword.addEventListener("click", async () => {
+    const email = document.getElementById("authEmail").value.trim();
+    authMessage.style.color = "var(--danger)";
+    authMessage.textContent = "";
+
+    if (!email || !email.includes("@")) {
+      authMessage.textContent = "Inserisci prima la tua email nel campo qui sopra, poi clicca su 'Password dimenticata?'.";
+      document.getElementById("authEmail").focus();
+      return;
+    }
+
+    btnForgotPassword.disabled = true;
+    const oldText = btnForgotPassword.textContent;
+    btnForgotPassword.textContent = "Invio in corso...";
+
+    const redirectUrl = `${window.location.origin}${window.location.pathname}`;
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+      redirectTo: redirectUrl
+    });
+
+    btnForgotPassword.disabled = false;
+    btnForgotPassword.textContent = oldText;
+
+    if (error) {
+      authMessage.textContent = "Errore invio email: " + error.message;
+      return;
+    }
+
+    authMessage.style.color = "var(--success)";
+    authMessage.textContent = "Email inviata! Controlla la tua casella di posta (anche Spam) e clicca sul link per impostare la nuova password.";
+  });
+}
+
+// Salvataggio nuova password dal pannello di recupero
+document.getElementById("btnSaveNewPassword").addEventListener("click", async () => {
+  const newPwd = document.getElementById("newRecoveryPassword").value.trim();
+  const confirmPwd = document.getElementById("confirmRecoveryPassword").value.trim();
+  const msgEl = document.getElementById("resetPasswordMessage");
+  const btn = document.getElementById("btnSaveNewPassword");
+
+  msgEl.style.color = "var(--danger)";
+  msgEl.textContent = "";
+
+  if (newPwd.length < 6) {
+    msgEl.textContent = "La nuova password deve contenere almeno 6 caratteri.";
+    return;
+  }
+  if (newPwd !== confirmPwd) {
+    msgEl.textContent = "Le due password non coincidono.";
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Salvataggio...";
+
+  const { error } = await supabaseClient.auth.updateUser({ password: newPwd });
+
+  btn.disabled = false;
+  btn.textContent = "💾 Salva Nuova Password";
+
+  if (error) {
+    msgEl.textContent = "Errore durante l'aggiornamento: " + error.message;
+    return;
+  }
+
+  isPasswordRecoveryFlow = false;
+  document.getElementById("newRecoveryPassword").value = "";
+  document.getElementById("confirmRecoveryPassword").value = "";
+  document.getElementById("resetPasswordSection").classList.add("hidden");
+
+  if (window.location.hash && window.location.hash.includes("type=recovery")) {
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+  }
+
+  alert("✅ Password aggiornata con successo! Ora puoi usare l'app.");
+  await checkSession();
 });
 
 btnAuthSubmit.addEventListener("click", async () => {
@@ -200,8 +302,14 @@ document.getElementById("btnDeleteAccount").addEventListener("click", async () =
 });
 
 async function checkSession() {
+  // Se l'URL contiene il token di recupero password, mostra prima il modulo nuova password
+  if (window.location.hash && window.location.hash.includes("type=recovery")) {
+    showPasswordRecoveryScreen();
+    return;
+  }
+
   const { data: { session } } = await supabaseClient.auth.getSession();
-  if (!session) return;
+  if (!session || isPasswordRecoveryFlow) return;
 
   const { data: profile } = await supabaseClient
     .from('profiles')
@@ -218,6 +326,7 @@ async function checkSession() {
   }
 
   document.getElementById("authSection").classList.add("hidden");
+  document.getElementById("resetPasswordSection").classList.add("hidden");
   document.getElementById("btnLogout").classList.remove("hidden");
   document.getElementById("btnOpenNotifications").classList.remove("hidden");
 
