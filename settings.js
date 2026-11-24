@@ -259,7 +259,7 @@ function renderAppGuideContent() {
       </div>
       <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
         <strong style="color: var(--primary); display: block; margin-bottom: 4px;">2. Modalità Allenamento vs Scheda Pulita</strong>
-        In cima alla scheda puoi alternare <strong>✏️ Modalità Allenamento</strong> (per inserire Kg, Ripetizioni, RIR e note per ogni serie) e <strong>👁️ Scheda Pulita</strong> (per consultare solo gli esercizi). Se esegui esattamente ciò che ha indicato il coach, ti basta salvare l'allenamento senza dover riscrivere tutto.
+        In cima alla scheda puoi alternare <strong>✏️ Modalità Allenamento</strong> (per inserire Kg, Ripetizioni, RIR e note per ogni serie) e <strong>Scheda Pulita</strong> (per consultare solo gli esercizi). Se esegui esattamente ciò che ha indicato il coach, ti basta salvare l'allenamento senza dover riscrivere tutto.
       </div>
       <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
         <strong style="color: var(--primary); display: block; margin-bottom: 4px;">3. Check-in Settimanale e PDF</strong>
