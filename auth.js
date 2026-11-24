@@ -31,6 +31,12 @@ function resetUIOnSignOut() {
   const deleteBox = document.getElementById("deleteAccountSettingsBox");
   if (deleteBox) deleteBox.classList.add("hidden");
 
+  const profileNameBox = document.getElementById("profileNameSettingsBox");
+  if (profileNameBox) profileNameBox.classList.add("hidden");
+
+  const appGuideBox = document.getElementById("appGuideSettingsBox");
+  if (appGuideBox) appGuideBox.classList.add("hidden");
+
   document.getElementById("settingsSection").classList.add("hidden");
   document.getElementById("authSection").classList.remove("hidden");
   document.getElementById("trainerSection").classList.add("hidden");
@@ -97,7 +103,20 @@ btnAuthSubmit.addEventListener("click", async () => {
       return;
     }
 
-    const { data, error } = await supabaseClient.auth.signUp({ email, password });
+    const redirectUrl = `${window.location.origin}${window.location.pathname}`;
+
+    const { data, error } = await supabaseClient.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: redirectUrl,
+        data: {
+          full_name: fullName,
+          role: role
+        }
+      }
+    });
+
     if (error) {
       authMessage.textContent = error.message;
       btnAuthSubmit.disabled = false;
@@ -117,7 +136,7 @@ btnAuthSubmit.addEventListener("click", async () => {
         await checkSession();
       } else {
         authMessage.style.color = "var(--success)";
-        authMessage.textContent = "Account creato! Controlla l'email per confermare oppure accedi ora.";
+        authMessage.textContent = "Account creato! Controlla l'email e clicca sul link di conferma per accedere.";
       }
     }
   } else {
@@ -194,7 +213,6 @@ async function checkSession() {
   currentProfile = profile;
   resetPasswordVisibility();
 
-  // Ricarica subito la libreria esercizi filtrata per il profilo loggato
   if (typeof loadExercisesFromCloud === "function") {
     await loadExercisesFromCloud();
   }
