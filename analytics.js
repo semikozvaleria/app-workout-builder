@@ -14,12 +14,20 @@ window.toggleStatInfo = function(infoId) {
   if (el) el.classList.toggle("hidden");
 };
 
-// Estrae serie, ripetizioni per serie e ripetizioni totali dalla prescrizione del coach (es. "4x8-10", "3x12", "5x5")
+// Estrae serie, ripetizioni per serie e ripetizioni totali dalla prescrizione del coach (es. "4x8-10", "3x12", "8/10'")
 function parsePrescribedSetsAndReps(setsRepsStr) {
   if (!setsRepsStr || setsRepsStr === "-") {
     return { sets: 1, repsPerSet: 0, totalReps: 0 };
   }
   const s = String(setsRepsStr).trim();
+
+  // Caso cardio/tempo in minuti (es. "8/10'", "10'", "15 min")
+  const timeMatch = s.match(/^(\d+)(?:\s*\/\s*(\d+))?\s*(?:'|min\b)/i);
+  if (timeMatch) {
+    const mins = parseInt(timeMatch[2] || timeMatch[1], 10);
+    return { sets: 1, repsPerSet: mins, totalReps: mins };
+  }
+
   const match = s.match(/^(\d+)\s*[xX×*]\s*(\d+)/);
   if (match) {
     const sets = Math.max(1, parseInt(match[1], 10));
@@ -156,6 +164,12 @@ function formatShortItDateFromIso(dateStr) {
   return `${parts[2]}/${parts[1]}/${parts[0].slice(2)}`;
 }
 
+function formatDayMonthFromIso(dateIso) {
+  const parts = String(dateIso).split("-");
+  if (parts.length !== 3) return dateIso;
+  return `${parts[2]}/${parts[1]}`;
+}
+
 window.viewClientStats = async function(clientId, clientName) {
   showTrainerView("trainerStatsView");
   document.getElementById("statsAthleteTitle").textContent = `📈 Statistiche: ${clientName}`;
@@ -247,7 +261,7 @@ window.viewClientStats = async function(clientId, clientName) {
     });
   }
 
-  // 2. RICOSTRUZIONE COMPLETA DELLE SEDUTE (INCLUSI ESERCIZI NON MODIFICATI DALL'ATLETA NEI GIORNI DI ALLENAMENTO)
+  // 2. RICOSTRUZIONE SEDUTE PER DATA (DEDUPLICATA PER GIORNO CALENDARIO)
   const logsByDate = {};
   allLogs.forEach(log => {
     const dateIso = new Date(log.logged_at).toISOString().split("T")[0];
@@ -263,7 +277,6 @@ window.viewClientStats = async function(clientId, clientName) {
       loggedByWeId[l.workout_exercise_id] = l;
     });
 
-    // Individua quali (workout_id, day_name) sono stati allenati in questa data
     const sessionDayKeys = new Map();
     dayLogs.forEach(l => {
       const we = weMap[l.workout_exercise_id];
@@ -278,7 +291,6 @@ window.viewClientStats = async function(clientId, clientName) {
 
     const coveredWeIds = new Set();
 
-    // Per ogni giorno di scheda allenato in quella data, include TUTTI gli esercizi previsti dal coach
     sessionDayKeys.forEach(({ workoutId, dayName, loggedAt }) => {
       const w = workoutById[workoutId];
       if (!w || !Array.isArray(w.workout_exercises)) return;
@@ -291,6 +303,7 @@ window.viewClientStats = async function(clientId, clientName) {
         coveredWeIds.add(we.id);
         const existingLog = loggedByWeId[we.id];
         effectiveEntries.push({
+          dateIso,
           workout_exercise_id: we.id,
           logged_at: existingLog ? existingLog.logged_at : loggedAt,
           weight_kg: existingLog ? existingLog.weight_kg : null,
@@ -300,37 +313,21 @@ window.viewClientStats = async function(clientId, clientName) {
       });
     });
 
-    // Eventuali log residui non associati a un day_name noto
     dayLogs.forEach(l => {
       if (!coveredWeIds.has(l.workout_exercise_id)) {
-        effectiveEntries.push(l);
+        effectiveEntries.push({
+          ...l,
+          dateIso
+        });
       }
     });
   });
 
-  // 3. VOLUME DI LAVORO & STORICO ESERCIZI (TOTALE + SCHEDA IN CORSO)
+  // 3. VOLUME DI LAVORO & STORICO ESERCIZI
   let totalTonnageKg = 0;
   const muscleSetsMap = {};
   const exerciseHistoryMap = {};
-  const activeWorkoutExerciseMap = {};
-  const activeWeIdsSet = new Set();
   const lastKnownWeightByExId = {};
-
-  if (activeWorkout) {
-    (activeWorkout.workout_exercises || [])
-      .sort((a, b) => a.order_index - b.order_index)
-      .forEach(we => {
-        activeWeIdsSet.add(we.id);
-        const exKey = we.exercise_id || (we.exercises ? we.exercises.id : we.id);
-        if (!activeWorkoutExerciseMap[exKey]) {
-          activeWorkoutExerciseMap[exKey] = {
-            name: we.exercises ? we.exercises.name : 'Esercizio',
-            setsReps: we.sets_reps,
-            points: []
-          };
-        }
-      });
-  }
 
   let targetRirSum = 0;
   let targetRirCount = 0;
@@ -344,7 +341,6 @@ window.viewClientStats = async function(clientId, clientName) {
     const prescribedInfo = parsePrescribedSetsAndReps(we?.sets_reps);
     const { totalReps, setsCount, maxSingleSetReps } = parseLoggedReps(log.reps_done, prescribedInfo);
 
-    // Priorità carico: 1) peso inserito dall'atleta -> 2) peso prescritto dal coach -> 3) ultimo peso noto dell'esercizio
     const rawWeight = (log.weight_kg !== null && log.weight_kg !== undefined && String(log.weight_kg).trim() !== "")
       ? parseFloat(String(log.weight_kg).replace(",", "."))
       : NaN;
@@ -369,7 +365,6 @@ window.viewClientStats = async function(clientId, clientName) {
     const effectiveSets = setsCount > 0 ? setsCount : prescribedInfo.sets;
     muscleSetsMap[muscle] = (muscleSetsMap[muscle] || 0) + effectiveSets;
 
-    // Se l'atleta non compila il RIR, considera il RIR prescritto dal coach come rispettato
     const tRir = parseTargetRir(we?.rir);
     const hasLoggedRir = log.rir !== null && log.rir !== undefined && String(log.rir).trim() !== "";
     if (tRir !== null) {
@@ -382,7 +377,7 @@ window.viewClientStats = async function(clientId, clientName) {
       loggedRirCount++;
     }
 
-    const dateLabel = new Date(log.logged_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+    const dateLabel = formatDayMonthFromIso(log.dateIso);
 
     if (exInfo && (weight > 0 || maxSingleSetReps > 0)) {
       if (!exerciseHistoryMap[exInfo.id]) {
@@ -394,18 +389,85 @@ window.viewClientStats = async function(clientId, clientName) {
         est1rm: estimate1RM(weight, maxSingleSetReps || 1)
       });
     }
-
-    if (activeWeIdsSet.has(log.workout_exercise_id)) {
-      if (activeWorkoutExerciseMap[exKey]) {
-        activeWorkoutExerciseMap[exKey].points.push({
-          date: dateLabel,
-          weight,
-          totalReps,
-          maxSetReps: maxSingleSetReps
-        });
-      }
-    }
   });
+
+  // 3B. COSTRUZIONE SERIE SCHEDA IN CORSO: 1 PUNTO PER OGNI GIORNATA DI ALLENAMENTO (ES. 3 SEDUTE = 3 PUNTI PER OGNI ESERCIZIO)
+  const activeWorkoutExerciseMap = {};
+  if (activeWorkout) {
+    const activeWeList = (activeWorkout.workout_exercises || [])
+      .slice()
+      .sort((a, b) => a.order_index - b.order_index);
+
+    const activeWeIds = new Set(activeWeList.map(we => we.id));
+    const activeLogs = allLogs.filter(l => activeWeIds.has(l.workout_exercise_id));
+
+    // Date uniche ordinate in cui l'atleta si è allenato sulla scheda attiva (es. ["2026-11-20", "2026-11-21", "2026-11-23"])
+    const sessionDatesSorted = Array.from(
+      new Set(activeLogs.map(l => new Date(l.logged_at).toISOString().split("T")[0]))
+    ).sort();
+
+    // Raggruppa gli esercizi della scheda attiva per exercise_id (evitando duplicati se un esercizio compare in più giorni)
+    const uniqueExercisesInActive = {};
+    activeWeList.forEach(we => {
+      const exKey = we.exercise_id || (we.exercises ? we.exercises.id : we.id);
+      if (!uniqueExercisesInActive[exKey]) {
+        uniqueExercisesInActive[exKey] = {
+          exKey,
+          name: we.exercises ? we.exercises.name : 'Esercizio',
+          setsReps: we.sets_reps,
+          notes: we.notes,
+          weIds: new Set([we.id])
+        };
+      } else {
+        uniqueExercisesInActive[exKey].weIds.add(we.id);
+      }
+    });
+
+    if (sessionDatesSorted.length > 0) {
+      Object.values(uniqueExercisesInActive).forEach(exMeta => {
+        const prescribedInfo = parsePrescribedSetsAndReps(exMeta.setsReps);
+        const prescribedWeight = parsePrescribedWeightKg(exMeta.setsReps, exMeta.notes);
+        let rollingWeight = prescribedWeight || lastKnownWeightByExId[exMeta.exKey] || 0;
+
+        const points = sessionDatesSorted.map(dateIso => {
+          // Cerca se in questa data l'atleta ha loggato questo esercizio (prende l'ultimo log della giornata)
+          const matchingLogs = activeLogs.filter(l => {
+            const lDate = new Date(l.logged_at).toISOString().split("T")[0];
+            return lDate === dateIso && exMeta.weIds.has(l.workout_exercise_id);
+          });
+          const latestLog = matchingLogs.length > 0 ? matchingLogs[matchingLogs.length - 1] : null;
+
+          const { totalReps, maxSingleSetReps } = parseLoggedReps(
+            latestLog ? latestLog.reps_done : null,
+            prescribedInfo
+          );
+
+          const rawWeight = (latestLog && latestLog.weight_kg !== null && latestLog.weight_kg !== undefined && String(latestLog.weight_kg).trim() !== "")
+            ? parseFloat(String(latestLog.weight_kg).replace(",", "."))
+            : NaN;
+
+          let weight = rollingWeight;
+          if (!isNaN(rawWeight) && rawWeight > 0) {
+            weight = rawWeight;
+            rollingWeight = rawWeight;
+          }
+
+          return {
+            date: formatDayMonthFromIso(dateIso),
+            weight,
+            totalReps,
+            maxSetReps: maxSingleSetReps
+          };
+        });
+
+        activeWorkoutExerciseMap[exMeta.exKey] = {
+          name: exMeta.name,
+          setsReps: exMeta.setsReps,
+          points
+        };
+      });
+    }
+  }
 
   const activeExWithDataIds = Object.keys(activeWorkoutExerciseMap).filter(
     exKey => activeWorkoutExerciseMap[exKey].points.length > 0
@@ -515,7 +577,7 @@ window.viewClientStats = async function(clientId, clientName) {
         </span>
       </div>
       <div id="infoBlockActiveEx" class="stat-info-box hidden">
-        <strong>A cosa serve:</strong> mostra la progressione seduta dopo seduta su ciascun esercizio della <em>scheda attualmente attiva</em>, includendo automaticamente serie, ripetizioni e carico prescritti dal coach nei giorni di allenamento in cui l'atleta non segnala variazioni.
+        <strong>A cosa serve:</strong> mostra la progressione seduta dopo seduta su ciascun esercizio della <em>scheda attualmente attiva</em>, considerando automaticamente serie, ripetizioni e carico prescritti dal coach nelle sedute in cui l'atleta non segnala variazioni.
       </div>
       ${activeExWithDataIds.length > 0 ? `
         <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;">
