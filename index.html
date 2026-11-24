@@ -140,9 +140,9 @@
       </div>
     </div>
 
-    <!-- 1. SCHERMATA LOGIN / REGISTRAZIONE -->
+   <!-- 1. SCHERMATA LOGIN / REGISTRAZIONE -->
     <div id="authSection" class="card">
-      <div class="auth-tabs">
+      <div class="auth-tabs" id="authTabsBar">
         <div class="auth-tab active" id="tabLogin">Accedi</div>
         <div class="auth-tab" id="tabRegister">Registrati</div>
       </div>
@@ -166,7 +166,12 @@
         <input type="email" id="authEmail" placeholder="nome@email.com">
       </div>
       <div class="field">
-        <label>Password (min. 6 caratteri)</label>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <label style="margin-bottom: 0;">Password (min. 6 caratteri)</label>
+          <button type="button" id="btnForgotPassword" style="background: none; border: none; color: var(--primary); font-size: 0.78rem; cursor: pointer; padding: 0; text-decoration: underline;">
+            Password dimenticata?
+          </button>
+        </div>
         <div class="password-input-wrap">
           <input type="password" id="authPassword" placeholder="••••••••">
           <button type="button" id="btnTogglePassword" class="btn-toggle-pwd" title="Mostra/Nascondi password" aria-label="Mostra password">
@@ -186,6 +191,26 @@
       <div id="authMessage" style="margin-top: 10px; font-size: 0.82rem; text-align: center; color: var(--danger);"></div>
     </div>
 
+    <!-- PANNELLO IMPOSTA NUOVA PASSWORD (DOPO CLICK SUL LINK EMAIL) -->
+    <div id="resetPasswordSection" class="card hidden">
+      <div class="section-title">
+        <span>🔑 Imposta Nuova Password</span>
+      </div>
+      <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 12px;">
+        Inserisci la nuova password per il tuo account Workout Builder.
+      </p>
+      <div class="field">
+        <label>Nuova Password (min. 6 caratteri)</label>
+        <input type="password" id="newRecoveryPassword" placeholder="••••••••">
+      </div>
+      <div class="field">
+        <label>Conferma Nuova Password</label>
+        <input type="password" id="confirmRecoveryPassword" placeholder="••••••••">
+      </div>
+      <button type="button" class="btn btn-success" id="btnSaveNewPassword" style="margin-top: 6px;">💾 Salva Nuova Password</button>
+      <div id="resetPasswordMessage" style="margin-top: 10px; font-size: 0.82rem; text-align: center; color: var(--danger);"></div>
+    </div>
+    
     <!-- 2. AREA PERSONAL TRAINER -->
     <div id="trainerSection" class="hidden" style="display: flex; flex-direction: column; gap: 14px;">
       
