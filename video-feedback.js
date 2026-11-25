@@ -129,12 +129,22 @@ async function validateAndCompressVideo(file, onProgressText) {
   });
 }
 
-// Genera Signed URL temporaneo (1 ora) per riprodurre un video privato
+// Genera Signed URL temporaneo (1 ora) per riprodurre un video privato (con retry iOS)
 async function getSignedExerciseVideoUrl(videoPath) {
   if (!videoPath) return null;
-  const { data, error } = await supabaseClient.storage
+  let { data, error } = await supabaseClient.storage
     .from(VIDEO_STORAGE_BUCKET)
     .createSignedUrl(videoPath, 3600);
+
+  if (error && String(error.message || "").includes("Load failed")) {
+    await supabaseClient.auth.getSession();
+    const retry = await supabaseClient.storage
+      .from(VIDEO_STORAGE_BUCKET)
+      .createSignedUrl(videoPath, 3600);
+    data = retry.data;
+    error = retry.error;
+  }
+
   if (error || !data) {
     console.warn("Errore signed URL video:", error);
     return null;
@@ -215,13 +225,25 @@ window.uploadAthleteExerciseVideo = async function(workoutId, exerciseIndex, exe
 
     if (statusEl) statusEl.textContent = "☁️ Caricamento su cloud...";
 
-    const { error: uploadErr } = await supabaseClient.storage
+    let { error: uploadErr } = await supabaseClient.storage
       .from(VIDEO_STORAGE_BUCKET)
       .upload(storagePath, fileToUpload, {
         cacheControl: "3600",
         upsert: false,
         contentType: fileToUpload.type || "video/mp4"
       });
+
+    if (uploadErr && String(uploadErr.message || "").includes("Load failed")) {
+      await supabaseClient.auth.getSession();
+      const retryUpload = await supabaseClient.storage
+        .from(VIDEO_STORAGE_BUCKET)
+        .upload(storagePath, fileToUpload, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: fileToUpload.type || "video/mp4"
+        });
+      uploadErr = retryUpload.error;
+    }
 
     if (uploadErr) {
       throw new Error("Errore upload storage: " + uploadErr.message);
@@ -270,11 +292,21 @@ window.deleteAthleteExerciseVideo = async function(feedbackId, videoPath) {
     await supabaseClient.storage.from(VIDEO_STORAGE_BUCKET).remove([videoPath]);
   }
 
-  const { error } = await supabaseClient
+  let { error } = await supabaseClient
     .from("exercise_video_feedbacks")
     .delete()
     .eq("id", feedbackId)
     .eq("athlete_id", currentProfile.id);
+
+  if (error && String(error.message || "").includes("Load failed")) {
+    await supabaseClient.auth.getSession();
+    const retry = await supabaseClient
+      .from("exercise_video_feedbacks")
+      .delete()
+      .eq("id", feedbackId)
+      .eq("athlete_id", currentProfile.id);
+    error = retry.error;
+  }
 
   if (error) {
     alert("Errore eliminazione video: " + error.message);
@@ -286,7 +318,7 @@ window.deleteAthleteExerciseVideo = async function(feedbackId, videoPath) {
   }
 };
 
-// Salvataggio Nota Tecnica del Coach sul video
+// Salvataggio Nota Tecnica del Coach sul video (con retry Safari iOS)
 window.saveCoachVideoFeedback = async function(feedbackId, clientId, clientName, selectedWorkoutId) {
   const textarea = document.getElementById(`coachVideoNoteInput_${feedbackId}`);
   if (!textarea) return;
@@ -297,16 +329,28 @@ window.saveCoachVideoFeedback = async function(feedbackId, clientId, clientName,
     return;
   }
 
-  const { error } = await supabaseClient
+  const payload = {
+    coach_feedback: feedbackText,
+    status: "reviewed",
+    reviewed_at: new Date().toISOString(),
+    athlete_seen_at: null
+  };
+
+  let { error } = await supabaseClient
     .from("exercise_video_feedbacks")
-    .update({
-      coach_feedback: feedbackText,
-      status: "reviewed",
-      reviewed_at: new Date().toISOString(),
-      athlete_seen_at: null
-    })
+    .update(payload)
     .eq("id", feedbackId)
     .eq("coach_id", currentProfile.id);
+
+  if (error && String(error.message || "").includes("Load failed")) {
+    await supabaseClient.auth.getSession();
+    const retry = await supabaseClient
+      .from("exercise_video_feedbacks")
+      .update(payload)
+      .eq("id", feedbackId)
+      .eq("coach_id", currentProfile.id);
+    error = retry.error;
+  }
 
   if (error) {
     alert("Errore salvataggio nota tecnica: " + error.message);
