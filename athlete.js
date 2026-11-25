@@ -179,7 +179,17 @@ if (btnAthletePdf) {
   });
 }
 
-window.markAthleteUpdatesAsSeen = async function(workoutId) {
+window.markAthleteUpdatesAsSeen = async function(workoutId, openTrainingMode = false) {
+  // Memorizza quali esercizi avevano un feedback video non ancora letto prima di aggiornarli
+  const unreadVideoIndexes = new Set();
+  if (currentAthleteWorkoutData && currentAthleteWorkoutData.videosByIndex) {
+    Object.entries(currentAthleteWorkoutData.videosByIndex).forEach(([exIdx, list]) => {
+      if ((list || []).some(v => v.coach_feedback && !v.athlete_seen_at)) {
+        unreadVideoIndexes.add(String(exIdx));
+      }
+    });
+  }
+
   const nowIso = new Date().toISOString();
   await Promise.all([
     workoutId
@@ -198,7 +208,42 @@ window.markAthleteUpdatesAsSeen = async function(workoutId) {
   ]);
 
   document.getElementById("notificationsSection").classList.add("hidden");
+
+  // Assicura di essere sulla tab "La Mia Scheda" (nel caso l'atleta fosse sul Check-in)
+  const navWorkoutBtn = document.getElementById("navAthleteWorkout");
+  if (navWorkoutBtn) {
+    navWorkoutBtn.click();
+  }
+
   await loadAthleteWorkout();
+
+  if (openTrainingMode && currentAthleteWorkoutData) {
+    isAthleteCleanView = false;
+    syncAthleteCleanViewButton();
+    renderAthleteExercisesList(
+      currentAthleteWorkoutData.items,
+      currentAthleteWorkoutData.logsByExercise,
+      currentAthleteWorkoutData.videosByIndex || {}
+    );
+
+    // Apre automaticamente i menu a tendina dei video appena commentati dal coach e scorre al primo
+    const container = document.getElementById("athleteExercisesContainer");
+    if (container && unreadVideoIndexes.size > 0) {
+      const allDetails = container.querySelectorAll("details");
+      let firstOpened = null;
+      allDetails.forEach((det) => {
+        if (det.textContent && det.textContent.includes("Aggiungi video esecuzione")) {
+          if (det.querySelector(".note-coach-box")) {
+            det.open = true;
+            if (!firstOpened) firstOpened = det;
+          }
+        }
+      });
+      if (firstOpened) {
+        firstOpened.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }
+  }
 };
 
 function formatShortDate(isoStr) {
@@ -778,6 +823,9 @@ async function loadAthleteWorkout() {
 
   if (hasNewWorkout || hasUnreadCoachComment || hasUnreadVideoFeedback) {
     let msg = "Il tuo coach ha aggiornato la tua scheda di allenamento.";
+    const openTrainingMode = hasUnreadVideoFeedback || hasUnreadCoachComment;
+    const btnLabel = openTrainingMode ? "Vedi in Modalità Allenamento" : "Segna come letto";
+
     if (hasUnreadVideoFeedback && (hasNewWorkout || hasUnreadCoachComment)) {
       msg = "Hai nuove indicazioni e una nota tecnica sul tuo video dal coach.";
     } else if (hasUnreadVideoFeedback) {
@@ -792,7 +840,7 @@ async function loadAthleteWorkout() {
       level: "info",
       title: "Novità dal tuo Coach",
       message: msg,
-      actionHtml: `<button class="btn btn-primary btn-sm" onclick="markAthleteUpdatesAsSeen('${workout.id}')">Segna come letto</button>`
+      actionHtml: `<button class="btn btn-primary btn-sm" onclick="markAthleteUpdatesAsSeen('${workout.id}', ${openTrainingMode})">${btnLabel}</button>`
     });
   }
 
