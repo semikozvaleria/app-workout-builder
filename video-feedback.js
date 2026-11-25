@@ -6,18 +6,8 @@ const VIDEO_STORAGE_BUCKET = "exercise-videos";
 const MAX_VIDEO_DURATION_SEC = 30;
 const MAX_RAW_UPLOAD_MB = 30;
 
-// Compressione lato client (ridimensiona a max 720p e abbassa il bitrate)
-async function compressVideoIfSupported(file, onProgressText) {
-  // Su Safari iOS MediaRecorder con canvas può risultare lento o non supportare webm/mp4:
-  // se il file è già piccolo (< 8 MB), lo carichiamo direttamente senza ricodifica.
-  if (file.size <= 8 * 1024 * 1024) {
-    return file;
-  }
-
-  if (typeof MediaRecorder === "undefined" || !HTMLCanvasElement.prototype.captureStream) {
-    return file;
-  }
-
+// Verifica durata (sempre, max 30s) + compressione lato client a max 720p
+async function validateAndCompressVideo(file, onProgressText) {
   return new Promise((resolve) => {
     const video = document.createElement("video");
     video.preload = "metadata";
@@ -27,9 +17,25 @@ async function compressVideoIfSupported(file, onProgressText) {
     video.src = objectUrl;
 
     video.onloadedmetadata = async () => {
-      if (video.duration && video.duration > MAX_VIDEO_DURATION_SEC + 2) {
+      // Controllo rigido durata massima (30 secondi + 1s di tolleranza per arrotondamenti codec)
+      if (video.duration && video.duration > MAX_VIDEO_DURATION_SEC + 1) {
         URL.revokeObjectURL(objectUrl);
-        resolve({ error: `Il video dura ${Math.round(video.duration)}s. Carica una clip di massimo ${MAX_VIDEO_DURATION_SEC} secondi.` });
+        resolve({
+          error: `Il video dura ${Math.round(video.duration)} secondi. Il limite massimo consentito è di ${MAX_VIDEO_DURATION_SEC} secondi.`
+        });
+        return;
+      }
+
+      // Se il file è già leggero (<= 8 MB), non serve ricodificarlo
+      if (file.size <= 8 * 1024 * 1024) {
+        URL.revokeObjectURL(objectUrl);
+        resolve(file);
+        return;
+      }
+
+      if (typeof MediaRecorder === "undefined" || !HTMLCanvasElement.prototype.captureStream) {
+        URL.revokeObjectURL(objectUrl);
+        resolve(file);
         return;
       }
 
@@ -46,7 +52,6 @@ async function compressVideoIfSupported(file, onProgressText) {
           height = maxDim;
         }
       }
-      // Assicura dimensioni pari per i codec video
       width = width % 2 === 0 ? width : width - 1;
       height = height % 2 === 0 ? height : height - 1;
 
@@ -84,7 +89,6 @@ async function compressVideoIfSupported(file, onProgressText) {
           URL.revokeObjectURL(objectUrl);
           const ext = mimeType.includes("mp4") ? "mp4" : "webm";
           const compressedBlob = new Blob(chunks, { type: mimeType.split(";")[0] });
-          // Usa il file compresso solo se effettivamente più leggero dell'originale
           if (compressedBlob.size > 0 && compressedBlob.size < file.size) {
             const compressedFile = new File([compressedBlob], `exec_${Date.now()}.${ext}`, {
               type: compressedBlob.type
@@ -175,7 +179,7 @@ window.uploadAthleteExerciseVideo = async function(workoutId, exerciseIndex, exe
   const statusEl = document.getElementById(`videoUploadStatus_${domKey}`);
 
   if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
-    alert("Seleziona o registra prima un video dell'esecuzione.");
+    alert("Seleziona o registra prima un video dell'esecuzione (max 30 secondi).");
     return;
   }
 
@@ -193,10 +197,10 @@ window.uploadAthleteExerciseVideo = async function(workoutId, exerciseIndex, exe
   btn.disabled = true;
   const origBtnText = btn.textContent;
   btn.textContent = "⏳ Invio...";
-  if (statusEl) statusEl.textContent = "Preparazione video...";
+  if (statusEl) statusEl.textContent = "Controllo durata e preparazione...";
 
   try {
-    const processed = await compressVideoIfSupported(rawFile, (txt) => {
+    const processed = await validateAndCompressVideo(rawFile, (txt) => {
       if (statusEl) statusEl.textContent = txt;
     });
 
@@ -258,7 +262,7 @@ window.uploadAthleteExerciseVideo = async function(workoutId, exerciseIndex, exe
   }
 };
 
-// Eliminazione video da parte dell'atleta (se non ancora revisionato o se vuole sostituirlo)
+// Eliminazione video da parte dell'atleta
 window.deleteAthleteExerciseVideo = async function(feedbackId, videoPath) {
   if (!confirm("Vuoi eliminare questo video?")) return;
 
@@ -372,6 +376,7 @@ function buildAthleteVideoSectionHtml(row, videoFeedbacksForExercise) {
       <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
         <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
           <input type="file" id="videoFileInput_${domKey}" accept="video/*" style="flex: 1; font-size: 0.74rem; padding: 5px; min-width: 160px;">
+          <span style="font-size: 0.7rem; color: var(--text-muted);">Max ${MAX_VIDEO_DURATION_SEC} sec</span>
         </div>
         <div style="display: flex; gap: 6px; align-items: flex-end;">
           <input type="text" id="videoAthleteNote_${domKey}" placeholder="Chiedi un parere al coach (es. schiena in basso?)..." style="flex: 1; font-size: 0.76rem; padding: 6px 8px;">
