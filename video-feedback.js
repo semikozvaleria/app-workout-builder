@@ -371,7 +371,7 @@ function buildAthleteVideoSectionHtml(row, videoFeedbacksForExercise) {
   return `
     <details style="margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 6px;" ${list.some(v => v.coach_feedback && !v.athlete_seen_at) ? "open" : ""}>
       <summary style="cursor: pointer; font-size: 0.77rem; font-weight: 700; color: var(--primary);">
-        🎥 Video Esecuzione & Nota Coach ${badgeSummary}
+        🎥 Aggiungi video esecuzione dell'eserczio ${badgeSummary}
       </summary>
       <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
         <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
