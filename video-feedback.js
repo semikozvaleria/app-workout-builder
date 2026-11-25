@@ -352,8 +352,7 @@ function buildAthleteVideoSectionHtml(row, videoFeedbacksForExercise) {
         </div>
         ${vf.athlete_note ? `<div style="font-size: 0.76rem; margin-top: 4px; color: var(--text);"><strong>La tua nota:</strong> ${escapeHtml(vf.athlete_note)}</div>` : ""}
         <div id="videoPlayerBox_${vf.id}" class="hidden"></div>
-          ${isReviewed ? `<div class="note-coach-box" style="margin-top: 6px; white-space: pre-wrap; text-align: left;"><strong>Nota Tecnica ${escapeHtml(coachFirstName)}:</strong>\n${escapeHtml(vf.coach_feedback)}</div>` : ""}
-        ` : ""}
+        ${isReviewed ? `<div class="note-coach-box" style="margin-top: 6px; white-space: pre-wrap; text-align: left;"><strong>Nota Tecnica ${escapeHtml(coachFirstName)}:</strong>\n${escapeHtml(vf.coach_feedback)}</div>` : ""}
       </div>
     `;
   }).join("");
