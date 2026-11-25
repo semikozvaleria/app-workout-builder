@@ -3,7 +3,7 @@
 // ============================================================
 
 const VIDEO_STORAGE_BUCKET = "exercise-videos";
-const MAX_VIDEO_DURATION_SEC = 45;
+const MAX_VIDEO_DURATION_SEC = 30;
 const MAX_RAW_UPLOAD_MB = 30;
 
 // Compressione lato client (ridimensiona a max 720p e abbassa il bitrate)
