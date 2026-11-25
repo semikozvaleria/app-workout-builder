@@ -106,7 +106,11 @@ if (btnToggleCleanView) {
     isAthleteCleanView = !isAthleteCleanView;
     syncAthleteCleanViewButton();
     if (currentAthleteWorkoutData) {
-      renderAthleteExercisesList(currentAthleteWorkoutData.items, currentAthleteWorkoutData.logsByExercise);
+      renderAthleteExercisesList(
+        currentAthleteWorkoutData.items,
+        currentAthleteWorkoutData.logsByExercise,
+        currentAthleteWorkoutData.videosByIndex || {}
+      );
     }
   });
 }
@@ -183,6 +187,11 @@ window.markAthleteUpdatesAsSeen = async function(workoutId) {
       : Promise.resolve(),
     supabaseClient
       .from('workout_logs')
+      .update({ athlete_seen_at: nowIso })
+      .eq('athlete_id', currentProfile.id)
+      .is('athlete_seen_at', null),
+    supabaseClient
+      .from('exercise_video_feedbacks')
       .update({ athlete_seen_at: nowIso })
       .eq('athlete_id', currentProfile.id)
       .is('athlete_seen_at', null)
@@ -353,7 +362,7 @@ function consolidateLogsByDay(logs) {
   }));
 }
 
-function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
+function buildAthleteExerciseCardHtml(row, idx, rawLogs, exVideos = []) {
   const ex = row.exercises;
   const start = ex ? ex.img_start : "";
   const end = ex ? (ex.img_end || ex.img_start) : "";
@@ -445,6 +454,10 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
     `;
   }
 
+  const videoSectionHtml = typeof buildAthleteVideoSectionHtml === "function"
+    ? buildAthleteVideoSectionHtml(row, exVideos)
+    : "";
+
   return `
     <div class="exercise-item">
       <div class="exercise-top">
@@ -472,12 +485,13 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
           <button type="button" class="btn btn-success btn-sm" style="width: auto; flex-shrink: 0; align-self: stretch;" onclick="saveWorkoutLog('${row.id}', ${setsCount})">Salva</button>
         </div>
         ${latestBoxesHtml}
+        ${videoSectionHtml}
       </div>
     </div>
   `;
 }
 
-function renderAthleteExercisesList(items, logsByExercise) {
+function renderAthleteExercisesList(items, logsByExercise, videosByIndex = {}) {
   const container = document.getElementById("athleteExercisesContainer");
 
   if (!items || items.length === 0) {
@@ -504,7 +518,8 @@ function renderAthleteExercisesList(items, logsByExercise) {
 
     dayItems.forEach((row, idx) => {
       const exLogs = logsByExercise[row.id] || [];
-      const cardHtml = buildAthleteExerciseCardHtml(row, idx, exLogs);
+      const exVideos = videosByIndex[row.order_index] || [];
+      const cardHtml = buildAthleteExerciseCardHtml(row, idx, exLogs, exVideos);
 
       if (row.circuit_role === "single") {
         if (inCircuit) {
@@ -698,7 +713,7 @@ async function loadAthleteWorkout() {
     notesEl.classList.add("hidden");
   }
 
-  const [{ data: items }, { data: logs }] = await Promise.all([
+  const [{ data: items }, { data: logs }, { data: videoFeedbacks }] = await Promise.all([
     supabaseClient
       .from('workout_exercises')
       .select('*, exercises(*)')
@@ -708,7 +723,13 @@ async function loadAthleteWorkout() {
       .from('workout_logs')
       .select('*')
       .eq('athlete_id', currentProfile.id)
-      .order('logged_at', { ascending: false })
+      .order('logged_at', { ascending: false }),
+    supabaseClient
+      .from('exercise_video_feedbacks')
+      .select('*')
+      .eq('workout_id', workout.id)
+      .eq('athlete_id', currentProfile.id)
+      .order('created_at', { ascending: false })
   ]);
 
   const logsByExercise = {};
@@ -719,10 +740,19 @@ async function loadAthleteWorkout() {
     logsByExercise[l.workout_exercise_id].push(l);
   });
 
+  const videosByIndex = {};
+  (videoFeedbacks || []).forEach(v => {
+    if (!videosByIndex[v.exercise_index]) {
+      videosByIndex[v.exercise_index] = [];
+    }
+    videosByIndex[v.exercise_index].push(v);
+  });
+
   currentAthleteWorkoutData = {
     workout,
     items: items || [],
-    logsByExercise
+    logsByExercise,
+    videosByIndex
   };
 
   const hasItems = items && items.length > 0;
@@ -744,10 +774,15 @@ async function loadAthleteWorkout() {
 
   const hasNewWorkout = !workout.athlete_seen_at;
   const hasUnreadCoachComment = (logs || []).some(l => l.coach_notes && !l.athlete_seen_at);
+  const hasUnreadVideoFeedback = (videoFeedbacks || []).some(v => v.coach_feedback && !v.athlete_seen_at);
 
-  if (hasNewWorkout || hasUnreadCoachComment) {
+  if (hasNewWorkout || hasUnreadCoachComment || hasUnreadVideoFeedback) {
     let msg = "Il tuo coach ha aggiornato la tua scheda di allenamento.";
-    if (hasNewWorkout && hasUnreadCoachComment) {
+    if (hasUnreadVideoFeedback && (hasNewWorkout || hasUnreadCoachComment)) {
+      msg = "Hai nuove indicazioni e una nota tecnica sul tuo video dal coach.";
+    } else if (hasUnreadVideoFeedback) {
+      msg = "Il tuo coach ha lasciato una nota tecnica sul tuo video di esecuzione.";
+    } else if (hasNewWorkout && hasUnreadCoachComment) {
       msg = "Hai una nuova scheda assegnata e nuove indicazioni dal tuo coach.";
     } else if (hasUnreadCoachComment) {
       msg = "Il tuo coach ha lasciato un commento sui tuoi esercizi.";
@@ -762,7 +797,7 @@ async function loadAthleteWorkout() {
   }
 
   updateNotificationCenter(athleteAlerts);
-  renderAthleteExercisesList(items || [], logsByExercise);
+  renderAthleteExercisesList(items || [], logsByExercise, videosByIndex);
 }
 
 window.saveWorkoutLog = async function(workoutExerciseId, setsCount = 1) {
