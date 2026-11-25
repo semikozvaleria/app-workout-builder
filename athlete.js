@@ -480,7 +480,7 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs, exVideos = []) {
         <div style="display: flex; flex-direction: column; gap: 5px;">
           ${seriesRowsHtml}
         </div>
-        <div style="display: flex; gap: 6px; align-items: flex-end;">
+        <div style="display: flex; gap: 6px; align-items: flex-end; margin-top: 6px;">
           <textarea id="logNote_${row.id}" rows="2" placeholder="Note generali per questo esercizio..." style="flex: 1; min-height: 44px; font-size: 0.78rem; padding: 6px 8px; border-color: rgba(16, 185, 129, 0.45); resize: vertical;"></textarea>
           <button type="button" class="btn btn-success btn-sm" style="width: auto; flex-shrink: 0; align-self: stretch;" onclick="saveWorkoutLog('${row.id}', ${setsCount})">Salva</button>
         </div>
