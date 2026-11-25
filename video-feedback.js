@@ -481,7 +481,7 @@ window.toggleCoachAudioRecording = async function(feedbackId, videoPath) {
         btnRec.style.color = "";
       }
       if (statusEl) {
-        statusEl.textContent = `Audio pronto (${timeline.length} punti sync). Clicca "Salva" per inviarlo.`;
+        statusEl.textContent = `Audio pronto. Clicca "Salva" per inviarlo.`;
       }
       if (previewWrap) {
         previewWrap.classList.remove("hidden");
