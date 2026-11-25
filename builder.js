@@ -611,7 +611,6 @@ document.getElementById("btnSaveDraft").addEventListener("click", async () => {
     let targetWorkoutId = currentDraftId;
 
     if (targetWorkoutId) {
-      // Esegue in parallelo aggiornamento testata bozza e pulizia vecchie righe
       const [updateRes, deleteRes] = await Promise.all([
         supabaseClient
           .from('workouts')
@@ -1214,6 +1213,16 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
         supabaseClient.from('workouts').delete().eq('id', draftToDelete)
       ]);
     }
+
+    // Invio email automatica all'atleta (non bloccante)
+    supabaseClient.functions.invoke("send-email", {
+      body: {
+        type: "new_workout",
+        athleteId: athleteId,
+        coachName: currentProfile.full_name,
+        durationWeeks: durationWeeks
+      }
+    }).catch(() => {});
 
     alert("✅ Scheda salvata e inviata! L'atleta la vedrà immediatamente aprendo la sua app.");
     currentWorkout = [];

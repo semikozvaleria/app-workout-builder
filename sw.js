@@ -1,6 +1,5 @@
-const CACHE_NAME = 'workout-builder-v78';
+const CACHE_NAME = 'workout-builder-v79';
 const IMAGE_CACHE_NAME = 'exercise-images-cache-v1';
-
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -18,6 +17,9 @@ const ASSETS_TO_CACHE = [
   './manifest.json',
   './logo_W.jpeg',
   './video-feedback.js'
+  './icon.png',
+  './privacy.html',
+  './terms.html'
 ];
 
 self.addEventListener('install', (event) => {
