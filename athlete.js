@@ -117,7 +117,11 @@ if (btnToggleCleanView) {
     isAthleteCleanView = !isAthleteCleanView;
     syncAthleteCleanViewButton();
     if (currentAthleteWorkoutData) {
-      renderAthleteExercisesList(currentAthleteWorkoutData.items, currentAthleteWorkoutData.logsByExercise);
+      renderAthleteExercisesList(
+        currentAthleteWorkoutData.items,
+        currentAthleteWorkoutData.logsByExercise,
+        currentAthleteWorkoutData.videosByIndex || {}
+      );
     }
   });
 }
@@ -186,7 +190,17 @@ if (btnAthletePdf) {
   });
 }
 
-window.markAthleteUpdatesAsSeen = async function(workoutId) {
+window.markAthleteUpdatesAsSeen = async function(workoutId, openTrainingMode = false) {
+  // Memorizza quali esercizi avevano un feedback video non ancora letto prima di aggiornarli
+  const unreadVideoIndexes = new Set();
+  if (currentAthleteWorkoutData && currentAthleteWorkoutData.videosByIndex) {
+    Object.entries(currentAthleteWorkoutData.videosByIndex).forEach(([exIdx, list]) => {
+      if ((list || []).some(v => v.coach_feedback && !v.athlete_seen_at)) {
+        unreadVideoIndexes.add(String(exIdx));
+      }
+    });
+  }
+
   const nowIso = new Date().toISOString();
   await Promise.all([
     workoutId
@@ -196,11 +210,51 @@ window.markAthleteUpdatesAsSeen = async function(workoutId) {
       .from('workout_logs')
       .update({ athlete_seen_at: nowIso })
       .eq('athlete_id', currentProfile.id)
+      .is('athlete_seen_at', null),
+    supabaseClient
+      .from('exercise_video_feedbacks')
+      .update({ athlete_seen_at: nowIso })
+      .eq('athlete_id', currentProfile.id)
       .is('athlete_seen_at', null)
   ]);
 
   document.getElementById("notificationsSection").classList.add("hidden");
+
+  // Assicura di essere sulla tab "La Mia Scheda" (nel caso l'atleta fosse sul Check-in)
+  const navWorkoutBtn = document.getElementById("navAthleteWorkout");
+  if (navWorkoutBtn) {
+    navWorkoutBtn.click();
+  }
+
   await loadAthleteWorkout();
+
+  if (openTrainingMode && currentAthleteWorkoutData) {
+    isAthleteCleanView = false;
+    syncAthleteCleanViewButton();
+    renderAthleteExercisesList(
+      currentAthleteWorkoutData.items,
+      currentAthleteWorkoutData.logsByExercise,
+      currentAthleteWorkoutData.videosByIndex || {}
+    );
+
+    // Apre automaticamente i menu a tendina dei video appena commentati dal coach e scorre al primo
+    const container = document.getElementById("athleteExercisesContainer");
+    if (container && unreadVideoIndexes.size > 0) {
+      const allDetails = container.querySelectorAll("details");
+      let firstOpened = null;
+      allDetails.forEach((det) => {
+        if (det.textContent && det.textContent.includes("Aggiungi video esecuzione")) {
+          if (det.querySelector(".note-coach-box")) {
+            det.open = true;
+            if (!firstOpened) firstOpened = det;
+          }
+        }
+      });
+      if (firstOpened) {
+        firstOpened.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }
+  }
 };
 
 function formatShortDate(isoStr) {
@@ -364,7 +418,7 @@ function consolidateLogsByDay(logs) {
   }));
 }
 
-function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
+function buildAthleteExerciseCardHtml(row, idx, rawLogs, exVideos = []) {
   const ex = row.exercises;
   const start = ex ? ex.img_start : "";
   const end = ex ? (ex.img_end || ex.img_start) : "";
@@ -456,6 +510,10 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
     `;
   }
 
+  const videoSectionHtml = typeof buildAthleteVideoSectionHtml === "function"
+    ? buildAthleteVideoSectionHtml(row, exVideos)
+    : "";
+
   return `
     <div class="exercise-item">
       <div class="exercise-top">
@@ -478,17 +536,18 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs) {
         <div style="display: flex; flex-direction: column; gap: 5px;">
           ${seriesRowsHtml}
         </div>
-        <div style="display: flex; gap: 6px; align-items: flex-end;">
+        <div style="display: flex; gap: 6px; align-items: flex-end; margin-top: 6px;">
           <textarea id="logNote_${row.id}" rows="2" placeholder="Note generali per questo esercizio..." style="flex: 1; min-height: 44px; font-size: 0.78rem; padding: 6px 8px; border-color: rgba(16, 185, 129, 0.45); resize: vertical;"></textarea>
           <button type="button" class="btn btn-success btn-sm" style="width: auto; flex-shrink: 0; align-self: stretch;" onclick="saveWorkoutLog('${row.id}', ${setsCount})">Salva</button>
         </div>
         ${latestBoxesHtml}
+        ${videoSectionHtml}
       </div>
     </div>
   `;
 }
 
-function renderAthleteExercisesList(items, logsByExercise) {
+function renderAthleteExercisesList(items, logsByExercise, videosByIndex = {}) {
   const container = document.getElementById("athleteExercisesContainer");
 
   if (!items || items.length === 0) {
@@ -515,7 +574,8 @@ function renderAthleteExercisesList(items, logsByExercise) {
 
     dayItems.forEach((row, idx) => {
       const exLogs = logsByExercise[row.id] || [];
-      const cardHtml = buildAthleteExerciseCardHtml(row, idx, exLogs);
+      const exVideos = videosByIndex[row.order_index] || [];
+      const cardHtml = buildAthleteExerciseCardHtml(row, idx, exLogs, exVideos);
 
       if (row.circuit_role === "single") {
         if (inCircuit) {
@@ -709,7 +769,7 @@ async function loadAthleteWorkout() {
     notesEl.classList.add("hidden");
   }
 
-  const [{ data: items }, { data: logs }] = await Promise.all([
+  const [{ data: items }, { data: logs }, { data: videoFeedbacks }] = await Promise.all([
     supabaseClient
       .from('workout_exercises')
       .select('*, exercises(*)')
@@ -719,7 +779,13 @@ async function loadAthleteWorkout() {
       .from('workout_logs')
       .select('*')
       .eq('athlete_id', currentProfile.id)
-      .order('logged_at', { ascending: false })
+      .order('logged_at', { ascending: false }),
+    supabaseClient
+      .from('exercise_video_feedbacks')
+      .select('*')
+      .eq('workout_id', workout.id)
+      .eq('athlete_id', currentProfile.id)
+      .order('created_at', { ascending: false })
   ]);
 
   const logsByExercise = {};
@@ -730,10 +796,19 @@ async function loadAthleteWorkout() {
     logsByExercise[l.workout_exercise_id].push(l);
   });
 
+  const videosByIndex = {};
+  (videoFeedbacks || []).forEach(v => {
+    if (!videosByIndex[v.exercise_index]) {
+      videosByIndex[v.exercise_index] = [];
+    }
+    videosByIndex[v.exercise_index].push(v);
+  });
+
   currentAthleteWorkoutData = {
     workout,
     items: items || [],
-    logsByExercise
+    logsByExercise,
+    videosByIndex
   };
 
   const hasItems = items && items.length > 0;
@@ -755,10 +830,18 @@ async function loadAthleteWorkout() {
 
   const hasNewWorkout = !workout.athlete_seen_at;
   const hasUnreadCoachComment = (logs || []).some(l => l.coach_notes && !l.athlete_seen_at);
+  const hasUnreadVideoFeedback = (videoFeedbacks || []).some(v => v.coach_feedback && !v.athlete_seen_at);
 
-  if (hasNewWorkout || hasUnreadCoachComment) {
+  if (hasNewWorkout || hasUnreadCoachComment || hasUnreadVideoFeedback) {
     let msg = "Il tuo coach ha aggiornato la tua scheda di allenamento.";
-    if (hasNewWorkout && hasUnreadCoachComment) {
+    const openTrainingMode = hasUnreadVideoFeedback || hasUnreadCoachComment;
+    const btnLabel = openTrainingMode ? "Vedi in Modalità Allenamento" : "Segna come letto";
+
+    if (hasUnreadVideoFeedback && (hasNewWorkout || hasUnreadCoachComment)) {
+      msg = "Hai nuove indicazioni e una nota tecnica sul tuo video dal coach.";
+    } else if (hasUnreadVideoFeedback) {
+      msg = "Il tuo coach ha lasciato una nota tecnica sul tuo video di esecuzione.";
+    } else if (hasNewWorkout && hasUnreadCoachComment) {
       msg = "Hai una nuova scheda assegnata e nuove indicazioni dal tuo coach.";
     } else if (hasUnreadCoachComment) {
       msg = "Il tuo coach ha lasciato un commento sui tuoi esercizi.";
@@ -768,12 +851,12 @@ async function loadAthleteWorkout() {
       level: "info",
       title: "Novità dal tuo Coach",
       message: msg,
-      actionHtml: `<button class="btn btn-primary btn-sm" onclick="markAthleteUpdatesAsSeen('${workout.id}')">Segna come letto</button>`
+      actionHtml: `<button class="btn btn-primary btn-sm" onclick="markAthleteUpdatesAsSeen('${workout.id}', ${openTrainingMode})">${btnLabel}</button>`
     });
   }
 
   updateNotificationCenter(athleteAlerts);
-  renderAthleteExercisesList(items || [], logsByExercise);
+  renderAthleteExercisesList(items || [], logsByExercise, videosByIndex);
 }
 
 window.saveWorkoutLog = async function(workoutExerciseId, setsCount = 1) {

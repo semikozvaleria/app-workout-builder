@@ -249,7 +249,7 @@ function renderConnectedClientsList() {
   }
 
   container.innerHTML = "";
-  filtered.forEach(({ client, badgeHtml, hasUnreadUpdate, hasUnreviewedCheckin, hasAnamnesis }) => {
+  filtered.forEach(({ client, badgeHtml, hasUnreadUpdate, hasUnreviewedCheckin, hasAnamnesis, hasPendingVideos }) => {
     const card = document.createElement("div");
     card.className = "client-card";
     card.innerHTML = `
@@ -257,6 +257,7 @@ function renderConnectedClientsList() {
         <strong style="font-size: 0.95rem; display: block;">
           ${escapeHtml(client.full_name)}
           ${hasUnreadUpdate ? '<span style="font-size:0.7rem; background:rgba(16,185,129,0.18); color:#10b981; padding:1px 6px; border-radius:4px; margin-left:4px;">● Da vedere</span>' : ''}
+          ${hasPendingVideos ? '<span style="font-size:0.7rem; background:rgba(56,189,248,0.18); color:#38bdf8; padding:1px 6px; border-radius:4px; margin-left:4px;">🎥 Video</span>' : ''}
         </strong>
         <span style="font-size: 0.78rem; color: var(--text-muted);">${escapeHtml(client.email)}</span><br>
         ${badgeHtml}
@@ -265,7 +266,7 @@ function renderConnectedClientsList() {
         <button class="btn btn-outline btn-sm" style="${hasUnreviewedCheckin ? 'border-color: #10b981; color: #10b981;' : ''}" onclick="openTrainerAthleteCheckins('${client.id}', '${escapeHtml(client.full_name)}')">✅ Check-in${hasUnreviewedCheckin ? ' ●' : ''}</button>
         <button class="btn btn-outline btn-sm" style="${hasAnamnesis ? 'border-color: var(--primary); color: var(--primary);' : ''}" onclick="openClientAnamnesis('${client.id}', '${escapeHtml(client.full_name)}')">🩺 Anamnesi</button>
         <button class="btn btn-outline btn-sm" onclick="viewClientWorkouts('${client.id}', '${escapeHtml(client.full_name)}')">📋 Schede</button>
-        <button class="btn btn-outline btn-sm" onclick="viewClientProgress('${client.id}', '${escapeHtml(client.full_name)}')">📊 Progressi</button>
+        <button class="btn btn-outline btn-sm" style="${hasPendingVideos ? 'border-color: #38bdf8; color: #38bdf8;' : ''}" onclick="viewClientProgress('${client.id}', '${escapeHtml(client.full_name)}')">📊 Progressi${hasPendingVideos ? ' 🎥' : ''}</button>
         <button class="btn btn-outline btn-sm" onclick="viewClientStats('${client.id}', '${escapeHtml(client.full_name)}')">📈 Statistiche</button>
         <button class="btn btn-primary btn-sm" onclick="openBuilderForClient('${client.id}', '${escapeHtml(client.full_name)}')">Crea Scheda</button>
       </div>
@@ -324,7 +325,7 @@ async function loadTrainerClients() {
 
   const clientIds = clients.map(c => c.id);
 
-  const [{ data: workouts }, { data: unreadLogs }, { data: unreviewedCheckins }] = await Promise.all([
+  const [{ data: workouts }, { data: unreadLogs }, { data: unreviewedCheckins }, { data: pendingVideos }] = await Promise.all([
     supabaseClient
       .from('workouts')
       .select('*')
@@ -341,7 +342,12 @@ async function loadTrainerClients() {
       .select('id, athlete_id, checkin_date')
       .eq('trainer_id', currentProfile.id)
       .is('reviewed_at', null)
-      .order('checkin_date', { ascending: false })
+      .order('checkin_date', { ascending: false }),
+    supabaseClient
+      .from('exercise_video_feedbacks')
+      .select('id, athlete_id, exercise_name')
+      .eq('coach_id', currentProfile.id)
+      .eq('status', 'pending')
   ]);
 
   const today = new Date();
@@ -409,12 +415,23 @@ async function loadTrainerClients() {
       });
     }
 
+    const clientPendingVideos = (pendingVideos || []).filter(v => v.athlete_id === client.id);
+    if (clientPendingVideos.length > 0) {
+      coachAlerts.push({
+        level: "info",
+        title: `🎥 Video da revisionare: ${escapeHtml(client.full_name)}`,
+        message: `${clientPendingVideos.length} video esecuzione in attesa della tua nota tecnica.`,
+        actionHtml: `<button class="btn btn-primary btn-sm" onclick="document.getElementById('notificationsSection').classList.add('hidden'); viewClientProgress('${client.id}', '${escapeHtml(client.full_name)}')">Guarda Video</button>`
+      });
+    }
+
     enrichedClients.push({
       client,
       badgeHtml,
       priority,
       hasUnreadUpdate: clientUnreadLogs.length > 0,
       hasUnreviewedCheckin: clientNewCheckins.length > 0,
+      hasPendingVideos: clientPendingVideos.length > 0,
       hasAnamnesis
     });
   });
@@ -760,11 +777,18 @@ window.viewClientProgress = async function(clientId, clientName, selectedWorkout
     return `<option value="${w.id}" ${w.id === targetWorkout.id ? 'selected' : ''}>${escapeHtml(label)}</option>`;
   }).join("");
 
-  const { data: items } = await supabaseClient
-    .from('workout_exercises')
-    .select('*, exercises(*)')
-    .eq('workout_id', targetWorkout.id)
-    .order('order_index', { ascending: true });
+  const [{ data: items }, { data: workoutVideos }] = await Promise.all([
+    supabaseClient
+      .from('workout_exercises')
+      .select('*, exercises(*)')
+      .eq('workout_id', targetWorkout.id)
+      .order('order_index', { ascending: true }),
+    supabaseClient
+      .from('exercise_video_feedbacks')
+      .select('*')
+      .eq('workout_id', targetWorkout.id)
+      .order('created_at', { ascending: false })
+  ]);
 
   const startStr = targetWorkout.start_date ? new Date(targetWorkout.start_date).toLocaleDateString('it-IT') : '-';
   const endStr = targetWorkout.end_date ? new Date(targetWorkout.end_date).toLocaleDateString('it-IT') : '-';
@@ -815,6 +839,11 @@ window.viewClientProgress = async function(clientId, clientName, selectedWorkout
         const rawExLogs = (logs || []).filter(l => l.workout_exercise_id === row.id);
         const dailyLogs = consolidateTrainerLogsByDay(rawExLogs, unseenIdsSet);
         const latest = dailyLogs[0];
+
+        const exVideos = (workoutVideos || []).filter(v => v.exercise_index === row.order_index);
+        const videoBoxHtml = typeof buildTrainerVideoFeedbackHtml === "function"
+          ? buildTrainerVideoFeedbackHtml(exVideos, clientId, clientName, targetWorkout.id)
+          : "";
 
         let feedbackHtml = "";
         if (!latest) {
@@ -888,6 +917,7 @@ window.viewClientProgress = async function(clientId, clientName, selectedWorkout
                 </div>
               </div>
               ${feedbackHtml}
+              ${videoBoxHtml}
             </div>
           </div>
         `;
