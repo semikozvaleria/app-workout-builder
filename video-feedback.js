@@ -1,10 +1,20 @@
 // ============================================================
-// GESTIONE VIDEO ESECUZIONE & NOTA TECNICA COACH
+// GESTIONE VIDEO ESECUZIONE, NOTA TECNICA & COMMENTO VOCALE SINCRONIZZATO
 // ============================================================
 
 const VIDEO_STORAGE_BUCKET = "exercise-videos";
 const MAX_VIDEO_DURATION_SEC = 30;
 const MAX_RAW_UPLOAD_MB = 30;
+const MAX_COACH_AUDIO_DURATION_SEC = 120; // 2 minuti massimi
+
+// Stato attivo delle registrazioni vocali del Coach per ogni feedbackId
+const activeCoachAudioRecorders = new Map();
+
+function formatSecondsMmSs(totalSec) {
+  const mins = Math.floor(totalSec / 60);
+  const secs = totalSec % 60;
+  return `${mins}:${String(secs).padStart(2, "0")}`;
+}
 
 // Verifica durata (sempre, max 30s) + compressione lato client a max 720p
 async function validateAndCompressVideo(file, onProgressText) {
@@ -17,7 +27,6 @@ async function validateAndCompressVideo(file, onProgressText) {
     video.src = objectUrl;
 
     video.onloadedmetadata = async () => {
-      // Controllo rigido durata massima (30 secondi + 1s di tolleranza per arrotondamenti codec)
       if (video.duration && video.duration > MAX_VIDEO_DURATION_SEC + 1) {
         URL.revokeObjectURL(objectUrl);
         resolve({
@@ -26,7 +35,6 @@ async function validateAndCompressVideo(file, onProgressText) {
         return;
       }
 
-      // Se il file è già leggero (<= 8 MB), non serve ricodificarlo
       if (file.size <= 8 * 1024 * 1024) {
         URL.revokeObjectURL(objectUrl);
         resolve(file);
@@ -77,7 +85,7 @@ async function validateAndCompressVideo(file, onProgressText) {
         const stream = canvas.captureStream(24);
         const recorder = new MediaRecorder(stream, {
           mimeType,
-          videoBitsPerSecond: 1200000 // ~1.2 Mbps
+          videoBitsPerSecond: 1200000
         });
 
         const chunks = [];
@@ -129,56 +137,316 @@ async function validateAndCompressVideo(file, onProgressText) {
   });
 }
 
-// Genera Signed URL temporaneo (1 ora) per riprodurre un video privato (con retry iOS)
-async function getSignedExerciseVideoUrl(videoPath) {
-  if (!videoPath) return null;
+// Genera Signed URL temporaneo (1 ora) per video o audio privato (con retry iOS)
+async function getSignedExerciseMediaUrl(storagePath) {
+  if (!storagePath) return null;
   let { data, error } = await supabaseClient.storage
     .from(VIDEO_STORAGE_BUCKET)
-    .createSignedUrl(videoPath, 3600);
+    .createSignedUrl(storagePath, 3600);
 
   if (error && String(error.message || "").includes("Load failed")) {
     await supabaseClient.auth.getSession();
     const retry = await supabaseClient.storage
       .from(VIDEO_STORAGE_BUCKET)
-      .createSignedUrl(videoPath, 3600);
+      .createSignedUrl(storagePath, 3600);
     data = retry.data;
     error = retry.error;
   }
 
   if (error || !data) {
-    console.warn("Errore signed URL video:", error);
+    console.warn("Errore signed URL media:", error);
     return null;
   }
   return data.signedUrl;
 }
 
-// Riproduzione on-demand cliccando sul pulsante "Guarda Video"
-window.playExerciseVideoFeedback = async function(feedbackId, videoPath) {
+// Riproduzione Video + Sincronizzazione eventuale Commento Audio del Coach
+window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPath = "", timelineEncoded = "") {
   const box = document.getElementById(`videoPlayerBox_${feedbackId}`);
   if (!box) return;
 
   if (!box.classList.contains("hidden") && box.querySelector("video")) {
     box.classList.add("hidden");
     const vid = box.querySelector("video");
+    const aud = box.querySelector("audio");
     if (vid) vid.pause();
+    if (aud) aud.pause();
     return;
   }
 
   box.classList.remove("hidden");
-  box.innerHTML = `<div style="font-size: 0.78rem; color: var(--text-muted); padding: 8px;">⏳ Caricamento video sicuro...</div>`;
+  box.innerHTML = `<div style="font-size: 0.78rem; color: var(--text-muted); padding: 8px;">Caricamento video...</div>`;
 
-  const signedUrl = await getSignedExerciseVideoUrl(videoPath);
-  if (!signedUrl) {
-    box.innerHTML = `<div style="font-size: 0.78rem; color: var(--danger); padding: 6px;">Video non più disponibile (potrebbe essere stato rimosso dalla pulizia automatica a 45 giorni).</div>`;
+  const [signedVideoUrl, signedAudioUrl] = await Promise.all([
+    getSignedExerciseMediaUrl(videoPath),
+    audioPath ? getSignedExerciseMediaUrl(audioPath) : Promise.resolve(null)
+  ]);
+
+  if (!signedVideoUrl) {
+    box.innerHTML = `<div style="font-size: 0.78rem; color: var(--danger); padding: 6px;">Video non più disponibile (rimosso dalla pulizia automatica a 45 giorni).</div>`;
     return;
   }
 
+  let timeline = [];
+  if (timelineEncoded) {
+    try {
+      timeline = JSON.parse(decodeURIComponent(timelineEncoded));
+    } catch (_) {
+      timeline = [];
+    }
+  }
+
+  const audioSectionHtml = signedAudioUrl ? `
+    <div style="margin-top: 8px; padding: 8px; border-radius: 8px; background: rgba(56, 189, 248, 0.10); border: 1px solid rgba(56, 189, 248, 0.35);">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px;">
+        <span style="font-size: 0.75rem; font-weight: 700; color: #38bdf8;">Commento audio del Coach</span>
+        <button type="button" id="btnSyncPlay_${feedbackId}" class="btn btn-primary btn-sm" style="width: auto; padding: 3px 10px; font-size: 0.73rem;">
+          ▶️ Riproduci sincronizzato
+        </button>
+      </div>
+      <audio id="coachFeedbackAudio_${feedbackId}" controls playsinline preload="metadata" style="width: 100%; height: 34px;">
+        <source src="${signedAudioUrl}">
+      </audio>
+    </div>
+  ` : "";
+
   box.innerHTML = `
-    <video controls playsinline preload="metadata" style="width: 100%; max-height: 340px; border-radius: 8px; background: #000; margin-top: 6px;">
-      <source src="${signedUrl}">
+    <video id="exerciseFeedbackVideo_${feedbackId}" controls playsinline preload="metadata" style="width: 100%; max-height: 340px; border-radius: 8px; background: #000; margin-top: 6px;">
+      <source src="${signedVideoUrl}">
       Il tuo browser non supporta la riproduzione video.
     </video>
+    ${audioSectionHtml}
   `;
+
+  // Attiva la sincronizzazione automatica tra traccia audio del coach e video
+  if (signedAudioUrl) {
+    const videoEl = document.getElementById(`exerciseFeedbackVideo_${feedbackId}`);
+    const audioEl = document.getElementById(`coachFeedbackAudio_${feedbackId}`);
+    const syncBtn = document.getElementById(`btnSyncPlay_${feedbackId}`);
+
+    if (videoEl && audioEl) {
+      audioEl.addEventListener("play", () => {
+        videoEl.muted = true;
+      });
+      audioEl.addEventListener("pause", () => {
+        videoEl.pause();
+      });
+      audioEl.addEventListener("ended", () => {
+        videoEl.pause();
+        videoEl.muted = false;
+      });
+
+      audioEl.addEventListener("timeupdate", () => {
+        if (!timeline || timeline.length === 0) return;
+        const t = audioEl.currentTime;
+
+        let activeEvt = timeline[0];
+        for (let i = 0; i < timeline.length; i++) {
+          if (timeline[i].t <= t) {
+            activeEvt = timeline[i];
+          } else {
+            break;
+          }
+        }
+
+        if (!activeEvt) return;
+
+        if (activeEvt.paused) {
+          if (!videoEl.paused) videoEl.pause();
+          if (Math.abs(videoEl.currentTime - activeEvt.videoTime) > 0.25) {
+            videoEl.currentTime = activeEvt.videoTime;
+          }
+        } else {
+          const expectedVideoTime = activeEvt.videoTime + Math.max(0, t - activeEvt.t);
+          if (Math.abs(videoEl.currentTime - expectedVideoTime) > 0.45) {
+            videoEl.currentTime = Math.min(expectedVideoTime, videoEl.duration || expectedVideoTime);
+          }
+          if (videoEl.paused && expectedVideoTime < (videoEl.duration || 999)) {
+            videoEl.play().catch(() => {});
+          }
+        }
+      });
+
+      if (syncBtn) {
+        syncBtn.addEventListener("click", () => {
+          audioEl.currentTime = 0;
+          videoEl.currentTime = timeline.length > 0 ? timeline[0].videoTime : 0;
+          videoEl.muted = true;
+          audioEl.play().catch((err) => {
+            alert("Tocca Play sulla barra audio qui sotto per avviare il commento: " + err.message);
+          });
+        });
+      }
+    }
+  }
+};
+
+// ============================================================
+// REGISTRAZIONE VOCALE DEL COACH SOPRA IL VIDEO (MAX 2 MINUTI)
+// ============================================================
+
+function getSupportedAudioMimeType() {
+  if (typeof MediaRecorder === "undefined") return "";
+  const candidates = [
+    "audio/mp4",
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/ogg;codecs=opus"
+  ];
+  for (const type of candidates) {
+    if (MediaRecorder.isTypeSupported(type)) return type;
+  }
+  return "";
+}
+
+window.toggleCoachAudioRecording = async function(feedbackId, videoPath) {
+  const btnRec = document.getElementById(`btnRecordCoachAudio_${feedbackId}`);
+  const statusEl = document.getElementById(`coachAudioRecStatus_${feedbackId}`);
+  const previewWrap = document.getElementById(`coachAudioPreviewWrap_${feedbackId}`);
+
+  // Se sta già registrando -> FERMA la registrazione
+  if (activeCoachAudioRecorders.has(feedbackId)) {
+    const state = activeCoachAudioRecorders.get(feedbackId);
+    if (state.timerInterval) clearInterval(state.timerInterval);
+    if (state.recorder && state.recorder.state !== "inactive") {
+      state.recorder.stop();
+    }
+    return;
+  }
+
+  // Apri il video se non è già aperto, così il coach può metterlo in pausa mentre parla
+  const playerBox = document.getElementById(`videoPlayerBox_${feedbackId}`);
+  if (playerBox && (playerBox.classList.contains("hidden") || !playerBox.querySelector("video"))) {
+    await window.playExerciseVideoFeedback(feedbackId, videoPath);
+  }
+
+  const videoEl = document.getElementById(`exerciseFeedbackVideo_${feedbackId}`);
+  if (!videoEl) {
+    alert("Impossibile aprire il player video per la registrazione.");
+    return;
+  }
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    alert("Il tuo browser non supporta la registrazione microfono.");
+    return;
+  }
+
+  try {
+    const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mimeType = getSupportedAudioMimeType();
+    const recorder = mimeType
+      ? new MediaRecorder(micStream, { mimeType, audioBitsPerSecond: 64000 })
+      : new MediaRecorder(micStream);
+
+    const chunks = [];
+    const timeline = [];
+    const startTimeMs = Date.now();
+
+    const recordEvent = () => {
+      const elapsedSec = Math.round(((Date.now() - startTimeMs) / 1000) * 100) / 100;
+      timeline.push({
+        t: elapsedSec,
+        videoTime: Math.round((videoEl.currentTime || 0) * 100) / 100,
+        paused: Boolean(videoEl.paused)
+      });
+    };
+
+    recordEvent();
+    const onVideoEvent = () => recordEvent();
+    videoEl.addEventListener("play", onVideoEvent);
+    videoEl.addEventListener("pause", onVideoEvent);
+    videoEl.addEventListener("seeked", onVideoEvent);
+
+    recorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) chunks.push(e.data);
+    };
+
+    recorder.onstop = () => {
+      videoEl.removeEventListener("play", onVideoEvent);
+      videoEl.removeEventListener("pause", onVideoEvent);
+      videoEl.removeEventListener("seeked", onVideoEvent);
+      micStream.getTracks().forEach((tr) => tr.stop());
+
+      const currentState = activeCoachAudioRecorders.get(feedbackId);
+      if (currentState && currentState.timerInterval) clearInterval(currentState.timerInterval);
+
+      const finalMime = (recorder.mimeType || mimeType || "audio/mp4").split(";")[0];
+      const audioBlob = new Blob(chunks, { type: finalMime });
+      const audioPreviewUrl = URL.createObjectURL(audioBlob);
+
+      activeCoachAudioRecorders.set(feedbackId, {
+        recordedBlob: audioBlob,
+        mimeType: finalMime,
+        timeline
+      });
+
+      if (btnRec) {
+        btnRec.textContent = "Registra di nuovo";
+        btnRec.style.background = "";
+        btnRec.style.color = "";
+      }
+      if (statusEl) {
+        statusEl.textContent = `Audio pronto (${timeline.length} punti sync). Clicca "Salva" per inviarlo.`;
+      }
+      if (previewWrap) {
+        previewWrap.classList.remove("hidden");
+        previewWrap.innerHTML = `
+          <div style="margin-top: 6px; padding: 6px; border-radius: 6px; background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.35);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+              <span style="font-size:0.72rem; font-weight:700; color:#10b981;">Anteprima commento audio:</span>
+              <button type="button" class="btn btn-outline btn-sm" style="padding:1px 6px; font-size:0.68rem; width:auto; border-color:var(--danger); color:var(--danger);" onclick="discardCoachRecordedAudio('${feedbackId}')">Scarta</button>
+            </div>
+            <audio controls playsinline src="${audioPreviewUrl}" style="width: 100%; height: 32px;"></audio>
+          </div>
+        `;
+      }
+    };
+
+    // Avvia registrazione (limite massimo 2 minuti = 120s)
+    recorder.start(250);
+    videoEl.muted = true;
+    videoEl.play().catch(() => {});
+
+    let sec = 0;
+    const maxFormatted = formatSecondsMmSs(MAX_COACH_AUDIO_DURATION_SEC);
+    if (btnRec) {
+      btnRec.textContent = `Stop (0:00 / ${maxFormatted})`;
+      btnRec.style.background = "#ef4444";
+      btnRec.style.color = "#fff";
+    }
+    if (statusEl) {
+      statusEl.textContent = "Registrazione in corso: commenta e metti in pausa il video nei punti chiave (max 2 min).";
+    }
+
+    const timerInterval = setInterval(() => {
+      sec++;
+      if (btnRec) btnRec.textContent = `Stop (${formatSecondsMmSs(sec)} / ${maxFormatted})`;
+      if (sec >= MAX_COACH_AUDIO_DURATION_SEC && recorder.state !== "inactive") {
+        recorder.stop();
+      }
+    }, 1000);
+
+    activeCoachAudioRecorders.set(feedbackId, {
+      recorder,
+      timerInterval
+    });
+  } catch (err) {
+    console.error(err);
+    alert("Permesso microfono negato o non disponibile: " + err.message);
+  }
+};
+
+window.discardCoachRecordedAudio = function(feedbackId) {
+  activeCoachAudioRecorders.delete(feedbackId);
+  const previewWrap = document.getElementById(`coachAudioPreviewWrap_${feedbackId}`);
+  const statusEl = document.getElementById(`coachAudioRecStatus_${feedbackId}`);
+  const btnRec = document.getElementById(`btnRecordCoachAudio_${feedbackId}`);
+  if (previewWrap) {
+    previewWrap.classList.add("hidden");
+    previewWrap.innerHTML = "";
+  }
+  if (statusEl) statusEl.textContent = "";
+  if (btnRec) btnRec.textContent = "Registra commento audio";
 };
 
 // Upload video da parte dell'Atleta
@@ -284,12 +552,13 @@ window.uploadAthleteExerciseVideo = async function(workoutId, exerciseIndex, exe
   }
 };
 
-// Eliminazione video da parte dell'atleta
-window.deleteAthleteExerciseVideo = async function(feedbackId, videoPath) {
+// Eliminazione video (e eventuale audio coach) da parte dell'atleta
+window.deleteAthleteExerciseVideo = async function(feedbackId, videoPath, audioPath = "") {
   if (!confirm("Vuoi eliminare questo video?")) return;
 
-  if (videoPath) {
-    await supabaseClient.storage.from(VIDEO_STORAGE_BUCKET).remove([videoPath]);
+  const pathsToDelete = [videoPath, audioPath].filter(Boolean);
+  if (pathsToDelete.length > 0) {
+    await supabaseClient.storage.from(VIDEO_STORAGE_BUCKET).remove(pathsToDelete);
   }
 
   let { error } = await supabaseClient
@@ -318,51 +587,113 @@ window.deleteAthleteExerciseVideo = async function(feedbackId, videoPath) {
   }
 };
 
-// Salvataggio Nota Tecnica del Coach sul video (con retry Safari iOS)
+// Salvataggio Nota Tecnica e/o Audio Vocale del Coach sul video
 window.saveCoachVideoFeedback = async function(feedbackId, clientId, clientName, selectedWorkoutId) {
   const textarea = document.getElementById(`coachVideoNoteInput_${feedbackId}`);
-  if (!textarea) return;
-  const feedbackText = textarea.value.trim();
+  const feedbackText = textarea ? textarea.value.trim() : "";
+  const recState = activeCoachAudioRecorders.get(feedbackId);
+  const hasNewRecordedAudio = Boolean(recState && recState.recordedBlob);
 
-  if (!feedbackText) {
-    alert("Scrivi una nota tecnica prima di salvare.");
+  if (!feedbackText && !hasNewRecordedAudio) {
+    alert("Scrivi una nota tecnica oppure registra un commento audio prima di salvare.");
     return;
   }
 
-  const payload = {
-    coach_feedback: feedbackText,
-    status: "reviewed",
-    reviewed_at: new Date().toISOString(),
-    athlete_seen_at: null
-  };
+  const saveBtn = document.getElementById(`btnSaveCoachVideo_${feedbackId}`);
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.textContent = "⏳...";
+  }
 
-  let { error } = await supabaseClient
-    .from("exercise_video_feedbacks")
-    .update(payload)
-    .eq("id", feedbackId)
-    .eq("coach_id", currentProfile.id);
+  try {
+    let uploadedAudioPath = null;
+    let uploadedTimeline = null;
 
-  if (error && String(error.message || "").includes("Load failed")) {
-    await supabaseClient.auth.getSession();
-    const retry = await supabaseClient
+    if (hasNewRecordedAudio) {
+      const ext = recState.mimeType.includes("webm") ? "webm" : recState.mimeType.includes("ogg") ? "ogg" : "m4a";
+      const audioStoragePath = `${currentProfile.id}/${clientId}/audio_${feedbackId}_${Date.now()}.${ext}`;
+
+      let { error: audioUpErr } = await supabaseClient.storage
+        .from(VIDEO_STORAGE_BUCKET)
+        .upload(audioStoragePath, recState.recordedBlob, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: recState.mimeType
+        });
+
+      if (audioUpErr && String(audioUpErr.message || "").includes("Load failed")) {
+        await supabaseClient.auth.getSession();
+        const retryUp = await supabaseClient.storage
+          .from(VIDEO_STORAGE_BUCKET)
+          .upload(audioStoragePath, recState.recordedBlob, {
+            cacheControl: "3600",
+            upsert: false,
+            contentType: recState.mimeType
+          });
+        audioUpErr = retryUp.error;
+      }
+
+      if (audioUpErr) {
+        throw new Error("Errore caricamento audio: " + audioUpErr.message);
+      }
+
+      uploadedAudioPath = audioStoragePath;
+      uploadedTimeline = recState.timeline || [];
+    }
+
+    const payload = {
+      status: "reviewed",
+      reviewed_at: new Date().toISOString(),
+      athlete_seen_at: null
+    };
+
+    if (feedbackText) {
+      payload.coach_feedback = feedbackText;
+    } else if (uploadedAudioPath) {
+      payload.coach_feedback = "Ascolta il commento sul video";
+    }
+
+    if (uploadedAudioPath) {
+      payload.coach_audio_path = uploadedAudioPath;
+      payload.coach_audio_timeline = uploadedTimeline;
+    }
+
+    let { error } = await supabaseClient
       .from("exercise_video_feedbacks")
       .update(payload)
       .eq("id", feedbackId)
       .eq("coach_id", currentProfile.id);
-    error = retry.error;
-  }
 
-  if (error) {
-    alert("Errore salvataggio nota tecnica: " + error.message);
-    return;
-  }
+    if (error && String(error.message || "").includes("Load failed")) {
+      await supabaseClient.auth.getSession();
+      const retry = await supabaseClient
+        .from("exercise_video_feedbacks")
+        .update(payload)
+        .eq("id", feedbackId)
+        .eq("coach_id", currentProfile.id);
+      error = retry.error;
+    }
 
-  alert("✅ Nota tecnica inviata all'atleta!");
-  if (typeof viewClientProgress === "function") {
-    await viewClientProgress(clientId, clientName, selectedWorkoutId);
-  }
-  if (typeof loadTrainerClients === "function") {
-    loadTrainerClients();
+    if (error) {
+      throw new Error("Errore salvataggio nota tecnica: " + error.message);
+    }
+
+    activeCoachAudioRecorders.delete(feedbackId);
+    alert("✅ Feedback inviato all'atleta!");
+
+    if (typeof viewClientProgress === "function") {
+      await viewClientProgress(clientId, clientName, selectedWorkoutId);
+    }
+    if (typeof loadTrainerClients === "function") {
+      loadTrainerClients();
+    }
+  } catch (err) {
+    alert(err.message || "Errore durante il salvataggio.");
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = "💾 Salva";
+    }
   }
 };
 
@@ -380,23 +711,31 @@ function buildAthleteVideoSectionHtml(row, videoFeedbacksForExercise) {
       month: "2-digit",
       year: "2-digit"
     });
-    const isReviewed = vf.status === "reviewed" && vf.coach_feedback;
+    const hasAudio = Boolean(vf.coach_audio_path);
+    const hasText = Boolean(vf.coach_feedback && vf.coach_feedback !== "Ascolta il commento sul video");
+    const isReviewed = vf.status === "reviewed" && (hasAudio || Boolean(vf.coach_feedback));
+    const timelineEncoded = vf.coach_audio_timeline ? encodeURIComponent(JSON.stringify(vf.coach_audio_timeline)) : "";
+
     const statusBadge = isReviewed
       ? `<span style="font-size:0.68rem; background:rgba(16,185,129,0.18); color:#10b981; padding:1px 6px; border-radius:4px; font-weight:700;">✅ Revisionato</span>`
       : `<span style="font-size:0.68rem; background:rgba(245,158,11,0.18); color:#f59e0b; padding:1px 6px; border-radius:4px; font-weight:700;">⏳ In attesa del Coach</span>`;
+
+    const coachMessageHtml = isReviewed
+      ? `<div class="note-coach-box" style="margin-top: 6px; white-space: pre-wrap; text-align: left;"><strong>Nota Tecnica ${escapeHtml(coachFirstName)}:</strong>${hasAudio ? `\nAscolta il commento sul video` : ""}${hasText ? `\n${escapeHtml(vf.coach_feedback)}` : ""}</div>`
+      : "";
 
     return `
       <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 7px; padding: 8px; margin-top: 6px;">
         <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
           <span style="font-size: 0.74rem; color: var(--text-muted);">🎥 Clip del ${dateStr} ${statusBadge}</span>
           <div style="display: flex; gap: 5px;">
-            ${vf.video_path ? `<button type="button" class="btn btn-outline btn-sm" style="padding: 2px 8px; font-size: 0.72rem; width: auto;" onclick="playExerciseVideoFeedback('${vf.id}', '${escapeHtml(vf.video_path)}')">▶️ Guarda</button>` : `<span style="font-size:0.7rem; color:var(--text-muted);">File archiviato</span>`}
-            <button type="button" class="btn btn-outline btn-sm" style="padding: 2px 7px; font-size: 0.72rem; width: auto; border-color: var(--danger); color: var(--danger);" onclick="deleteAthleteExerciseVideo('${vf.id}', '${escapeHtml(vf.video_path || "")}')">🗑️</button>
+            ${vf.video_path ? `<button type="button" class="btn btn-outline btn-sm" style="padding: 2px 8px; font-size: 0.72rem; width: auto;" onclick="playExerciseVideoFeedback('${vf.id}', '${escapeHtml(vf.video_path)}', '${escapeHtml(vf.coach_audio_path || "")}', '${timelineEncoded}')">▶️ Guarda</button>` : `<span style="font-size:0.7rem; color:var(--text-muted);">File archiviato</span>`}
+            <button type="button" class="btn btn-outline btn-sm" style="padding: 2px 7px; font-size: 0.72rem; width: auto; border-color: var(--danger); color: var(--danger);" onclick="deleteAthleteExerciseVideo('${vf.id}', '${escapeHtml(vf.video_path || "")}', '${escapeHtml(vf.coach_audio_path || "")}')">🗑️</button>
           </div>
         </div>
         ${vf.athlete_note ? `<div style="font-size: 0.76rem; margin-top: 4px; color: var(--text);"><strong>La tua nota:</strong> ${escapeHtml(vf.athlete_note)}</div>` : ""}
         <div id="videoPlayerBox_${vf.id}" class="hidden"></div>
-        ${isReviewed ? `<div class="note-coach-box" style="margin-top: 6px; white-space: pre-wrap; text-align: left;"><strong>Nota Tecnica ${escapeHtml(coachFirstName)}:</strong>\n${escapeHtml(vf.coach_feedback)}</div>` : ""}
+        ${coachMessageHtml}
       </div>
     `;
   }).join("");
@@ -409,7 +748,7 @@ function buildAthleteVideoSectionHtml(row, videoFeedbacksForExercise) {
     : "";
 
   return `
-    <details style="margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 6px;" ${list.some(v => v.coach_feedback && !v.athlete_seen_at) ? "open" : ""}>
+    <details style="margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 6px;" ${list.some(v => (v.coach_feedback || v.coach_audio_path) && !v.athlete_seen_at) ? "open" : ""}>
       <summary style="cursor: pointer; font-size: 0.77rem; font-weight: 700; color: var(--primary);">
         🎥 Aggiungi video esecuzione dell'esercizio ${badgeSummary}
       </summary>
@@ -442,6 +781,10 @@ function buildTrainerVideoFeedbackHtml(videoFeedbacksForExercise, clientId, clie
       year: "2-digit"
     });
     const isPending = vf.status === "pending";
+    const hasAudio = Boolean(vf.coach_audio_path);
+    const timelineEncoded = vf.coach_audio_timeline ? encodeURIComponent(JSON.stringify(vf.coach_audio_timeline)) : "";
+    const existingText = vf.coach_feedback === "Ascolta il commento sul video" ? "" : (vf.coach_feedback || "");
+
     const badge = isPending
       ? `<span style="font-size:0.68rem; background:rgba(239,68,68,0.18); color:#ef4444; padding:1px 6px; border-radius:4px; font-weight:700;">● DA REVISIONARE</span>`
       : `<span style="font-size:0.68rem; background:rgba(16,185,129,0.18); color:#10b981; padding:1px 6px; border-radius:4px; font-weight:700;">✅ Revisionato</span>`;
@@ -451,17 +794,29 @@ function buildTrainerVideoFeedbackHtml(videoFeedbacksForExercise, clientId, clie
         <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
           <strong style="font-size: 0.78rem;">🎥 Video Esecuzione (${dateStr}) ${badge}</strong>
           ${vf.video_path
-            ? `<button type="button" class="btn btn-primary btn-sm" style="padding: 3px 9px; font-size: 0.74rem; width: auto;" onclick="playExerciseVideoFeedback('${vf.id}', '${escapeHtml(vf.video_path)}')">▶️ Guarda Video</button>`
+            ? `<button type="button" class="btn btn-primary btn-sm" style="padding: 3px 9px; font-size: 0.74rem; width: auto;" onclick="playExerciseVideoFeedback('${vf.id}', '${escapeHtml(vf.video_path)}', '${escapeHtml(vf.coach_audio_path || "")}', '${timelineEncoded}')">▶️ Guarda Video</button>`
             : `<span style="font-size: 0.72rem; color: var(--text-muted);">Video rimosso (>45 gg)</span>`}
         </div>
         ${vf.athlete_note ? `<div style="font-size: 0.78rem; margin-top: 5px; color: var(--text);"><strong>Domanda Atleta:</strong> ${escapeHtml(vf.athlete_note)}</div>` : ""}
         <div id="videoPlayerBox_${vf.id}" class="hidden"></div>
 
+        <!-- Sezione Registrazione Vocale Sincronizzata del Coach (max 2 min) -->
+        <div style="margin-top: 8px; padding-top: 7px; border-top: 1px dashed var(--border);">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <button type="button" id="btnRecordCoachAudio_${vf.id}" class="btn btn-outline btn-sm" style="width: auto; font-size: 0.74rem;" onclick="toggleCoachAudioRecording('${vf.id}', '${escapeHtml(vf.video_path || "")}')">
+              ${hasAudio ? "Registra nuovo audio" : "Registra commento audio"}
+            </button>
+            ${hasAudio ? `<span style="font-size: 0.7rem; color: #10b981; font-weight: 700;">Audio salvato</span>` : `<span style="font-size: 0.7rem; color: var(--text-muted);">Max 2 min</span>`}
+          </div>
+          <div id="coachAudioRecStatus_${vf.id}" style="font-size: 0.72rem; color: var(--primary); margin-top: 4px;"></div>
+          <div id="coachAudioPreviewWrap_${vf.id}" class="hidden"></div>
+        </div>
+
         <div style="margin-top: 7px;">
-          <label style="font-size: 0.72rem; color: var(--text-muted); display: block; margin-bottom: 3px;">Nota Tecnica del Coach:</label>
+          <label style="font-size: 0.72rem; color: var(--text-muted); display: block; margin-bottom: 3px;">Nota Tecnica Scritta (opzionale se registri audio):</label>
           <div style="display: flex; gap: 6px; align-items: flex-end;">
-            <textarea id="coachVideoNoteInput_${vf.id}" rows="2" placeholder="Scrivi correzione tecnica, postura, tempo di esecuzione..." style="flex: 1; min-height: 46px; font-size: 0.78rem; padding: 6px 8px; resize: vertical;">${escapeHtml(vf.coach_feedback || "")}</textarea>
-            <button type="button" class="btn btn-success btn-sm" style="width: auto; align-self: stretch;" onclick="saveCoachVideoFeedback('${vf.id}', '${clientId}', '${escapeHtml(clientName).replace(/'/g, "\\'")}', '${workoutId}')">💾 Salva</button>
+            <textarea id="coachVideoNoteInput_${vf.id}" rows="2" placeholder="Scrivi correzione tecnica o aggiungi dettagli all'audio..." style="flex: 1; min-height: 46px; font-size: 0.78rem; padding: 6px 8px; resize: vertical;">${escapeHtml(existingText)}</textarea>
+            <button type="button" id="btnSaveCoachVideo_${vf.id}" class="btn btn-success btn-sm" style="width: auto; align-self: stretch;" onclick="saveCoachVideoFeedback('${vf.id}', '${clientId}', '${escapeHtml(clientName).replace(/'/g, "\\'")}', '${workoutId}')">💾 Salva</button>
           </div>
         </div>
       </div>
