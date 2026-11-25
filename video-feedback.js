@@ -1,6 +1,5 @@
 // ============================================================
 // GESTIONE VIDEO ESECUZIONE, NOTA TECNICA & COMMENTO VOCALE SINCRONIZZATO
-// (Architettura Canvas + Web Audio API: 100% compatibile Safari iOS)
 // ============================================================
 
 const VIDEO_STORAGE_BUCKET = "exercise-videos";
@@ -163,14 +162,13 @@ async function getSignedExerciseMediaUrl(storagePath) {
 }
 
 // ============================================================
-// PLAYER VIDEO SU CANVAS + AUDIO SYNC (NON INTERROMPE MAI IL MIC SU IOS)
+// PLAYER VIDEO SU CANVAS (AVANZAMENTO FRAME-BY-FRAME SENZA PLAY DI SISTEMA)
 // ============================================================
 
 window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPath = "", timelineEncoded = "") {
   const box = document.getElementById(`videoPlayerBox_${feedbackId}`);
   if (!box) return;
 
-  // Se il box è già aperto -> chiudi e pulisci risorse
   if (!box.classList.contains("hidden") && box._playerController) {
     box.classList.add("hidden");
     box._playerController.destroy();
@@ -237,7 +235,7 @@ window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPa
   const scrubber = document.getElementById(`canvasScrubber_${feedbackId}`);
   const timeLabel = document.getElementById(`canvasVideoTime_${feedbackId}`);
 
-  // Elemento <video> fuori dal DOM e sempre mutato: Safari iOS non lo considera un player di sistema
+  // Video sorgente usato solo per estrarre i fotogrammi tramite currentTime (MAI .play() di sistema!)
   const hiddenVideo = document.createElement("video");
   hiddenVideo.crossOrigin = "anonymous";
   hiddenVideo.muted = true;
@@ -248,8 +246,9 @@ window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPa
   hiddenVideo.preload = "auto";
   hiddenVideo.src = signedVideoUrl;
 
-  let videoPlaying = false;
-  let renderLoopId = null;
+  let isSimPlaying = false;
+  let stepInterval = null;
+  let lastStepWallMs = 0;
   const listeners = [];
 
   const emitVideoStateChange = () => {
@@ -264,7 +263,9 @@ window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPa
         canvas.width = hiddenVideo.videoWidth;
         canvas.height = hiddenVideo.videoHeight;
       }
-      ctx.drawImage(hiddenVideo, 0, 0, canvas.width, canvas.height);
+      try {
+        ctx.drawImage(hiddenVideo, 0, 0, canvas.width, canvas.height);
+      } catch (_) {}
     }
     const dur = hiddenVideo.duration || 0;
     const cur = hiddenVideo.currentTime || 0;
@@ -275,87 +276,89 @@ window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPa
     timeLabel.textContent = `${formatSecondsMmSs(cur)} / ${formatSecondsMmSs(dur)}`;
   };
 
-  const startCanvasLoop = () => {
-    if (renderLoopId) cancelAnimationFrame(renderLoopId);
-    const loop = () => {
-      drawCurrentFrame();
-      if (videoPlaying && !hiddenVideo.paused && !hiddenVideo.ended) {
-        renderLoopId = requestAnimationFrame(loop);
-      } else if (hiddenVideo.ended) {
-        videoPlaying = false;
-        btnPlayPause.textContent = "▶️ Play";
-        emitVideoStateChange();
-      }
-    };
-    renderLoopId = requestAnimationFrame(loop);
-  };
-
-  const playVideo = async () => {
-    if (hiddenVideo.ended) {
-      hiddenVideo.currentTime = 0;
+  const pauseVideo = (silent = false) => {
+    if (stepInterval) {
+      clearInterval(stepInterval);
+      stepInterval = null;
     }
-    hiddenVideo.muted = true;
-    try {
-      await hiddenVideo.play();
-      videoPlaying = true;
-      btnPlayPause.textContent = "⏸️ Pausa";
-      startCanvasLoop();
-      emitVideoStateChange();
-    } catch (e) {
-      console.warn("Play video canvas:", e);
-    }
-  };
-
-  const pauseVideo = () => {
-    hiddenVideo.pause();
-    videoPlaying = false;
+    isSimPlaying = false;
     btnPlayPause.textContent = "▶️ Play";
     drawCurrentFrame();
-    emitVideoStateChange();
+    if (!silent) emitVideoStateChange();
   };
 
-  const seekVideo = (sec) => {
+  const playVideo = () => {
+    if (isSimPlaying) return;
+    const dur = hiddenVideo.duration || 0;
+    if (dur > 0 && hiddenVideo.currentTime >= dur - 0.05) {
+      hiddenVideo.currentTime = 0;
+    }
+    isSimPlaying = true;
+    btnPlayPause.textContent = "⏸️ Pausa";
+    lastStepWallMs = performance.now();
+    emitVideoStateChange();
+
+    // Avanza currentTime con timer JS puro: Safari iOS non tocca l'AudioSession del microfono!
+    stepInterval = setInterval(() => {
+      if (!isSimPlaying) return;
+      const now = performance.now();
+      const dt = (now - lastStepWallMs) / 1000;
+      lastStepWallMs = now;
+
+      const totalDur = hiddenVideo.duration || 0;
+      const nextTime = (hiddenVideo.currentTime || 0) + dt;
+
+      if (totalDur > 0 && nextTime >= totalDur) {
+        hiddenVideo.currentTime = totalDur;
+        pauseVideo(false);
+      } else if (!hiddenVideo.seeking) {
+        hiddenVideo.currentTime = nextTime;
+      }
+    }, 40); // ~25 fps
+  };
+
+  const seekVideo = (sec, silent = false) => {
     const dur = hiddenVideo.duration || 0;
     const target = Math.max(0, Math.min(sec, dur || sec));
     hiddenVideo.currentTime = target;
+    if (!silent) emitVideoStateChange();
   };
 
   hiddenVideo.addEventListener("loadeddata", () => {
+    hiddenVideo.currentTime = 0.01;
     drawCurrentFrame();
   });
 
   hiddenVideo.addEventListener("seeked", () => {
     drawCurrentFrame();
-    emitVideoStateChange();
   });
 
   btnPlayPause.addEventListener("click", () => {
-    if (videoPlaying) pauseVideo();
+    if (isSimPlaying) pauseVideo(false);
     else playVideo();
   });
 
   canvas.addEventListener("click", () => {
-    if (videoPlaying) pauseVideo();
+    if (isSimPlaying) pauseVideo(false);
     else playVideo();
   });
 
   scrubber.addEventListener("input", () => {
     scrubber._isDragging = true;
-    seekVideo(parseFloat(scrubber.value));
+    seekVideo(parseFloat(scrubber.value), false);
   });
   scrubber.addEventListener("change", () => {
     scrubber._isDragging = false;
-    seekVideo(parseFloat(scrubber.value));
+    seekVideo(parseFloat(scrubber.value), false);
   });
 
-  // Controller condiviso usato sia dal registratore del coach sia dalla riproduzione sincronizzata
   const controller = {
     get currentTime() { return hiddenVideo.currentTime || 0; },
     get duration() { return hiddenVideo.duration || 0; },
-    get paused() { return !videoPlaying || hiddenVideo.paused; },
+    get paused() { return !isSimPlaying; },
     play: playVideo,
-    pause: pauseVideo,
-    seek: seekVideo,
+    pause: () => pauseVideo(false),
+    seek: (sec) => seekVideo(sec, false),
     onStateChange(fn) { listeners.push(fn); },
     offStateChange(fn) {
       const idx = listeners.indexOf(fn);
@@ -364,7 +367,7 @@ window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPa
     stopAudioSync: null,
     destroy() {
       if (this.stopAudioSync) this.stopAudioSync();
-      pauseVideo();
+      pauseVideo(true);
       hiddenVideo.src = "";
     }
   };
@@ -372,7 +375,7 @@ window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPa
   box._playerController = controller;
 
   // ============================================================
-  // RIPRODUZIONE SINCRONIZZATA CON WEB AUDIO API (SE PRESENTE AUDIO)
+  // RIPRODUZIONE SINCRONIZZATA CON WEB AUDIO API
   // ============================================================
   if (!signedAudioUrl) return;
 
@@ -398,7 +401,7 @@ window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPa
       try { sourceNode.onended = null; sourceNode.stop(); } catch (_) {}
       sourceNode = null;
     }
-    pauseVideo();
+    pauseVideo(true);
     if (resetToStart) {
       pausedOffsetSec = 0;
       if (progressBar) progressBar.style.width = "0%";
@@ -431,19 +434,20 @@ window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPa
     if (!activeEvt) return;
 
     if (activeEvt.paused) {
-      if (!controller.paused) pauseVideo();
-      if (Math.abs(controller.currentTime - activeEvt.videoTime) > 0.25) {
-        seekVideo(activeEvt.videoTime);
+      if (!controller.paused) pauseVideo(true);
+      if (Math.abs(controller.currentTime - activeEvt.videoTime) > 0.15) {
+        seekVideo(activeEvt.videoTime, true);
       }
     } else {
       const expectedVideoTime = activeEvt.videoTime + Math.max(0, t - activeEvt.t);
       const maxDur = controller.duration || 999;
       if (expectedVideoTime >= maxDur) {
-        if (!controller.paused) pauseVideo();
+        if (!controller.paused) pauseVideo(true);
+        seekVideo(maxDur, true);
         return;
       }
-      if (Math.abs(controller.currentTime - expectedVideoTime) > 0.45) {
-        seekVideo(expectedVideoTime);
+      if (Math.abs(controller.currentTime - expectedVideoTime) > 0.25) {
+        seekVideo(expectedVideoTime, true);
       }
       if (controller.paused) {
         playVideo();
@@ -500,7 +504,7 @@ window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPa
         }
 
         if (pausedOffsetSec === 0) {
-          seekVideo(timeline.length > 0 ? timeline[0].videoTime : 0);
+          seekVideo(timeline.length > 0 ? timeline[0].videoTime : 0, true);
         }
 
         sourceNode = audioCtx.createBufferSource();
