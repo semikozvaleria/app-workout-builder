@@ -1,6 +1,7 @@
 let currentAthleteCoachName = "";
 let isAthleteCleanView = true;
 let currentAthleteWorkoutData = null;
+let selectedAthleteWeek = 1;
 
 function getAthleteFirstName(fullName, fallback = "") {
   if (!fullName) return fallback;
@@ -8,9 +9,59 @@ function getAthleteFirstName(fullName, fallback = "") {
   return parts[0] || fallback;
 }
 
+function getEffectiveAthleteWorkoutWeeks(workout, items) {
+  if (!workout) return 1;
+  const raw = parseInt(workout.duration_weeks, 10) || 1;
+  const capped = Math.max(1, Math.min(10, raw));
+  const hasProg = (items || []).some(it => it.weekly_progression && typeof it.weekly_progression === "object" && Object.keys(it.weekly_progression).length > 0);
+  return hasProg ? capped : 1;
+}
+
+function detectInitialAthleteWeek(workout, totalWeeks) {
+  if (totalWeeks <= 1 || !workout || !workout.start_date) return 1;
+  const start = new Date(workout.start_date);
+  const diffDays = Math.floor((new Date() - start) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) return 1;
+  const computed = Math.floor(diffDays / 7) + 1;
+  return Math.max(1, Math.min(totalWeeks, computed));
+}
+
+function resolveExercisePrescriptionForWeek(row, weekNum) {
+  const prog = row.weekly_progression;
+  if (prog && typeof prog === "object" && prog[String(weekNum)]) {
+    const wData = prog[String(weekNum)];
+    const baseNote = (row.notes && row.notes !== "-") ? row.notes.trim() : "";
+    const weekNote = (wData.notes || "").trim();
+    const combinedNotes = [weekNote, baseNote].filter(Boolean).join("\n") || "-";
+    return {
+      setsReps: wData.sets_reps || row.sets_reps || "-",
+      rest: wData.rest || row.rest || "-",
+      rir: wData.rir || row.rir || "-",
+      notes: combinedNotes
+    };
+  }
+  return {
+    setsReps: row.sets_reps || "-",
+    rest: row.rest || "-",
+    rir: row.rir || "-",
+    notes: row.notes || "-"
+  };
+}
+
+window.selectAthleteWorkoutWeek = function(weekNum) {
+  selectedAthleteWeek = weekNum;
+  if (currentAthleteWorkoutData) {
+    renderAthleteExercisesList(
+      currentAthleteWorkoutData.items,
+      currentAthleteWorkoutData.logsByExercise,
+      currentAthleteWorkoutData.videosByIndex || {}
+    );
+  }
+};
+
 function getCurrentWeekSundayKey() {
   const now = new Date();
-  const dayOfWeek = now.getDay(); // 0 = Domenica, 1 = Lunedì ... 6 = Sabato
+  const dayOfWeek = now.getDay();
   const diffToSunday = dayOfWeek === 0 ? 0 : (7 - dayOfWeek);
   const sunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diffToSunday);
   return `${sunday.getFullYear()}-${String(sunday.getMonth() + 1).padStart(2, '0')}-${String(sunday.getDate()).padStart(2, '0')}`;
@@ -18,7 +69,7 @@ function getCurrentWeekSundayKey() {
 
 function getCurrentWeekMondayStart() {
   const now = new Date();
-  const dayOfWeek = now.getDay(); // 0 = Domenica, 1 = Lunedì ...
+  const dayOfWeek = now.getDay();
   const diffFromMonday = dayOfWeek === 0 ? 6 : (dayOfWeek - 1);
   return new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffFromMonday, 0, 0, 0, 0);
 }
@@ -95,7 +146,6 @@ document.getElementById("btnLinkCoach").addEventListener("click", async () => {
     currentProfile.trainer_id = coach.id;
     applyBrandLogo(coach.logo_url);
 
-    // Invio email automatica di notifica al Coach (non bloccante)
     supabaseClient.functions.invoke("send-email", {
       body: {
         type: "athlete_linked",
@@ -110,7 +160,6 @@ document.getElementById("btnLinkCoach").addEventListener("click", async () => {
   }
 });
 
-// Toggle Vista "Scheda Pulita" vs "Modalità Allenamento" (in cima)
 const btnToggleCleanView = document.getElementById("btnToggleAthleteCleanView");
 if (btnToggleCleanView) {
   btnToggleCleanView.addEventListener("click", () => {
@@ -138,7 +187,6 @@ function syncAthleteCleanViewButton() {
   }
 }
 
-// Export PDF A4 Centrato della scheda pulita per l'Atleta (in fondo a entrambe le schermate)
 const btnAthletePdf = document.getElementById("btnAthleteDownloadPdf");
 if (btnAthletePdf) {
   btnAthletePdf.addEventListener("click", async () => {
@@ -170,7 +218,8 @@ if (btnAthletePdf) {
         rir: row.rir,
         notes: row.notes || "-",
         circuitRole: row.circuit_role,
-        circuitLabel: row.circuit_label
+        circuitLabel: row.circuit_label,
+        weeklyProgression: row.weekly_progression || null
       });
     });
 
@@ -191,7 +240,6 @@ if (btnAthletePdf) {
 }
 
 window.markAthleteUpdatesAsSeen = async function(workoutId, openTrainingMode = false) {
-  // Memorizza quali esercizi avevano un feedback video non ancora letto prima di aggiornarli
   const unreadVideoIndexes = new Set();
   if (currentAthleteWorkoutData && currentAthleteWorkoutData.videosByIndex) {
     Object.entries(currentAthleteWorkoutData.videosByIndex).forEach(([exIdx, list]) => {
@@ -220,7 +268,6 @@ window.markAthleteUpdatesAsSeen = async function(workoutId, openTrainingMode = f
 
   document.getElementById("notificationsSection").classList.add("hidden");
 
-  // Assicura di essere sulla tab "La Mia Scheda" (nel caso l'atleta fosse sul Check-in)
   const navWorkoutBtn = document.getElementById("navAthleteWorkout");
   if (navWorkoutBtn) {
     navWorkoutBtn.click();
@@ -237,7 +284,6 @@ window.markAthleteUpdatesAsSeen = async function(workoutId, openTrainingMode = f
       currentAthleteWorkoutData.videosByIndex || {}
     );
 
-    // Apre automaticamente i menu a tendina dei video appena commentati dal coach e scorre al primo
     const container = document.getElementById("athleteExercisesContainer");
     if (container && unreadVideoIndexes.size > 0) {
       const allDetails = container.querySelectorAll("details");
@@ -418,11 +464,15 @@ function consolidateLogsByDay(logs) {
   }));
 }
 
-function buildAthleteExerciseCardHtml(row, idx, rawLogs, exVideos = []) {
+function buildAthleteExerciseCardHtml(row, idx, rawLogs, exVideos = [], totalWeeks = 1) {
   const ex = row.exercises;
   const start = ex ? ex.img_start : "";
   const end = ex ? (ex.img_end || ex.img_start) : "";
   const isSingle = start === end;
+
+  const activeWeek = totalWeeks > 1 ? selectedAthleteWeek : 1;
+  const presc = resolveExercisePrescriptionForWeek(row, activeWeek);
+  const isDeload = String(presc.setsReps || "").toLowerCase().includes("deload");
 
   let roleTag = "";
   if (row.circuit_role === "start") {
@@ -432,6 +482,10 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs, exVideos = []) {
   } else if (row.circuit_role === "single") {
     roleTag = `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 BLOCCO CIRCUITO</span>`;
   }
+
+  const deloadBadge = (totalWeeks > 1 && isDeload)
+    ? `<span style="display:inline-block; font-size:0.68rem; background:rgba(56,189,248,0.18); color:#38bdf8; padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🔋 DELOAD</span>`
+    : "";
 
   if (isAthleteCleanView) {
     return `
@@ -446,18 +500,23 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs, exVideos = []) {
             `) : ''}
           </div>
           <div class="item-details">
-            <strong>${idx + 1}. ${escapeHtml(ex ? ex.name : 'Esercizio')}</strong> ${roleTag}
-            <div class="item-sub"><strong>${escapeHtml(row.sets_reps)}</strong> | Rest: ${escapeHtml(row.rest)} | RIR/@: ${escapeHtml(row.rir)}</div>
-            ${row.notes && row.notes !== '-' ? `<div class="item-notes" style="white-space: pre-wrap;">Note: ${escapeHtml(row.notes)}</div>` : ''}
+            <strong>${idx + 1}. ${escapeHtml(ex ? ex.name : 'Esercizio')}</strong> ${roleTag}${deloadBadge}
+            <div class="item-sub"><strong>${escapeHtml(presc.setsReps)}</strong> | Rest: ${escapeHtml(presc.rest)} | RIR/@: ${escapeHtml(presc.rir)}</div>
+            ${presc.notes && presc.notes !== '-' ? `<div class="item-notes" style="white-space: pre-wrap;">Note: ${escapeHtml(presc.notes)}</div>` : ''}
           </div>
         </div>
       </div>
     `;
   }
 
-  const dailyLogs = consolidateLogsByDay(rawLogs);
+  // Filtra i log per la settimana selezionata (se scheda multi-settimana)
+  const filteredLogsForWeek = totalWeeks > 1
+    ? (rawLogs || []).filter(l => (l.week_number || 1) === activeWeek)
+    : (rawLogs || []);
+
+  const dailyLogs = consolidateLogsByDay(filteredLogsForWeek);
   const latestLog = dailyLogs.length > 0 ? dailyLogs[0] : null;
-  const setsCount = parsePrescribedSetsCount(row.sets_reps);
+  const setsCount = parsePrescribedSetsCount(presc.setsReps);
   const parsedSeries = parseSeriesBreakdown(latestLog);
 
   let seriesRowsHtml = "";
@@ -473,7 +532,7 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs, exVideos = []) {
     `;
   }
 
-  let latestBoxesHtml = `<div style="font-size: 0.74rem; color: var(--text-muted); margin-top: 2px;">Nessun carico ancora registrato</div>`;
+  let latestBoxesHtml = `<div style="font-size: 0.74rem; color: var(--text-muted); margin-top: 2px;">Nessun carico registrato${totalWeeks > 1 ? ` per Settimana ${activeWeek}` : ''}</div>`;
 
   if (latestLog) {
     const isToday = isAthleteTodayLog(latestLog);
@@ -526,9 +585,9 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs, exVideos = []) {
           `) : ''}
         </div>
         <div class="item-details">
-          <strong>${idx + 1}. ${escapeHtml(ex ? ex.name : 'Esercizio')}</strong> ${roleTag}
-          <div class="item-sub"><strong>${escapeHtml(row.sets_reps)}</strong> | Rest: ${escapeHtml(row.rest)} | RIR/@: ${escapeHtml(row.rir)}</div>
-          ${row.notes && row.notes !== '-' ? `<div class="item-notes" style="white-space: pre-wrap;">Note: ${escapeHtml(row.notes)}</div>` : ''}
+          <strong>${idx + 1}. ${escapeHtml(ex ? ex.name : 'Esercizio')}</strong> ${roleTag}${deloadBadge}
+          <div class="item-sub"><strong>${escapeHtml(presc.setsReps)}</strong> | Rest: ${escapeHtml(presc.rest)} | RIR/@: ${escapeHtml(presc.rir)}</div>
+          ${presc.notes && presc.notes !== '-' ? `<div class="item-notes" style="white-space: pre-wrap;">Note: ${escapeHtml(presc.notes)}</div>` : ''}
         </div>
       </div>
 
@@ -538,7 +597,7 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs, exVideos = []) {
         </div>
         <div style="display: flex; gap: 6px; align-items: flex-end; margin-top: 6px;">
           <textarea id="logNote_${row.id}" rows="2" placeholder="Note generali per questo esercizio..." style="flex: 1; min-height: 44px; font-size: 0.78rem; padding: 6px 8px; border-color: rgba(16, 185, 129, 0.45); resize: vertical;"></textarea>
-          <button type="button" class="btn btn-success btn-sm" style="width: auto; flex-shrink: 0; align-self: stretch;" onclick="saveWorkoutLog('${row.id}', ${setsCount})">Salva</button>
+          <button type="button" class="btn btn-success btn-sm" style="width: auto; flex-shrink: 0; align-self: stretch;" onclick="saveWorkoutLog('${row.id}', ${setsCount}, ${activeWeek})">Salva</button>
         </div>
         ${latestBoxesHtml}
         ${videoSectionHtml}
@@ -556,6 +615,30 @@ function renderAthleteExercisesList(items, logsByExercise, videosByIndex = {}) {
   }
 
   container.innerHTML = "";
+
+  const totalWeeks = currentAthleteWorkoutData
+    ? getEffectiveAthleteWorkoutWeeks(currentAthleteWorkoutData.workout, items)
+    : 1;
+
+  if (totalWeeks > 1) {
+    if (selectedAthleteWeek < 1 || selectedAthleteWeek > totalWeeks) {
+      selectedAthleteWeek = 1;
+    }
+    let tabsHtml = "";
+    for (let w = 1; w <= totalWeeks; w++) {
+      const isSel = w === selectedAthleteWeek;
+      tabsHtml += `
+        <button type="button" onclick="selectAthleteWorkoutWeek(${w})" style="padding: 5px 10px; border-radius: 7px; font-size: 0.76rem; font-weight: 700; cursor: pointer; white-space: nowrap; border: 1px solid ${isSel ? 'var(--primary)' : 'var(--border)'}; background: ${isSel ? 'var(--primary)' : 'var(--subcard-bg)'}; color: ${isSel ? 'var(--primary-text)' : 'var(--text)'};">
+          Sett. ${w}
+        </button>
+      `;
+    }
+    const weekBar = document.createElement("div");
+    weekBar.style.cssText = "display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 10px; border-bottom: 1px solid var(--border);";
+    weekBar.innerHTML = tabsHtml;
+    container.appendChild(weekBar);
+  }
+
   const grouped = {};
   items.forEach(item => {
     if (!grouped[item.day_name]) grouped[item.day_name] = [];
@@ -565,7 +648,7 @@ function renderAthleteExercisesList(items, logsByExercise, videosByIndex = {}) {
   Object.keys(grouped).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(dayName => {
     const groupDiv = document.createElement("div");
     groupDiv.className = "day-group";
-    groupDiv.innerHTML = `<div class="day-badge">📅 ${escapeHtml(dayName)}</div>`;
+    groupDiv.innerHTML = `<div class="day-badge">📅 ${escapeHtml(dayName)}${totalWeeks > 1 ? ` — SETTIMANA ${selectedAthleteWeek}` : ''}</div>`;
 
     const dayItems = grouped[dayName];
     let inCircuit = false;
@@ -575,7 +658,7 @@ function renderAthleteExercisesList(items, logsByExercise, videosByIndex = {}) {
     dayItems.forEach((row, idx) => {
       const exLogs = logsByExercise[row.id] || [];
       const exVideos = videosByIndex[row.order_index] || [];
-      const cardHtml = buildAthleteExerciseCardHtml(row, idx, exLogs, exVideos);
+      const cardHtml = buildAthleteExerciseCardHtml(row, idx, exLogs, exVideos, totalWeeks);
 
       if (row.circuit_role === "single") {
         if (inCircuit) {
@@ -652,7 +735,6 @@ async function getSundayWeeklyCheckinAlertIfNeeded() {
   if (!currentProfile || !currentProfile.id) return null;
 
   const now = new Date();
-  // Mostra promemoria ogni Domenica (day === 0)
   if (now.getDay() !== 0) return null;
 
   const sundayKey = getCurrentWeekSundayKey();
@@ -804,12 +886,19 @@ async function loadAthleteWorkout() {
     videosByIndex[v.exercise_index].push(v);
   });
 
+  const isSameWorkout = currentAthleteWorkoutData && currentAthleteWorkoutData.workout && currentAthleteWorkoutData.workout.id === workout.id;
+
   currentAthleteWorkoutData = {
     workout,
     items: items || [],
     logsByExercise,
     videosByIndex
   };
+
+  const effWeeks = getEffectiveAthleteWorkoutWeeks(workout, items || []);
+  if (!isSameWorkout || selectedAthleteWeek < 1 || selectedAthleteWeek > effWeeks) {
+    selectedAthleteWeek = detectInitialAthleteWeek(workout, effWeeks);
+  }
 
   const hasItems = items && items.length > 0;
   if (cleanToggleWrap) {
@@ -859,7 +948,7 @@ async function loadAthleteWorkout() {
   renderAthleteExercisesList(items || [], logsByExercise, videosByIndex);
 }
 
-window.saveWorkoutLog = async function(workoutExerciseId, setsCount = 1) {
+window.saveWorkoutLog = async function(workoutExerciseId, setsCount = 1, weekNumber = 1) {
   const seriesParts = [];
   let maxWeight = null;
   let rirSum = 0;
@@ -902,6 +991,7 @@ window.saveWorkoutLog = async function(workoutExerciseId, setsCount = 1) {
 
   const formattedSeriesStr = seriesParts.length > 0 ? seriesParts.join(" | ") : null;
   const avgRir = rirCount > 0 ? Math.round((rirSum / rirCount) * 10) / 10 : null;
+  const targetWeek = Math.max(1, parseInt(weekNumber, 10) || 1);
 
   const now = new Date();
   const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0).toISOString();
@@ -912,6 +1002,7 @@ window.saveWorkoutLog = async function(workoutExerciseId, setsCount = 1) {
     .select('*')
     .eq('workout_exercise_id', workoutExerciseId)
     .eq('athlete_id', currentProfile.id)
+    .eq('week_number', targetWeek)
     .gte('logged_at', startOfDay)
     .lte('logged_at', endOfDay)
     .order('logged_at', { ascending: false });
@@ -936,6 +1027,7 @@ window.saveWorkoutLog = async function(workoutExerciseId, setsCount = 1) {
         reps_done: formattedSeriesStr || primaryLog.reps_done || "-",
         rir: avgRir !== null ? avgRir : primaryLog.rir,
         athlete_notes: existingNotes.length > 0 ? existingNotes.join("\n") : null,
+        week_number: targetWeek,
         logged_at: now.toISOString(),
         trainer_seen_at: null,
         athlete_seen_at: now.toISOString()
@@ -953,6 +1045,7 @@ window.saveWorkoutLog = async function(workoutExerciseId, setsCount = 1) {
         reps_done: formattedSeriesStr || "-",
         rir: avgRir,
         athlete_notes: noteVal || null,
+        week_number: targetWeek,
         trainer_seen_at: null,
         athlete_seen_at: now.toISOString()
       });
