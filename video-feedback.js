@@ -11,8 +11,9 @@ const MAX_COACH_AUDIO_DURATION_SEC = 120; // 2 minuti massimi
 const activeCoachAudioRecorders = new Map();
 
 function formatSecondsMmSs(totalSec) {
-  const mins = Math.floor(totalSec / 60);
-  const secs = totalSec % 60;
+  const safeSec = Math.max(0, Math.floor(totalSec || 0));
+  const mins = Math.floor(safeSec / 60);
+  const secs = safeSec % 60;
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
@@ -160,17 +161,54 @@ async function getSignedExerciseMediaUrl(storagePath) {
   return data.signedUrl;
 }
 
-// Riproduzione Video + Sincronizzazione eventuale Commento Audio del Coach
+// Helper condiviso per applicare la timeline al controller video
+function applyTimelineToController(controller, timeline, t) {
+  if (!controller || !timeline || timeline.length === 0) return;
+
+  let activeEvt = timeline[0];
+  for (let i = 0; i < timeline.length; i++) {
+    if (timeline[i].t <= t) {
+      activeEvt = timeline[i];
+    } else {
+      break;
+    }
+  }
+  if (!activeEvt) return;
+
+  if (activeEvt.paused) {
+    if (!controller.paused) controller.pauseSilent();
+    if (Math.abs(controller.currentTime - activeEvt.videoTime) > 0.15) {
+      controller.seekSilent(activeEvt.videoTime);
+    }
+  } else {
+    const expectedVideoTime = activeEvt.videoTime + Math.max(0, t - activeEvt.t);
+    const maxDur = controller.duration || 999;
+    if (expectedVideoTime >= maxDur) {
+      if (!controller.paused) controller.pauseSilent();
+      controller.seekSilent(maxDur);
+      return;
+    }
+    if (Math.abs(controller.currentTime - expectedVideoTime) > 0.35) {
+      controller.seekSilent(expectedVideoTime);
+    }
+    if (controller.paused) {
+      controller.playNative();
+    }
+  }
+}
+
+// ============================================================
+// PLAYER VIDEO SU CANVAS (FLUIDO NATIVO + MODALITÀ MIC-SAFE SU IOS)
+// ============================================================
+
 window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPath = "", timelineEncoded = "") {
   const box = document.getElementById(`videoPlayerBox_${feedbackId}`);
   if (!box) return;
 
-  if (!box.classList.contains("hidden") && box.querySelector("video")) {
+  if (!box.classList.contains("hidden") && box._playerController) {
     box.classList.add("hidden");
-    const vid = box.querySelector("video");
-    const aud = box.querySelector("audio");
-    if (vid) vid.pause();
-    if (aud) aud.pause();
+    box._playerController.destroy();
+    box._playerController = null;
     return;
   }
 
@@ -187,6 +225,18 @@ window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPa
     return;
   }
 
+  // Scarica il video in Blob locale per eliminare lag durante seek e registrazione
+  let localBlobUrl = null;
+  try {
+    const vidResp = await fetch(signedVideoUrl);
+    if (vidResp.ok) {
+      const vidBlob = await vidResp.blob();
+      localBlobUrl = URL.createObjectURL(vidBlob);
+    }
+  } catch (_) {
+    localBlobUrl = null;
+  }
+
   let timeline = [];
   if (timelineEncoded) {
     try {
@@ -198,86 +248,447 @@ window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPa
 
   const audioSectionHtml = signedAudioUrl ? `
     <div style="margin-top: 8px; padding: 8px; border-radius: 8px; background: rgba(56, 189, 248, 0.10); border: 1px solid rgba(56, 189, 248, 0.35);">
-      <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
         <span style="font-size: 0.75rem; font-weight: 700; color: #38bdf8;">Commento audio del Coach</span>
-        <button type="button" id="btnSyncPlay_${feedbackId}" class="btn btn-primary btn-sm" style="width: auto; padding: 3px 10px; font-size: 0.73rem;">
-          ▶️ Riproduci sincronizzato
-        </button>
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <span id="syncTimerLabel_${feedbackId}" style="font-size: 0.72rem; color: var(--text-muted);">0:00</span>
+          <button type="button" id="btnSyncPlay_${feedbackId}" class="btn btn-primary btn-sm" style="width: auto; padding: 4px 12px; font-size: 0.74rem;">
+            ▶️ Ascolta con video
+          </button>
+        </div>
       </div>
-      <audio id="coachFeedbackAudio_${feedbackId}" controls playsinline preload="metadata" style="width: 100%; height: 34px;">
-        <source src="${signedAudioUrl}">
-      </audio>
+      <div style="width: 100%; height: 5px; background: rgba(255,255,255,0.12); border-radius: 99px; margin-top: 7px; overflow: hidden;">
+        <div id="syncProgressBar_${feedbackId}" style="width: 0%; height: 100%; background: #38bdf8; transition: width 0.1s linear;"></div>
+      </div>
     </div>
   ` : "";
 
   box.innerHTML = `
-    <video id="exerciseFeedbackVideo_${feedbackId}" controls playsinline preload="metadata" style="width: 100%; max-height: 340px; border-radius: 8px; background: #000; margin-top: 6px;">
-      <source src="${signedVideoUrl}">
-      Il tuo browser non supporta la riproduzione video.
-    </video>
+    <div style="margin-top: 6px; background: #000; border-radius: 8px; overflow: hidden; border: 1px solid var(--border);">
+      <canvas id="videoCanvas_${feedbackId}" style="width: 100%; max-height: 330px; display: block; object-fit: contain; background: #000; cursor: pointer;"></canvas>
+      <div style="display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: rgba(15, 23, 42, 0.95); border-top: 1px solid rgba(255,255,255,0.1);">
+        <button type="button" id="btnCanvasPlayPause_${feedbackId}" class="btn btn-outline btn-sm" style="width: auto; padding: 3px 10px; font-size: 0.74rem; min-width: 72px;">
+          ▶️ Play
+        </button>
+        <input type="range" id="canvasScrubber_${feedbackId}" min="0" max="100" step="0.03" value="0" style="flex: 1; accent-color: var(--primary); cursor: pointer;">
+        <span id="canvasVideoTime_${feedbackId}" style="font-size: 0.7rem; color: #cbd5e1; font-variant-numeric: tabular-nums; min-width: 64px; text-align: right;">0:00 / 0:00</span>
+      </div>
+    </div>
     ${audioSectionHtml}
   `;
 
-  // Attiva la sincronizzazione automatica tra traccia audio del coach e video
-  if (signedAudioUrl) {
-    const videoEl = document.getElementById(`exerciseFeedbackVideo_${feedbackId}`);
-    const audioEl = document.getElementById(`coachFeedbackAudio_${feedbackId}`);
-    const syncBtn = document.getElementById(`btnSyncPlay_${feedbackId}`);
+  const canvas = document.getElementById(`videoCanvas_${feedbackId}`);
+  const ctx = canvas.getContext("2d");
+  const btnPlayPause = document.getElementById(`btnCanvasPlayPause_${feedbackId}`);
+  const scrubber = document.getElementById(`canvasScrubber_${feedbackId}`);
+  const timeLabel = document.getElementById(`canvasVideoTime_${feedbackId}`);
 
-    if (videoEl && audioEl) {
-      audioEl.addEventListener("play", () => {
-        videoEl.muted = true;
-      });
-      audioEl.addEventListener("pause", () => {
-        videoEl.pause();
-      });
-      audioEl.addEventListener("ended", () => {
-        videoEl.pause();
-        videoEl.muted = false;
-      });
+  const hiddenVideo = document.createElement("video");
+  hiddenVideo.crossOrigin = "anonymous";
+  hiddenVideo.muted = true;
+  hiddenVideo.defaultMuted = true;
+  hiddenVideo.playsInline = true;
+  hiddenVideo.setAttribute("playsinline", "");
+  hiddenVideo.setAttribute("webkit-playsinline", "");
+  hiddenVideo.preload = "auto";
+  hiddenVideo.src = localBlobUrl || signedVideoUrl;
 
-      audioEl.addEventListener("timeupdate", () => {
-        if (!timeline || timeline.length === 0) return;
-        const t = audioEl.currentTime;
+  let isPlaying = false;
+  let useMicSafeMode = false; // Attivo solo mentre il microfono del coach sta registrando
+  let nativeRafId = null;
+  let micStepInterval = null;
+  let lastStepWallMs = 0;
+  const listeners = [];
 
-        let activeEvt = timeline[0];
-        for (let i = 0; i < timeline.length; i++) {
-          if (timeline[i].t <= t) {
-            activeEvt = timeline[i];
-          } else {
-            break;
+  const emitVideoStateChange = () => {
+    listeners.forEach((fn) => {
+      try { fn(); } catch (_) {}
+    });
+  };
+
+  const drawCurrentFrame = () => {
+    if (hiddenVideo.videoWidth && hiddenVideo.videoHeight) {
+      if (canvas.width !== hiddenVideo.videoWidth || canvas.height !== hiddenVideo.videoHeight) {
+        canvas.width = hiddenVideo.videoWidth;
+        canvas.height = hiddenVideo.videoHeight;
+      }
+      try {
+        ctx.drawImage(hiddenVideo, 0, 0, canvas.width, canvas.height);
+      } catch (_) {}
+    }
+    const dur = hiddenVideo.duration || 0;
+    const cur = hiddenVideo.currentTime || 0;
+    if (dur > 0 && !scrubber._isDragging) {
+      scrubber.max = dur;
+      scrubber.value = cur;
+    }
+    timeLabel.textContent = `${formatSecondsMmSs(cur)} / ${formatSecondsMmSs(dur)}`;
+  };
+
+  const stopLoops = () => {
+    if (nativeRafId) {
+      cancelAnimationFrame(nativeRafId);
+      nativeRafId = null;
+    }
+    if (micStepInterval) {
+      clearInterval(micStepInterval);
+      micStepInterval = null;
+    }
+  };
+
+  const pauseVideo = (silent = false) => {
+    stopLoops();
+    if (!hiddenVideo.paused) {
+      hiddenVideo.pause();
+    }
+    isPlaying = false;
+    btnPlayPause.textContent = "▶️ Play";
+    drawCurrentFrame();
+    if (!silent) emitVideoStateChange();
+  };
+
+  // Riproduzione fluida nativa (usata fuori dalla registrazione microfono)
+  const playNative = () => {
+    if (isPlaying && !useMicSafeMode) return;
+    stopLoops();
+    const dur = hiddenVideo.duration || 0;
+    if (dur > 0 && hiddenVideo.currentTime >= dur - 0.05) {
+      hiddenVideo.currentTime = 0;
+    }
+    hiddenVideo.muted = true;
+    isPlaying = true;
+    btnPlayPause.textContent = "⏸️ Pausa";
+    emitVideoStateChange();
+
+    hiddenVideo.play().then(() => {
+      const renderLoop = () => {
+        if (!isPlaying || hiddenVideo.paused || hiddenVideo.ended) {
+          if (hiddenVideo.ended) {
+            pauseVideo(false);
           }
+          return;
         }
+        drawCurrentFrame();
+        nativeRafId = requestAnimationFrame(renderLoop);
+      };
+      nativeRafId = requestAnimationFrame(renderLoop);
+    }).catch(() => {
+      playMicSafe();
+    });
+  };
 
-        if (!activeEvt) return;
+  // Riproduzione senza .play() di sistema (usata SOLO mentre il microfono registra su iOS)
+  const playMicSafe = () => {
+    if (isPlaying) return;
+    stopLoops();
+    const dur = hiddenVideo.duration || 0;
+    if (dur > 0 && hiddenVideo.currentTime >= dur - 0.05) {
+      hiddenVideo.currentTime = 0;
+    }
+    isPlaying = true;
+    btnPlayPause.textContent = "⏸️ Pausa";
+    lastStepWallMs = performance.now();
+    emitVideoStateChange();
 
-        if (activeEvt.paused) {
-          if (!videoEl.paused) videoEl.pause();
-          if (Math.abs(videoEl.currentTime - activeEvt.videoTime) > 0.25) {
-            videoEl.currentTime = activeEvt.videoTime;
-          }
-        } else {
-          const expectedVideoTime = activeEvt.videoTime + Math.max(0, t - activeEvt.t);
-          if (Math.abs(videoEl.currentTime - expectedVideoTime) > 0.45) {
-            videoEl.currentTime = Math.min(expectedVideoTime, videoEl.duration || expectedVideoTime);
-          }
-          if (videoEl.paused && expectedVideoTime < (videoEl.duration || 999)) {
-            videoEl.play().catch(() => {});
-          }
-        }
-      });
+    micStepInterval = setInterval(() => {
+      if (!isPlaying) return;
+      const now = performance.now();
+      const dt = (now - lastStepWallMs) / 1000;
+      lastStepWallMs = now;
 
-      if (syncBtn) {
-        syncBtn.addEventListener("click", () => {
-          audioEl.currentTime = 0;
-          videoEl.currentTime = timeline.length > 0 ? timeline[0].videoTime : 0;
-          videoEl.muted = true;
-          audioEl.play().catch((err) => {
-            alert("Tocca Play sulla barra audio qui sotto per avviare il commento: " + err.message);
-          });
-        });
+      const totalDur = hiddenVideo.duration || 0;
+      const nextTime = (hiddenVideo.currentTime || 0) + dt;
+
+      if (totalDur > 0 && nextTime >= totalDur) {
+        hiddenVideo.currentTime = totalDur;
+        pauseVideo(false);
+      } else if (!hiddenVideo.seeking) {
+        hiddenVideo.currentTime = nextTime;
+      }
+    }, 33); // ~30 fps su Blob locale in RAM -> zero lag
+  };
+
+  const playVideo = () => {
+    if (useMicSafeMode) playMicSafe();
+    else playNative();
+  };
+
+  const seekVideo = (sec, silent = false) => {
+    const dur = hiddenVideo.duration || 0;
+    const target = Math.max(0, Math.min(sec, dur || sec));
+    hiddenVideo.currentTime = target;
+    if (!silent) emitVideoStateChange();
+  };
+
+  hiddenVideo.addEventListener("loadeddata", () => {
+    hiddenVideo.currentTime = 0.01;
+    drawCurrentFrame();
+  });
+
+  hiddenVideo.addEventListener("seeked", () => {
+    drawCurrentFrame();
+  });
+
+  btnPlayPause.addEventListener("click", () => {
+    if (isPlaying) pauseVideo(false);
+    else playVideo();
+  });
+
+  canvas.addEventListener("click", () => {
+    if (isPlaying) pauseVideo(false);
+    else playVideo();
+  });
+
+  scrubber.addEventListener("input", () => {
+    scrubber._isDragging = true;
+    seekVideo(parseFloat(scrubber.value), false);
+  });
+  scrubber.addEventListener("change", () => {
+    scrubber._isDragging = false;
+    seekVideo(parseFloat(scrubber.value), false);
+  });
+
+  const controller = {
+    get currentTime() { return hiddenVideo.currentTime || 0; },
+    get duration() { return hiddenVideo.duration || 0; },
+    get paused() { return !isPlaying; },
+    setMicSafeMode(enabled) { useMicSafeMode = Boolean(enabled); },
+    play: playVideo,
+    playNative,
+    pause: () => pauseVideo(false),
+    pauseSilent: () => pauseVideo(true),
+    seek: (sec) => seekVideo(sec, false),
+    seekSilent: (sec) => seekVideo(sec, true),
+    onStateChange(fn) { listeners.push(fn); },
+    offStateChange(fn) {
+      const idx = listeners.indexOf(fn);
+      if (idx !== -1) listeners.splice(idx, 1);
+    },
+    stopAudioSync: null,
+    destroy() {
+      if (this.stopAudioSync) this.stopAudioSync();
+      pauseVideo(true);
+      hiddenVideo.src = "";
+      if (localBlobUrl) {
+        URL.revokeObjectURL(localBlobUrl);
+        localBlobUrl = null;
       }
     }
+  };
+
+  box._playerController = controller;
+
+  // ============================================================
+  // RIPRODUZIONE SINCRONIZZATA CON WEB AUDIO API (LATO ATLETA E COACH)
+  // ============================================================
+  if (!signedAudioUrl) return;
+
+  const syncBtn = document.getElementById(`btnSyncPlay_${feedbackId}`);
+  const timerLabel = document.getElementById(`syncTimerLabel_${feedbackId}`);
+  const progressBar = document.getElementById(`syncProgressBar_${feedbackId}`);
+
+  let audioCtx = null;
+  let audioBuffer = null;
+  let sourceNode = null;
+  let isAudioPlaying = false;
+  let startedAtCtxTime = 0;
+  let pausedOffsetSec = 0;
+  let audioRafId = null;
+
+  const stopAudioPlayback = (resetToStart = false) => {
+    isAudioPlaying = false;
+    if (audioRafId) {
+      cancelAnimationFrame(audioRafId);
+      audioRafId = null;
+    }
+    if (sourceNode) {
+      try { sourceNode.onended = null; sourceNode.stop(); } catch (_) {}
+      sourceNode = null;
+    }
+    pauseVideo(true);
+    if (resetToStart) {
+      pausedOffsetSec = 0;
+      if (progressBar) progressBar.style.width = "0%";
+      if (timerLabel && audioBuffer) {
+        timerLabel.textContent = `0:00 / ${formatSecondsMmSs(Math.round(audioBuffer.duration))}`;
+      }
+    }
+    if (syncBtn) syncBtn.textContent = "▶️ Ascolta con video";
+  };
+
+  controller.stopAudioSync = () => {
+    stopAudioPlayback(true);
+    if (audioCtx) {
+      audioCtx.close().catch(() => {});
+      audioCtx = null;
+    }
+  };
+
+  const audioTick = () => {
+    if (!isAudioPlaying || !audioCtx || !audioBuffer) return;
+    const elapsed = pausedOffsetSec + (audioCtx.currentTime - startedAtCtxTime);
+    const total = audioBuffer.duration || 1;
+
+    if (elapsed >= total) {
+      stopAudioPlayback(true);
+      return;
+    }
+
+    if (timerLabel) {
+      timerLabel.textContent = `${formatSecondsMmSs(Math.floor(elapsed))} / ${formatSecondsMmSs(Math.round(total))}`;
+    }
+    if (progressBar) {
+      progressBar.style.width = `${Math.min(100, (elapsed / total) * 100)}%`;
+    }
+
+    applyTimelineToController(controller, timeline, elapsed);
+    audioRafId = requestAnimationFrame(audioTick);
+  };
+
+  if (syncBtn) {
+    syncBtn.addEventListener("click", async () => {
+      if (isAudioPlaying) {
+        pausedOffsetSec += audioCtx.currentTime - startedAtCtxTime;
+        stopAudioPlayback(false);
+        syncBtn.textContent = "▶️ Riprendi";
+        return;
+      }
+
+      try {
+        syncBtn.disabled = true;
+        syncBtn.textContent = "⏳ Caricamento...";
+
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!audioCtx) {
+          audioCtx = new AudioContextClass();
+        }
+        if (audioCtx.state === "suspended") {
+          await audioCtx.resume();
+        }
+
+        if (!audioBuffer) {
+          const resp = await fetch(signedAudioUrl);
+          const arrayBuf = await resp.arrayBuffer();
+          audioBuffer = await audioCtx.decodeAudioData(arrayBuf);
+        }
+
+        if (pausedOffsetSec === 0) {
+          seekVideo(timeline.length > 0 ? timeline[0].videoTime : 0, true);
+        }
+
+        sourceNode = audioCtx.createBufferSource();
+        sourceNode.buffer = audioBuffer;
+        sourceNode.connect(audioCtx.destination);
+        sourceNode.onended = () => {
+          if (isAudioPlaying) stopAudioPlayback(true);
+        };
+
+        startedAtCtxTime = audioCtx.currentTime;
+        isAudioPlaying = true;
+        sourceNode.start(0, pausedOffsetSec);
+
+        syncBtn.disabled = false;
+        syncBtn.textContent = "⏸️ Pausa";
+        audioRafId = requestAnimationFrame(audioTick);
+      } catch (err) {
+        console.error("Errore riproduzione audio sync:", err);
+        syncBtn.disabled = false;
+        syncBtn.textContent = "▶️ Ascolta con video";
+        alert("Impossibile avviare l'audio: " + err.message);
+      }
+    });
+  }
+};
+
+// ============================================================
+// ANTEPRIMA SINCRONIZZATA PER IL COACH PRIMA DEL SALVATAGGIO
+// ============================================================
+
+window.playCoachDraftPreviewSync = async function(feedbackId) {
+  const recState = activeCoachAudioRecorders.get(feedbackId);
+  const playerBox = document.getElementById(`videoPlayerBox_${feedbackId}`);
+  const controller = playerBox ? playerBox._playerController : null;
+  const btn = document.getElementById(`btnCoachDraftPreview_${feedbackId}`);
+  const timerEl = document.getElementById(`coachDraftTimer_${feedbackId}`);
+
+  if (!recState || !recState.recordedBlob || !controller) return;
+
+  // Se sta già riproducendo l'anteprima -> stop
+  if (recState._previewCtx) {
+    if (recState._previewRaf) cancelAnimationFrame(recState._previewRaf);
+    try { recState._previewSource.stop(); } catch (_) {}
+    recState._previewCtx.close().catch(() => {});
+    recState._previewCtx = null;
+    controller.pauseSilent();
+    if (btn) btn.textContent = "▶️ Riascolta con video";
+    if (timerEl) timerEl.textContent = "0:00";
+    return;
+  }
+
+  try {
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "⏳...";
+    }
+
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AudioContextClass();
+    if (ctx.state === "suspended") await ctx.resume();
+
+    const arrayBuf = await recState.recordedBlob.arrayBuffer();
+    const audioBuffer = await ctx.decodeAudioData(arrayBuf);
+
+    const startTime = ctx.currentTime;
+    const source = ctx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(ctx.destination);
+
+    recState._previewCtx = ctx;
+    recState._previewSource = source;
+
+    controller.setMicSafeMode(false);
+    controller.seekSilent(recState.timeline.length > 0 ? recState.timeline[0].videoTime : 0);
+
+    const stopPreview = () => {
+      if (recState._previewRaf) cancelAnimationFrame(recState._previewRaf);
+      if (recState._previewCtx) {
+        recState._previewCtx.close().catch(() => {});
+        recState._previewCtx = null;
+      }
+      controller.pauseSilent();
+      if (btn) btn.textContent = "▶️ Riascolta con video";
+      if (timerEl) timerEl.textContent = `0:00 / ${formatSecondsMmSs(Math.round(audioBuffer.duration))}`;
+    };
+
+    source.onended = stopPreview;
+
+    const tick = () => {
+      if (!recState._previewCtx) return;
+      const elapsed = ctx.currentTime - startTime;
+      const total = audioBuffer.duration || 1;
+      if (elapsed >= total) {
+        stopPreview();
+        return;
+      }
+      if (timerEl) {
+        timerEl.textContent = `${formatSecondsMmSs(Math.floor(elapsed))} / ${formatSecondsMmSs(Math.round(total))}`;
+      }
+      applyTimelineToController(controller, recState.timeline, elapsed);
+      recState._previewRaf = requestAnimationFrame(tick);
+    };
+
+    source.start(0);
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "⏹️ Stop anteprima";
+    }
+    recState._previewRaf = requestAnimationFrame(tick);
+  } catch (err) {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "▶️ Riascolta con video";
+    }
+    alert("Errore anteprima: " + err.message);
   }
 };
 
@@ -304,24 +715,38 @@ window.toggleCoachAudioRecording = async function(feedbackId, videoPath) {
   const statusEl = document.getElementById(`coachAudioRecStatus_${feedbackId}`);
   const previewWrap = document.getElementById(`coachAudioPreviewWrap_${feedbackId}`);
 
-  // Se sta già registrando -> FERMA la registrazione
-  if (activeCoachAudioRecorders.has(feedbackId)) {
-    const state = activeCoachAudioRecorders.get(feedbackId);
-    if (state.timerInterval) clearInterval(state.timerInterval);
-    if (state.recorder && state.recorder.state !== "inactive") {
-      state.recorder.stop();
+  // Se sta già registrando ATTIVAMENTE -> FERMA la registrazione
+  const existingState = activeCoachAudioRecorders.get(feedbackId);
+  if (existingState && existingState.recorder) {
+    if (existingState.timerInterval) clearInterval(existingState.timerInterval);
+    if (existingState.recorder.state !== "inactive") {
+      existingState.recorder.stop();
     }
     return;
   }
 
-  // Apri il video se non è già aperto, così il coach può metterlo in pausa mentre parla
+  // Se c'era una registrazione precedente in anteprima ("Registra di nuovo"), fermiamo eventuale preview e la scartiamo
+  if (existingState) {
+    if (existingState._previewCtx) {
+      if (existingState._previewRaf) cancelAnimationFrame(existingState._previewRaf);
+      try { existingState._previewSource.stop(); } catch (_) {}
+      existingState._previewCtx.close().catch(() => {});
+    }
+    activeCoachAudioRecorders.delete(feedbackId);
+    if (previewWrap) {
+      previewWrap.classList.add("hidden");
+      previewWrap.innerHTML = "";
+    }
+  }
+
+  // Apri il player canvas se non è già aperto
   const playerBox = document.getElementById(`videoPlayerBox_${feedbackId}`);
-  if (playerBox && (playerBox.classList.contains("hidden") || !playerBox.querySelector("video"))) {
+  if (playerBox && (playerBox.classList.contains("hidden") || !playerBox._playerController)) {
     await window.playExerciseVideoFeedback(feedbackId, videoPath);
   }
 
-  const videoEl = document.getElementById(`exerciseFeedbackVideo_${feedbackId}`);
-  if (!videoEl) {
+  const controller = playerBox ? playerBox._playerController : null;
+  if (!controller) {
     alert("Impossibile aprire il player video per la registrazione.");
     return;
   }
@@ -342,29 +767,29 @@ window.toggleCoachAudioRecording = async function(feedbackId, videoPath) {
     const timeline = [];
     const startTimeMs = Date.now();
 
+    controller.setMicSafeMode(true);
+    controller.seek(0);
+
     const recordEvent = () => {
       const elapsedSec = Math.round(((Date.now() - startTimeMs) / 1000) * 100) / 100;
       timeline.push({
         t: elapsedSec,
-        videoTime: Math.round((videoEl.currentTime || 0) * 100) / 100,
-        paused: Boolean(videoEl.paused)
+        videoTime: Math.round((controller.currentTime || 0) * 100) / 100,
+        paused: Boolean(controller.paused)
       });
     };
 
     recordEvent();
-    const onVideoEvent = () => recordEvent();
-    videoEl.addEventListener("play", onVideoEvent);
-    videoEl.addEventListener("pause", onVideoEvent);
-    videoEl.addEventListener("seeked", onVideoEvent);
+    controller.onStateChange(recordEvent);
 
     recorder.ondataavailable = (e) => {
       if (e.data && e.data.size > 0) chunks.push(e.data);
     };
 
     recorder.onstop = () => {
-      videoEl.removeEventListener("play", onVideoEvent);
-      videoEl.removeEventListener("pause", onVideoEvent);
-      videoEl.removeEventListener("seeked", onVideoEvent);
+      controller.offStateChange(recordEvent);
+      controller.setMicSafeMode(false);
+      controller.pauseSilent();
       micStream.getTracks().forEach((tr) => tr.stop());
 
       const currentState = activeCoachAudioRecorders.get(feedbackId);
@@ -372,7 +797,6 @@ window.toggleCoachAudioRecording = async function(feedbackId, videoPath) {
 
       const finalMime = (recorder.mimeType || mimeType || "audio/mp4").split(";")[0];
       const audioBlob = new Blob(chunks, { type: finalMime });
-      const audioPreviewUrl = URL.createObjectURL(audioBlob);
 
       activeCoachAudioRecorders.set(feedbackId, {
         recordedBlob: audioBlob,
@@ -386,17 +810,18 @@ window.toggleCoachAudioRecording = async function(feedbackId, videoPath) {
         btnRec.style.color = "";
       }
       if (statusEl) {
-        statusEl.textContent = `Audio pronto (${timeline.length} punti sync). Clicca "Salva" per inviarlo.`;
+        statusEl.textContent = `Audio pronto. Clicca "Salva" per inviarlo.`;
       }
       if (previewWrap) {
         previewWrap.classList.remove("hidden");
         previewWrap.innerHTML = `
-          <div style="margin-top: 6px; padding: 6px; border-radius: 6px; background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.35);">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-              <span style="font-size:0.72rem; font-weight:700; color:#10b981;">Anteprima commento audio:</span>
-              <button type="button" class="btn btn-outline btn-sm" style="padding:1px 6px; font-size:0.68rem; width:auto; border-color:var(--danger); color:var(--danger);" onclick="discardCoachRecordedAudio('${feedbackId}')">Scarta</button>
+          <div style="margin-top: 6px; padding: 7px 8px; border-radius: 6px; background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.35); display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <span style="font-size:0.72rem; font-weight:700; color:#10b981;">Anteprima sincronizzata:</span>
+            <div style="display:flex; gap:6px; align-items:center;">
+              <span id="coachDraftTimer_${feedbackId}" style="font-size:0.7rem; color:var(--text-muted);">0:00</span>
+              <button type="button" id="btnCoachDraftPreview_${feedbackId}" class="btn btn-primary btn-sm" style="padding:2px 9px; font-size:0.71rem; width:auto;" onclick="playCoachDraftPreviewSync('${feedbackId}')">▶️ Riascolta con video</button>
+              <button type="button" class="btn btn-outline btn-sm" style="padding:2px 7px; font-size:0.7rem; width:auto; border-color:var(--danger); color:var(--danger);" onclick="discardCoachRecordedAudio('${feedbackId}')">Scarta</button>
             </div>
-            <audio controls playsinline src="${audioPreviewUrl}" style="width: 100%; height: 32px;"></audio>
           </div>
         `;
       }
@@ -404,8 +829,7 @@ window.toggleCoachAudioRecording = async function(feedbackId, videoPath) {
 
     // Avvia registrazione (limite massimo 2 minuti = 120s)
     recorder.start(250);
-    videoEl.muted = true;
-    videoEl.play().catch(() => {});
+    controller.play();
 
     let sec = 0;
     const maxFormatted = formatSecondsMmSs(MAX_COACH_AUDIO_DURATION_SEC);
@@ -432,11 +856,18 @@ window.toggleCoachAudioRecording = async function(feedbackId, videoPath) {
     });
   } catch (err) {
     console.error(err);
+    controller.setMicSafeMode(false);
     alert("Permesso microfono negato o non disponibile: " + err.message);
   }
 };
 
 window.discardCoachRecordedAudio = function(feedbackId) {
+  const existingState = activeCoachAudioRecorders.get(feedbackId);
+  if (existingState && existingState._previewCtx) {
+    if (existingState._previewRaf) cancelAnimationFrame(existingState._previewRaf);
+    try { existingState._previewSource.stop(); } catch (_) {}
+    existingState._previewCtx.close().catch(() => {});
+  }
   activeCoachAudioRecorders.delete(feedbackId);
   const previewWrap = document.getElementById(`coachAudioPreviewWrap_${feedbackId}`);
   const statusEl = document.getElementById(`coachAudioRecStatus_${feedbackId}`);
@@ -597,6 +1028,14 @@ window.saveCoachVideoFeedback = async function(feedbackId, clientId, clientName,
   if (!feedbackText && !hasNewRecordedAudio) {
     alert("Scrivi una nota tecnica oppure registra un commento audio prima di salvare.");
     return;
+  }
+
+  // Ferma eventuale anteprima audio in corso prima di salvare
+  if (recState && recState._previewCtx) {
+    if (recState._previewRaf) cancelAnimationFrame(recState._previewRaf);
+    try { recState._previewSource.stop(); } catch (_) {}
+    recState._previewCtx.close().catch(() => {});
+    recState._previewCtx = null;
   }
 
   const saveBtn = document.getElementById(`btnSaveCoachVideo_${feedbackId}`);
