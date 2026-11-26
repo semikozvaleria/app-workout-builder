@@ -568,27 +568,35 @@ async function loadExercisesFromCloud(forceRefresh = false) {
 async function loadTrainerDrafts() {
   if (!currentProfile || currentProfile.role !== 'trainer') return;
 
-  const { data: drafts, error } = await supabaseClient
+  const clientsList = getSafeTrainerClients();
+  const clientIds = clientsList.map(c => c.id).filter(Boolean);
+
+  let query = supabaseClient
     .from('workouts')
-    .select('id, athlete_id, title, duration_weeks, created_at, workout_exercises(count)')
-    .eq('trainer_id', currentProfile.id)
+    .select('id, athlete_id, trainer_id, title, duration_weeks, created_at, workout_exercises(count)')
     .eq('status', 'draft')
     .order('created_at', { ascending: false });
+
+  if (clientIds.length > 0) {
+    query = query.or(`trainer_id.eq.${currentProfile.id},athlete_id.in.(${clientIds.join(',')})`);
+  } else {
+    query = query.eq('trainer_id', currentProfile.id);
+  }
+
+  const { data: drafts, error } = await query;
 
   const card = document.getElementById("trainerDraftsCard");
   const listEl = document.getElementById("trainerDraftsList");
   const countEl = document.getElementById("draftsCountBadge");
 
   if (error || !drafts || drafts.length === 0) {
-    card.classList.add("hidden");
-    listEl.innerHTML = "";
+    if (card) card.classList.add("hidden");
+    if (listEl) listEl.innerHTML = "";
     return;
   }
 
   card.classList.remove("hidden");
   countEl.textContent = `${drafts.length} ${drafts.length === 1 ? 'bozza' : 'bozze'}`;
-
-  const clientsList = getSafeTrainerClients();
 
   listEl.innerHTML = drafts.map(d => {
     const client = clientsList.find(c => c.id === d.athlete_id);
@@ -610,6 +618,13 @@ async function loadTrainerDrafts() {
       </div>
     `;
   }).join("");
+}
+
+const navBuilderTabBtn = document.getElementById("navTrainerBuilder");
+if (navBuilderTabBtn) {
+  navBuilderTabBtn.addEventListener("click", () => {
+    loadTrainerDrafts();
+  });
 }
 
 window.resumeDraft = async function(draftId) {
@@ -702,7 +717,7 @@ window.deleteDraft = async function(draftId) {
 
   await Promise.all([
     supabaseClient.from('workout_exercises').delete().eq('workout_id', draftId),
-    supabaseClient.from('workouts').delete().eq('id', draftId).eq('trainer_id', currentProfile.id)
+    supabaseClient.from('workouts').delete().eq('id', draftId)
   ]);
 
   if (currentDraftId === draftId) currentDraftId = null;
@@ -732,13 +747,13 @@ document.getElementById("btnSaveDraft").addEventListener("click", async () => {
         supabaseClient
           .from('workouts')
           .update({
+            trainer_id: currentProfile.id,
             athlete_id: athleteId,
             title: pdfName || "Bozza Scheda",
             general_notes: generalNotes,
             duration_weeks: durationWeeks
           })
-          .eq('id', targetWorkoutId)
-          .eq('trainer_id', currentProfile.id),
+          .eq('id', targetWorkoutId),
         supabaseClient
           .from('workout_exercises')
           .delete()
