@@ -219,9 +219,9 @@ textarea { resize: vertical; min-height: 70px; font-size: 0.85rem; line-height: 
 .past-log-item-flex { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; }
 
 /* Vista Progressi Trainer affiancata */
-.progress-split { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.progress-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 @media (min-width: 560px) {
-  .progress-split { grid-template-columns: 1.15fr 0.85fr; align-items: start; }
+  .progress-split { grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); align-items: start; }
 }
 .athlete-feedback-box { background: var(--log-bg); border: 1px solid var(--log-border); border-left: 3px solid var(--success); border-radius: 6px; padding: 8px 10px; font-size: 0.8rem; }
 .athlete-feedback-box.empty { border-left-color: var(--border); color: var(--text-muted); }
@@ -1045,3 +1045,10 @@ body:not(.light-theme) .note-coach-box {
 .app-footer.hidden { display: none; }
 .app-footer strong { color: var(--primary); font-weight: 700; }
 .app-footer-sep { opacity: 0.6; }
+
+/* Card video (coach): titolo, data e stato sempre sulla stessa riga */
+.vf-card-title { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1 1 auto; white-space: nowrap; }
+.vf-card-title strong { font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.vf-card-date { font-size: 0.72rem; color: var(--text-muted); flex-shrink: 0; }
+.vf-card-badge { font-size: 0.64rem; font-weight: 700; padding: 1px 5px; border-radius: 4px; flex-shrink: 0; white-space: nowrap; }
+@media (max-width: 360px) { .vf-hide-xs { display: none; } }

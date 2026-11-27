@@ -542,7 +542,7 @@ function renderWorkoutDaysHtml(items) {
       return `
         <div class="day-group" style="margin-top: 8px;">
           <div class="day-badge">
-            📅 ${escapeHtml(dayName)} (${dayItems.length} ESERCIZI)
+            ${escapeHtml(dayName)} (${dayItems.length} ESERCIZI)
           </div>
           ${dayContent}
         </div>
@@ -915,7 +915,7 @@ window.viewClientProgress = async function(clientId, clientName, selectedWorkout
   Object.keys(grouped)
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
     .forEach(dayName => {
-      html += `<div class="day-group"><div class="day-badge">📅 ${escapeHtml(dayName)}</div>`;
+      html += `<div class="day-group"><div class="day-badge">${escapeHtml(dayName)}</div>`;
 
       grouped[dayName].forEach((row, idx) => {
         const exFromMap = (typeof EXERCISE_MAP !== "undefined") ? EXERCISE_MAP.get(row.exercise_id) : null;

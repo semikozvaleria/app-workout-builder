@@ -680,7 +680,7 @@ function renderAthleteExercisesList(items, logsByExercise, videosByIndex = {}) {
   Object.keys(grouped).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(dayName => {
     const groupDiv = document.createElement("div");
     groupDiv.className = "day-group";
-    groupDiv.innerHTML = `<div class="day-badge">📅 ${escapeHtml(dayName)}${totalWeeks > 1 ? ` — SETTIMANA ${selectedAthleteWeek}` : ''}</div>`;
+    groupDiv.innerHTML = `<div class="day-badge">${escapeHtml(dayName)}${totalWeeks > 1 ? ` — SETTIMANA ${selectedAthleteWeek}` : ''}</div>`;
 
     const dayItems = grouped[dayName];
     let inCircuit = false;

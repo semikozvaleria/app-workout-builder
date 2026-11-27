@@ -448,7 +448,7 @@ window.viewExternalAthleteWorkouts = async function(athleteName) {
 
         return `
           <div class="day-group" style="margin-top: 8px;">
-            <div class="day-badge">📅 ${escapeHtml(dayName)} (${dayItems.length} ESERCIZI)</div>
+            <div class="day-badge">${escapeHtml(dayName)} (${dayItems.length} ESERCIZI)</div>
             ${rowsHtml}
           </div>
         `;

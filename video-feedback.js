@@ -1040,7 +1040,7 @@ window.toggleCoachAudioRecording = async function(feedbackId, videoPath) {
       });
 
       if (btnRec) {
-        btnRec.textContent = "🎙️ Registra di nuovo";
+        btnRec.textContent = "Registra di nuovo";
         btnRec.style.background = "";
         btnRec.style.color = "";
       }
@@ -1120,7 +1120,7 @@ window.discardCoachRecordedAudio = function(feedbackId) {
     previewWrap.innerHTML = "";
   }
   if (statusEl) statusEl.textContent = "";
-  if (btnRec) btnRec.textContent = "🎙️ Registra commento audio";
+  if (btnRec) btnRec.textContent = "Registra commento audio";
 };
 
 // Upload video da parte dell'Atleta
@@ -1374,7 +1374,7 @@ window.saveCoachVideoFeedback = async function(feedbackId, clientId, clientName,
   } finally {
     if (saveBtn) {
       saveBtn.disabled = false;
-      saveBtn.textContent = "💾 Salva";
+      saveBtn.textContent = "Salva";
     }
   }
 };
@@ -1426,13 +1426,13 @@ function buildAthleteVideoSectionHtml(row, videoFeedbacksForExercise) {
   const pendingCount = list.filter(v => v.status === "pending").length;
   const reviewedCount = list.filter(v => v.status === "reviewed").length;
   const badgeSummary = list.length > 0
-    ? `(${list.length}${reviewedCount > 0 ? ` • ${reviewedCount} ✅` : ""}${pendingCount > 0 ? ` • ${pendingCount} ⏳` : ""})`
+    ? `(${list.length}${reviewedCount > 0 ? ` • ${reviewedCount} ✅` : ""}${pendingCount > 0 ? ` • ${pendingCount} in attesa` : ""})`
     : "";
 
   return `
     <details style="margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 6px;" ${list.some(v => (v.coach_feedback || v.coach_audio_path) && !v.athlete_seen_at) ? "open" : ""}>
       <summary style="cursor: pointer; font-size: 0.77rem; font-weight: 700; color: var(--primary);">
-        🎥 Aggiungi video esecuzione dell'esercizio ${badgeSummary}
+        Aggiungi video esecuzione dell'esercizio ${badgeSummary}
       </summary>
       <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
         <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
@@ -1468,13 +1468,13 @@ function buildTrainerVideoFeedbackHtml(videoFeedbacksForExercise, clientId, clie
     const existingText = vf.coach_feedback === "Ascolta il commento sul video" ? "" : (vf.coach_feedback || "");
 
     const badge = isPending
-      ? `<span style="font-size:0.68rem; background:rgba(239,68,68,0.18); color:#ef4444; padding:1px 6px; border-radius:4px; font-weight:700;">● DA REVISIONARE</span>`
-      : `<span style="font-size:0.68rem; background:rgba(16,185,129,0.18); color:#10b981; padding:1px 6px; border-radius:4px; font-weight:700;">✅ Revisionato</span>`;
+      ? `<span class="vf-card-badge" style="background:rgba(239,68,68,0.18); color:#ef4444;">● DA REVISIONARE</span>`
+      : `<span class="vf-card-badge" style="background:rgba(16,185,129,0.18); color:#10b981;">✅ Revisionato</span>`;
 
     return `
       <div style="background: var(--subcard-bg); border: 1.5px solid ${isPending ? "#ef4444" : "var(--border)"}; border-radius: 8px; padding: 9px; margin-top: 8px;">
         <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
-          <strong style="font-size: 0.78rem;">🎥 Video Esecuzione (${dateStr}) ${badge}</strong>
+          <div class="vf-card-title"><strong>Video<span class="vf-hide-xs"> Esecuzione</span></strong><span class="vf-card-date">${dateStr}</span>${badge}</div>
           ${vf.video_path
             ? `<button type="button" class="btn btn-primary btn-sm" style="padding: 3px 9px; font-size: 0.74rem; width: auto;" onclick="playExerciseVideoFeedback('${vf.id}', '${escapeJsAttr(vf.video_path)}', '${escapeJsAttr(vf.coach_audio_path || "")}', '${timelineEncoded}')">▶️ Guarda Video</button>`
             : `<span style="font-size: 0.72rem; color: var(--text-muted);">Video rimosso (>45 gg)</span>`}
@@ -1486,7 +1486,7 @@ function buildTrainerVideoFeedbackHtml(videoFeedbacksForExercise, clientId, clie
         <div style="margin-top: 8px; padding-top: 7px; border-top: 1px dashed var(--border);">
           <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
             <button type="button" id="btnRecordCoachAudio_${vf.id}" class="btn btn-outline btn-sm" style="width: auto; font-size: 0.74rem;" onclick="toggleCoachAudioRecording('${vf.id}', '${escapeJsAttr(vf.video_path || "")}')">
-              ${hasAudio ? "🎙️ Registra nuovo audio" : "🎙️ Registra commento audio"}
+              ${hasAudio ? "Registra nuovo audio" : "Registra commento audio"}
             </button>
             ${hasAudio ? `<span style="font-size: 0.7rem; color: #10b981; font-weight: 700;">✅ Audio salvato</span>` : `<span style="font-size: 0.7rem; color: var(--text-muted);">Max 2 min</span>`}
           </div>
@@ -1501,7 +1501,7 @@ function buildTrainerVideoFeedbackHtml(videoFeedbacksForExercise, clientId, clie
           <label style="font-size: 0.72rem; color: var(--text-muted); display: block; margin-bottom: 3px;">Nota Tecnica Scritta (opzionale se registri audio):</label>
           <div style="display: flex; gap: 6px; align-items: flex-end;">
             <textarea id="coachVideoNoteInput_${vf.id}" rows="2" placeholder="Scrivi correzione tecnica o aggiungi dettagli all'audio..." style="flex: 1; min-height: 46px; font-size: 0.78rem; padding: 6px 8px; resize: vertical;">${escapeHtml(existingText)}</textarea>
-            <button type="button" id="btnSaveCoachVideo_${vf.id}" class="btn btn-success btn-sm" style="width: auto; align-self: stretch;" onclick="saveCoachVideoFeedback('${vf.id}', '${clientId}', '${escapeJsAttr(clientName)}', '${workoutId}')">💾 Salva</button>
+            <button type="button" id="btnSaveCoachVideo_${vf.id}" class="btn btn-success btn-sm" style="width: auto; align-self: stretch;" onclick="saveCoachVideoFeedback('${vf.id}', '${clientId}', '${escapeJsAttr(clientName)}', '${workoutId}')">Salva</button>
           </div>
         </div>
       </div>

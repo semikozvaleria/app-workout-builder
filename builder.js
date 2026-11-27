@@ -1248,7 +1248,7 @@ function buildWeeklyProgressionSummaryBadges(item, weeksCount) {
     if (!entry) continue;
     const isDeload = isDeloadPrescription(entry);
     const sr = entry.sets_reps || "-";
-    chips.push(`<span class="prog-chip${isDeload ? " deload" : ""}" title="Settimana ${w}: ${escapeHtml(sr)}"><strong>S${w}${isDeload ? "🔋" : ""}</strong> ${escapeHtml(sr)}</span>`);
+    chips.push(`<span class="prog-chip${isDeload ? " deload" : ""}" title="Settimana ${w}: ${escapeHtml(sr)}"><strong>S${w}</strong> ${escapeHtml(sr)}</span>`);
   }
   if (chips.length === 0) return "";
   return `<div class="prog-summary-grid" style="${progGridColsStyle(chips.length)}">${chips.join("")}</div>`;
@@ -1261,7 +1261,7 @@ function buildWeeklyProgressionEditorHtml(item, weeksCount) {
 
   if (!isOpen) {
     return `
-      <div style="margin-top: 7px;">
+      <div style="margin-top: 7px; display: flex; justify-content: center;">
         <button type="button" class="btn btn-outline btn-sm" style="width: auto; font-size: 0.72rem; padding: 4px 10px; ${hasProg ? 'border-color: var(--primary); color: var(--primary);' : ''}" onclick="toggleItemProgressionPanel(${item.uid})">
           📅 ${hasProg ? `Modifica Progressione (${weeksCount} sett.)` : `Programma per Settimana (${weeksCount} sett.)`}
         </button>
@@ -1282,7 +1282,7 @@ function buildWeeklyProgressionEditorHtml(item, weeksCount) {
     const sr = wData.sets_reps && wData.sets_reps !== "-" ? wData.sets_reps : "";
     weekTabsHtml += `
       <button type="button" class="prog-week-tab${isDeload ? " deload" : ""}${isSel ? " selected" : ""}" onclick="selectProgressionWeek(${item.uid}, ${w})">
-        <span class="wk">${isDeload ? "🔋 " : ""}Sett. ${w}</span>
+        <span class="wk">Sett. ${w}</span>
         <span class="sr" id="progTabLabel_${item.uid}_${w}">${escapeHtml(sr) || "&nbsp;"}</span>
       </button>
     `;
@@ -1291,7 +1291,7 @@ function buildWeeklyProgressionEditorHtml(item, weeksCount) {
   return `
     <div class="prog-panel">
       <div class="prog-panel-head">
-        <span class="prog-panel-title">📅 Settimana ${activeWeek} di ${weeksCount}${activeIsDeload ? " · 🔋 Deload" : ""}</span>
+        <span class="prog-panel-title">📅 Settimana ${activeWeek} di ${weeksCount}${activeIsDeload ? " · Deload" : ""}</span>
         <button type="button" class="btn btn-outline btn-sm" style="width: auto; padding: 3px 9px; font-size: 0.7rem;" onclick="toggleItemProgressionPanel(${item.uid})">Chiudi ✖</button>
       </div>
 
@@ -1318,10 +1318,10 @@ function buildWeeklyProgressionEditorHtml(item, weeksCount) {
       </div>
 
       <div class="prog-presets">
-        <button type="button" class="btn btn-outline btn-sm" onclick="applyProgressionPreset(${item.uid}, 'copy_w1')">📋 Copia Sett. 1 su tutte</button>
-        <button type="button" class="btn btn-outline btn-sm" onclick="applyProgressionPreset(${item.uid}, 'inc_reps')">📈 +1 rep/sett.</button>
-        <button type="button" class="btn btn-outline btn-sm" onclick="applyProgressionPreset(${item.uid}, 'dec_rir')" title="RIR -1 a settimana (o RPE +0,5)">🎯 -1 RIR/sett.</button>
-        <button type="button" class="btn btn-outline btn-sm" style="border-color: var(--primary); color: var(--primary);" onclick="applyProgressionPreset(${item.uid}, 'deload_selected')">🔋 ${activeIsDeload ? `Togli Deload S${activeWeek}` : `Deload Sett. ${activeWeek}`}</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="applyProgressionPreset(${item.uid}, 'copy_w1')">Copia Sett. 1 su tutte</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="applyProgressionPreset(${item.uid}, 'inc_reps')">+1 rep/sett.</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="applyProgressionPreset(${item.uid}, 'dec_rir')" title="RIR -1 a settimana (o RPE +0,5)">-1 RIR/sett.</button>
+        <button type="button" class="btn btn-outline btn-sm" style="border-color: var(--primary); color: var(--primary);" onclick="applyProgressionPreset(${item.uid}, 'deload_selected')">${activeIsDeload ? `Togli Deload S${activeWeek}` : `Deload Sett. ${activeWeek}`}</button>
         <button type="button" class="btn btn-outline btn-sm btn-reset" style="border-color: var(--danger); color: var(--danger); grid-column: 1 / -1;" onclick="applyProgressionPreset(${item.uid}, 'reset')">Rimuovi progressione</button>
       </div>
     </div>
@@ -1425,7 +1425,7 @@ function renderList() {
     const dayItems = grouped[dayName];
     const groupDiv = document.createElement("div");
     groupDiv.className = "day-group";
-    groupDiv.innerHTML = `<div class="day-badge">📅 ${escapeHtml(dayName)} (${dayItems.length} ESERCIZI)</div>`;
+    groupDiv.innerHTML = `<div class="day-badge">${escapeHtml(dayName)} (${dayItems.length} ESERCIZI)</div>`;
 
     let inCircuit = false;
     let circuitHtmlBuffer = "";
@@ -1677,7 +1677,7 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
     showTrainerView("trainerClientsView");
     loadTrainerClients();
   } finally {
-    btn.textContent = "☁️ Salva e Invia all'app dell'Atleta";
+    btn.textContent = "Salva e Invia all'app dell'Atleta";
     syncSaveCloudButtonState();
   }
 });
