@@ -48,3 +48,12 @@ function isDeloadPrescription(entry) {
   if (entry.deload === true) return true;
   return /deload/i.test(String(entry.sets_reps || entry.setsReps || ""));
 }
+
+// Colonne bilanciate per griglie di N riquadri (settimane del mesociclo):
+// massimo 3 per riga su telefoni stretti, 4 su telefoni grandi, 6 su schermi
+// larghi, distribuendo i riquadri su righe il più possibile uguali.
+function progGridColsStyle(n) {
+  const count = Math.max(1, parseInt(n, 10) || 1);
+  const cols = (maxCols) => Math.ceil(count / Math.ceil(count / maxCols));
+  return `--cols-s:${cols(3)};--cols-m:${cols(4)};--cols-l:${cols(6)};`;
+}

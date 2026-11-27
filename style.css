@@ -941,7 +941,7 @@ body:not(.light-theme) .note-coach-box {
 .prog-panel-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
 .prog-panel-title { font-size: 0.78rem; font-weight: 700; color: var(--primary); }
 .prog-weeks-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  display: grid; grid-template-columns: repeat(var(--cols-s, 3), minmax(0, 1fr));
   gap: 5px; margin-bottom: 10px;
 }
 .prog-week-tab {
@@ -962,9 +962,9 @@ body:not(.light-theme) .note-coach-box {
 .prog-fields label, .prog-note label {
   display: block; font-size: 0.7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.prog-fields input, .prog-note input { width: 100%; min-width: 0; text-align: center; }
+.prog-fields input, .prog-note input { width: 100%; min-width: 0; text-align: center; padding: 9px 4px; }
 .prog-note { margin-top: 6px !important; }
-.prog-note input { text-align: left; }
+.prog-note input { text-align: left; padding: 9px 8px; }
 .prog-presets {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;
   margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border);
@@ -975,11 +975,15 @@ body:not(.light-theme) .note-coach-box {
   .prog-presets .btn-reset { grid-column: auto; }
 }
 .prog-summary-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 4px; margin-top: 6px;
+  display: grid; grid-template-columns: repeat(var(--cols-s, 3), minmax(0, 1fr));
+  gap: 4px; margin-top: 8px;
 }
+.prog-chip strong { display: inline; font-size: inherit; }
 .prog-chip {
   font-size: 0.66rem; padding: 3px 4px; border-radius: 5px; text-align: center; line-height: 1.2;
   background: var(--subcard-bg); border: 1px solid var(--border); color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
 }
 .prog-chip.deload { background: rgba(56, 189, 248, 0.16); border-color: rgba(56, 189, 248, 0.4); color: var(--primary); }
+@media (min-width: 400px) { .prog-weeks-grid, .prog-summary-grid { grid-template-columns: repeat(var(--cols-m, 4), minmax(0, 1fr)); } }
+@media (min-width: 560px) { .prog-weeks-grid, .prog-summary-grid { grid-template-columns: repeat(var(--cols-l, 6), minmax(0, 1fr)); } }

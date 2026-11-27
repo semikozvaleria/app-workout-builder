@@ -1251,7 +1251,7 @@ function buildWeeklyProgressionSummaryBadges(item, weeksCount) {
     chips.push(`<span class="prog-chip${isDeload ? " deload" : ""}" title="Settimana ${w}: ${escapeHtml(sr)}"><strong>S${w}${isDeload ? "🔋" : ""}</strong> ${escapeHtml(sr)}</span>`);
   }
   if (chips.length === 0) return "";
-  return `<div class="prog-summary-grid">${chips.join("")}</div>`;
+  return `<div class="prog-summary-grid" style="${progGridColsStyle(chips.length)}">${chips.join("")}</div>`;
 }
 
 function buildWeeklyProgressionEditorHtml(item, weeksCount) {
@@ -1295,7 +1295,7 @@ function buildWeeklyProgressionEditorHtml(item, weeksCount) {
         <button type="button" class="btn btn-outline btn-sm" style="width: auto; padding: 3px 9px; font-size: 0.7rem;" onclick="toggleItemProgressionPanel(${item.uid})">Chiudi ✖</button>
       </div>
 
-      <div class="prog-weeks-grid">${weekTabsHtml}</div>
+      <div class="prog-weeks-grid" style="${progGridColsStyle(weeksCount)}">${weekTabsHtml}</div>
 
       <div class="prog-fields">
         <div class="field">
@@ -1384,7 +1384,6 @@ function buildBuilderItemHtml(item, idx, totalInDay) {
           <strong>${idx + 1}. ${escapeHtml(item.name)}</strong> ${roleTag}
           <div class="item-sub" id="itemSub_${item.uid}"><strong>${escapeHtml(item.setsReps)}</strong> | Rest: ${escapeHtml(item.rest)} | RIR/@: ${escapeHtml(item.rir)}</div>
           ${item.notes !== '-' ? `<div class="item-notes" style="white-space: pre-wrap;">Note: ${escapeHtml(item.notes)}</div>` : ''}
-          <div id="progSummary_${item.uid}">${progSummaryHtml}</div>
         </div>
         <div class="item-actions">
           <button class="btn-icon" title="Sposta su" onclick="moveItem(${item.uid}, -1)" ${idx === 0 ? 'disabled' : ''}>▲</button>
@@ -1393,6 +1392,7 @@ function buildBuilderItemHtml(item, idx, totalInDay) {
           <button class="btn-icon" title="Rimuovi" style="color:var(--danger);" onclick="removeItem(${item.uid})">✖</button>
         </div>
       </div>
+      ${openProgressionUid === item.uid ? "" : `<div id="progSummary_${item.uid}">${progSummaryHtml}</div>`}
       ${editFormHtml}
       ${progEditorHtml}
     </div>

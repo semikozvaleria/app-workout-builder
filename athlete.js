@@ -666,7 +666,7 @@ function renderAthleteExercisesList(items, logsByExercise, videosByIndex = {}) {
     }
     const weekBar = document.createElement("div");
     weekBar.className = "prog-weeks-grid";
-    weekBar.style.cssText = "padding-bottom: 8px; margin-bottom: 10px; border-bottom: 1px solid var(--border);";
+    weekBar.style.cssText = `${progGridColsStyle(totalWeeks)} padding-bottom: 8px; margin-bottom: 10px; border-bottom: 1px solid var(--border);`;
     weekBar.innerHTML = tabsHtml;
     container.appendChild(weekBar);
   }
