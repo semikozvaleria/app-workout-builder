@@ -1052,3 +1052,46 @@ body:not(.light-theme) .note-coach-box {
 .vf-card-date { font-size: 0.72rem; color: var(--text-muted); flex-shrink: 0; }
 .vf-card-badge { font-size: 0.64rem; font-weight: 700; padding: 1px 5px; border-radius: 4px; flex-shrink: 0; white-space: nowrap; }
 @media (max-width: 360px) { .vf-hide-xs { display: none; } }
+
+/* ============================================================
+   VIDEO FEEDBACK: disegni del coach sul video
+   ============================================================ */
+.vf-draw-canvas {
+  position: absolute; left: 0; top: 0; width: 100%; height: 100%;
+  pointer-events: none; touch-action: none;
+}
+.vf-draw-canvas.active { pointer-events: auto; cursor: crosshair; }
+.vf-drawbar {
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px;
+  padding: 7px 8px; background: rgba(15, 23, 42, 0.95); border-top: 1px solid rgba(255,255,255,0.1);
+}
+.vf-drawbar.hidden { display: none; }
+/* Riga 1: i 5 strumenti a colonne uguali; riga 2: colori a sinistra, azioni a destra */
+.vf-drawbar-group:first-child { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+.vf-drawbar-group:last-child { display: flex; align-items: center; gap: 6px; }
+.vf-drawbar-spacer { flex: 1 1 auto; }
+.vf-tool {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  font-family: inherit; font-size: 0.7rem; font-weight: 600; line-height: 1; text-align: center;
+  padding: 6px 2px; min-height: 32px; border-radius: 6px; cursor: pointer; min-width: 0; white-space: nowrap;
+  background: transparent; color: #e2e8f0; border: 1px solid rgba(255,255,255,0.18);
+}
+.vf-tool.selected { background: #e2e8f0; color: #0f172a; border-color: #e2e8f0; }
+.vf-tool-action { color: #cbd5e1; padding: 7px 10px; }
+.vf-color {
+  width: 22px; height: 22px; border-radius: 50%; cursor: pointer; padding: 0;
+  border: 2px solid rgba(255,255,255,0.25);
+}
+.vf-color.selected { border-color: #ffffff; box-shadow: 0 0 0 2px rgba(255,255,255,0.35); }
+.vf-tool-icon { flex-shrink: 0; }
+/* Schermi stretti: solo icone (nessuna etichetta tagliata) */
+@media (max-width: 480px) {
+  .vf-tool-label { display: none; }
+  .vf-tool-action { padding: 6px 10px; }
+}
+/* Dove supportato: decide in base alla larghezza reale della barra del player */
+.vf-drawbar { container-type: inline-size; }
+@container (max-width: 460px) {
+  .vf-tool-label { display: none; }
+  .vf-tool-action { padding: 6px 10px; }
+}
