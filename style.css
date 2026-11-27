@@ -1104,3 +1104,94 @@ body:not(.light-theme) .note-coach-box {
 .vf-clip-btn { width: auto; height: 30px; padding: 0 9px; font-size: 0.72rem; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
 .vf-clip-btn-del { width: 34px; padding: 0; border-color: var(--danger); color: var(--danger); }
 .vf-clip-info > span:first-child { white-space: nowrap; }
+
+/* ============================================================
+   CHECK-IN: misure corporee e foto dei progressi (facoltative)
+   ============================================================ */
+.checkin-extra { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; background: var(--subcard-bg); }
+.checkin-extra > summary { cursor: pointer; font-size: 0.85rem; font-weight: 700; color: var(--text); list-style-position: inside; }
+.checkin-optional { font-size: 0.72rem; font-weight: 500; color: var(--text-muted); margin-left: 4px; }
+.checkin-extra[open] > summary { margin-bottom: 10px; }
+.checkin-measures-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.checkin-measures-grid input { text-align: center; }
+.checkin-hint { font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; }
+.checkin-photos-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.checkin-photo-slot { position: relative; display: block; cursor: pointer; text-transform: none; }
+.checkin-photo-input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+.checkin-photo-preview {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  aspect-ratio: 3 / 4; border: 1.5px dashed var(--border); border-radius: 8px; overflow: hidden;
+  font-size: 0.76rem; font-weight: 600; color: var(--text-muted); background: var(--card-bg); position: relative;
+}
+.checkin-photo-preview.has-photo { border-style: solid; }
+.checkin-photo-preview img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.checkin-photo-preview.has-photo span {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 3px; text-align: center;
+  background: rgba(0,0,0,0.55); color: #fff; font-size: 0.7rem;
+}
+.checkin-measures { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 4px 0 8px; }
+.checkin-measure-chip { font-size: 0.74rem; color: var(--text-muted); background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px; }
+.checkin-measure-chip strong { color: var(--text); }
+.checkin-measure-chip em { font-style: normal; font-weight: 700; margin-left: 2px; }
+/* Variazioni in colore neutro: aumentare o diminuire dipende dall'obiettivo */
+.checkin-measure-chip em.up, .checkin-measure-chip em.down { color: var(--primary); }
+.checkin-thumbs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 4px 0 8px; max-width: 320px; }
+.checkin-thumb {
+  position: relative; display: block; padding: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  aspect-ratio: 3 / 4; background: var(--card-bg); cursor: zoom-in; font-family: inherit;
+}
+.checkin-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.checkin-thumb span {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 2px; text-align: center;
+  background: rgba(0,0,0,0.55); color: #fff; font-size: 0.66rem; font-weight: 600;
+}
+.checkin-thumb.missing { cursor: default; }
+.checkin-thumb.missing span { position: static; display: flex; align-items: center; justify-content: center; height: 100%; background: none; color: var(--text-muted); font-size: 0.72rem; padding: 6px; }
+.photo-compare { background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 14px; }
+.photo-compare-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; font-size: 0.88rem; }
+.photo-compare-poses { display: flex; gap: 4px; }
+.photo-compare-pose { font-family: inherit; font-size: 0.72rem; font-weight: 600; padding: 5px 10px; border-radius: 6px; cursor: pointer; background: transparent; color: var(--text); border: 1px solid var(--border); }
+.photo-compare-pose.selected { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
+.photo-compare-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.photo-compare-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.photo-compare-col select { font-size: 0.8rem; padding: 7px; }
+.photo-compare-diff { font-size: 0.76rem; color: var(--text-muted); margin-top: 8px; line-height: 1.5; }
+.photo-compare-diff strong { color: var(--text); }
+.photo-viewer {
+  position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.92);
+  display: flex; align-items: center; justify-content: center; padding: 16px; cursor: zoom-out;
+}
+.photo-viewer img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
+.photo-viewer-label { position: absolute; top: 14px; left: 16px; color: #fff; font-size: 0.85rem; font-weight: 600; }
+.photo-viewer-close { position: absolute; top: 8px; right: 10px; background: transparent; border: 0; color: #fff; font-size: 1.4rem; cursor: pointer; }
+
+/* ============================================================
+   PANNELLO ADERENZA SETTIMANALE (coach)
+   ============================================================ */
+.adherence-panel { border: 1px solid var(--border); border-radius: 10px; background: var(--subcard-bg); padding: 10px 12px; margin-bottom: 14px; }
+.adherence-panel > summary { display: flex; justify-content: space-between; align-items: center; gap: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 700; color: var(--primary); list-style: none; }
+.adherence-panel > summary::-webkit-details-marker { display: none; }
+.adherence-summary { display: inline-flex; align-items: center; gap: 4px; font-size: 0.78rem; font-weight: 600; color: var(--text-muted); }
+.adherence-summary .adh-dot { margin-left: 6px; }
+.adherence-list { margin-top: 8px; display: flex; flex-direction: column; }
+.adh-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--border); }
+.adh-row:first-child { border-top: 0; }
+.adh-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.adh-dot.ok { background: var(--success); }
+.adh-dot.late { background: var(--warning); }
+.adh-dot.stop { background: var(--danger); }
+.adh-main { min-width: 0; }
+.adh-name { background: none; border: 0; padding: 0; font-family: inherit; font-size: 0.86rem; font-weight: 700; color: var(--text); cursor: pointer; text-align: left; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.adh-meta { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; line-height: 1.35; }
+.adh-reason.stop { color: var(--danger); font-weight: 600; }
+.adh-reason.late { color: var(--warning); font-weight: 600; }
+.adh-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.adh-thisweek { font-size: 0.82rem; font-weight: 700; color: var(--text); white-space: nowrap; }
+.adh-thisweek small { font-size: 0.66rem; font-weight: 500; color: var(--text-muted); }
+.adh-bar { width: 72px; height: 4px; border-radius: 99px; background: var(--border); overflow: hidden; }
+.adh-bar span { display: block; height: 100%; background: var(--primary); }
+.adh-weeks { display: grid; grid-template-columns: repeat(4, 16px); gap: 2px; }
+.adh-week { font-size: 0.6rem; font-weight: 700; text-align: center; line-height: 16px; height: 16px; border-radius: 3px; background: var(--card-bg); color: var(--text-muted); border: 1px solid var(--border); }
+.adh-week.full { background: rgba(34, 197, 94, 0.18); color: var(--success); border-color: rgba(34, 197, 94, 0.35); }
+.adh-week.zero { opacity: 0.6; }
+.adh-week.current { outline: 1px solid var(--primary); outline-offset: 0; }

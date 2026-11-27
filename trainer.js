@@ -317,6 +317,7 @@ async function loadTrainerClients() {
   if (error || !clients || clients.length === 0) {
     enrichedClientsCache = [];
     renderConnectedClientsList();
+    loadAdherencePanel([]);
     select.innerHTML = `<option value="">-- Nessun atleta collegato (Solo PDF) --</option>`;
     if (typeof syncSaveCloudButtonState === "function") syncSaveCloudButtonState();
     updateNotificationCenter(coachAlerts);
@@ -447,6 +448,142 @@ async function loadTrainerClients() {
   renderConnectedClientsList();
 
   updateNotificationCenter(coachAlerts);
+  loadAdherencePanel(clients);
+}
+
+// ============================================================
+// PANNELLO ADERENZA SETTIMANALE (tutti gli atleti collegati)
+// Sedute = giorni distinti con almeno un carico registrato.
+// Previste = giorni della scheda attiva (Giorno 1, Giorno 2, ...).
+// ============================================================
+function getMondayStart(date) {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const dow = d.getDay(); // 0 = domenica
+  d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
+  return d;
+}
+
+function formatDaysAgoIt(days) {
+  if (days === null || days === undefined) return "mai";
+  if (days <= 0) return "oggi";
+  if (days === 1) return "ieri";
+  return `${days} gg fa`;
+}
+
+async function loadAdherencePanel(clients) {
+  const panel = document.getElementById("adherencePanel");
+  const list = document.getElementById("adherenceList");
+  const summaryEl = document.getElementById("adherenceSummary");
+  if (!panel || !list) return;
+  if (!clients || clients.length === 0) {
+    panel.classList.add("hidden");
+    return;
+  }
+  panel.classList.remove("hidden");
+
+  const today = new Date();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const thisMonday = getMondayStart(today);
+  const fourWeeksStart = new Date(thisMonday.getTime() - 3 * 7 * dayMs);
+  const clientIds = clients.map(c => c.id);
+
+  const [{ data: logs }, { data: activeWorkouts }, { data: checkins }] = await Promise.all([
+    supabaseClient
+      .from("workout_logs")
+      .select("athlete_id, logged_at")
+      .in("athlete_id", clientIds)
+      .gte("logged_at", fourWeeksStart.toISOString())
+      .order("logged_at", { ascending: false }),
+    supabaseClient
+      .from("workouts")
+      .select("id, athlete_id, created_at, workout_exercises(day_name)")
+      .eq("trainer_id", currentProfile.id)
+      .eq("status", "active")
+      .order("created_at", { ascending: false }),
+    supabaseClient
+      .from("weekly_checkins")
+      .select("athlete_id, checkin_date")
+      .eq("trainer_id", currentProfile.id)
+      .gte("checkin_date", toLocalDateKey(new Date(today.getTime() - 60 * dayMs)))
+      .order("checkin_date", { ascending: false })
+  ]);
+
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const daysElapsedThisWeek = Math.round((todayStart - thisMonday) / dayMs) + 1; // 1..7
+
+  const rows = clients.map((c) => {
+    const athleteLogs = (logs || []).filter(l => l.athlete_id === c.id);
+    const dayKeys = [...new Set(athleteLogs.map(l => toLocalDateKey(new Date(l.logged_at))))];
+    // sedute per settimana: indice 0 = 3 settimane fa ... 3 = settimana corrente
+    const weeks = [0, 0, 0, 0];
+    dayKeys.forEach((k) => {
+      const [y, m, d] = k.split("-").map(Number);
+      const idx = Math.floor((new Date(y, m - 1, d) - fourWeeksStart) / (7 * dayMs));
+      if (idx >= 0 && idx <= 3) weeks[idx]++;
+    });
+    const lastKey = dayKeys.sort().pop() || null;
+    let daysSinceLast = null;
+    if (lastKey) {
+      const [y, m, d] = lastKey.split("-").map(Number);
+      daysSinceLast = Math.round((todayStart - new Date(y, m - 1, d)) / dayMs);
+    }
+    const active = (activeWorkouts || []).find(w => w.athlete_id === c.id) || null;
+    const expected = active ? new Set((active.workout_exercises || []).map(x => x.day_name)).size || null : null;
+    const lastCheckin = (checkins || []).find(x => x.athlete_id === c.id) || null;
+    let daysSinceCheckin = null;
+    if (lastCheckin) {
+      const [y, m, d] = String(lastCheckin.checkin_date).split("-").map(Number);
+      daysSinceCheckin = Math.round((todayStart - new Date(y, m - 1, d)) / dayMs);
+    }
+
+    // Stato: fermo (rosso), in ritardo (giallo), in regola (verde)
+    let status = "ok";
+    let reason = "";
+    if (!active) { status = "stop"; reason = "Nessuna scheda attiva"; }
+    else if (daysSinceLast === null || daysSinceLast >= 7) { status = "stop"; reason = daysSinceLast === null ? "Nessun allenamento in 4 settimane" : `Fermo da ${daysSinceLast} giorni`; }
+    else if (expected && weeks[3] < Math.floor(expected * daysElapsedThisWeek / 7)) { status = "late"; reason = "In ritardo questa settimana"; }
+    else if (daysSinceCheckin === null || daysSinceCheckin > 8) { status = "late"; reason = "Check-in mancante"; }
+
+    return { client: c, weeks, expected, daysSinceLast, daysSinceCheckin, status, reason };
+  });
+
+  const order = { stop: 0, late: 1, ok: 2 };
+  rows.sort((a, b) => order[a.status] - order[b.status] || String(a.client.full_name).localeCompare(String(b.client.full_name)));
+
+  const counts = { ok: 0, late: 0, stop: 0 };
+  rows.forEach(r => counts[r.status]++);
+  if (summaryEl) {
+    summaryEl.innerHTML = [
+      counts.ok ? `<span class="adh-dot ok"></span>${counts.ok}` : "",
+      counts.late ? `<span class="adh-dot late"></span>${counts.late}` : "",
+      counts.stop ? `<span class="adh-dot stop"></span>${counts.stop}` : ""
+    ].filter(Boolean).join(" ");
+  }
+
+  list.innerHTML = rows.map((r) => {
+    const exp = r.expected;
+    const pct = exp ? Math.min(100, Math.round((r.weeks[3] / exp) * 100)) : 0;
+    const weekCells = r.weeks.map((n, i) => {
+      const full = exp ? n >= exp : n > 0;
+      return `<span class="adh-week${i === 3 ? " current" : ""}${n === 0 ? " zero" : full ? " full" : ""}" title="${i === 3 ? "Questa settimana" : `${3 - i} settimane fa`}: ${n} sedute">${n}</span>`;
+    }).join("");
+    return `
+      <div class="adh-row">
+        <span class="adh-dot ${r.status}" title="${escapeHtml(r.reason || "In regola")}"></span>
+        <div class="adh-main">
+          <button type="button" class="adh-name" onclick="viewClientProgress('${r.client.id}', '${escapeJsAttr(r.client.full_name)}')">${escapeHtml(r.client.full_name)}</button>
+          <div class="adh-meta">
+            ${r.reason ? `<span class="adh-reason ${r.status}">${escapeHtml(r.reason)}</span> · ` : ""}Ultimo allenamento: ${formatDaysAgoIt(r.daysSinceLast)} · Check-in: ${formatDaysAgoIt(r.daysSinceCheckin)}
+          </div>
+        </div>
+        <div class="adh-side">
+          <div class="adh-thisweek">${r.weeks[3]}${exp ? `/${exp}` : ""} <small>sett.</small></div>
+          <div class="adh-bar"><span style="width:${pct}%"></span></div>
+          <div class="adh-weeks">${weekCells}</div>
+        </div>
+      </div>
+    `;
+  }).join("");
 }
 
 // ============================================================

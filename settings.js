@@ -222,52 +222,59 @@ const btnOpenAppGuide = document.getElementById("btnOpenAppGuide");
 const appGuideSection = document.getElementById("appGuideSection");
 const appGuideContent = document.getElementById("appGuideContent");
 
+// Riquadro della guida in-app
+function guideCard(title, bodyHtml) {
+  return `
+      <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
+        <strong style="color: var(--primary); display: block; margin-bottom: 4px;">${title}</strong>
+        ${bodyHtml}
+      </div>`;
+}
+
 function renderAppGuideContent() {
   if (!appGuideContent) return;
   const isTrainer = typeof currentProfile !== "undefined" && currentProfile && currentProfile.role === "trainer";
 
   if (isTrainer) {
-    appGuideContent.innerHTML = `
-      <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
-        <strong style="color: var(--primary); display: block; margin-bottom: 4px;">1. Collegare gli Atleti</strong>
-        Copia il tuo <strong>Codice Invito</strong> dalla scheda <em>I Miei Atleti</em> e invialo al cliente. Una volta registrato come Atleta, potrà incollarlo per collegarsi al tuo profilo.
-      </div>
-      <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
-        <strong style="color: var(--primary); display: block; margin-bottom: 4px;">2. Anamnesi Privata (Collegati ed Esterni)</strong>
-        Clicca su <strong>🩺 Anamnesi</strong> accanto a un atleta collegato (oppure <strong>➕ Nuova Anamnesi</strong> per clienti esterni) per annotare infortuni, obiettivi, stile di vita e note riservate visibili solo a te.
-      </div>
-      <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
-        <strong style="color: var(--primary); display: block; margin-bottom: 4px;">3. Workout Builder, Circuiti e PDF</strong>
-        Seleziona l'atleta (o lascia vuoto per solo PDF), aggiungi gli esercizi per giorno, usa <em>Inizio/Fine Circuito</em> per raggruppare superset o circuiti, salva in <strong>📝 Bozza</strong> o invia direttamente all'app con <strong>☁️ Salva e Invia</strong>.
-      </div>
-      <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
-        <strong style="color: var(--primary); display: block; margin-bottom: 4px;">4. Progressi, Check-in e Statistiche</strong>
-        In <strong>📊 Progressi</strong> leggi carichi e note dell'atleta e rispondi sotto ogni esercizio. In <strong>✅ Check-in</strong> controlli i report settimanali e in <strong>📈 Statistiche</strong> monitori l'andamento nel tempo (anche quando l'atleta esegue la scheda senza modificare i parametri prescritti).
-      </div>
-      <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
-        <strong style="color: var(--primary); display: block; margin-bottom: 4px;">5. Notifiche Push sul Dispositivo</strong>
-        Apri la campanella <strong>🔔</strong> in alto e tocca <strong>📲 Avvisi Device</strong> per ricevere avvisi istantanei sul telefono quando un atleta invia un check-in o aggiorna la scheda.
-      </div>
-    `;
+    appGuideContent.innerHTML = [
+      guideCard("1. Collegare gli atleti",
+        `Copia il tuo <strong>Codice Invito</strong> in <em>I Miei Atleti</em> e mandalo al cliente: dopo la registrazione come Atleta lo incolla e si collega al tuo profilo.`),
+      guideCard("2. Aderenza settimanale",
+        `In cima a <em>I Miei Atleti</em> vedi per ogni atleta le sedute di questa settimana rispetto a quelle previste dalla scheda, le ultime 4 settimane e quando si è allenato o ha fatto il check-in l'ultima volta. In alto trovi chi è <strong>fermo</strong> (rosso) o <strong>in ritardo</strong> (giallo); tocca il nome per aprire i suoi progressi.`),
+      guideCard("3. Anamnesi privata",
+        `Tocca <strong>🩺 Anamnesi</strong> su un atleta collegato, oppure <strong>➕ Nuova Anamnesi</strong> per un cliente esterno, per annotare obiettivi, infortuni, stile di vita e note riservate. Le vedi solo tu.`),
+      guideCard("4. Crea/Modifica Scheda",
+        `Scegli l'atleta (o lascia vuoto per il solo PDF) e la modalità: <strong>Classica</strong> (scheda unica) o <strong>Mesociclo</strong> (da 2 a 10 settimane). Aggiungi gli esercizi per giorno; con <em>Inizio/Fine Circuito</em> raggruppi superset e circuiti, con <strong>➕ Nuovo Esercizio</strong> crei esercizi tuoi con foto. Puoi salvare una <strong>📝 Bozza</strong>, ricaricare la scheda attuale o clonarne una dallo storico (<em>Schede → Carica nel Builder</em>), poi inviarla con <strong>Salva e Invia all'app dell'Atleta</strong> o scaricare il <strong>📄 PDF</strong>.`),
+      guideCard("5. Progressione del mesociclo",
+        `In modalità Mesociclo tocca <strong>📅 Programma per Settimana</strong> sotto un esercizio: per ogni settimana imposti serie/reps, recupero, RIR e una nota. Le scorciatoie fanno il resto: <em>Copia Sett. 1 su tutte</em>, <em>+1 rep/sett.</em>, <em>-1 RIR/sett.</em> e <em>Deload</em> (serie ridotte e RIR più alto sulla settimana scelta). Il PDF mostra le settimane in colonna.`),
+      guideCard("6. Progressi e note",
+        `In <strong>📊 Progressi</strong> leggi carichi, ripetizioni e note dell'atleta per ogni esercizio (con la settimana del mesociclo) e rispondi sotto con un messaggio.`),
+      guideCard("7. Video dell'esecuzione",
+        `Quando un atleta carica un video lo trovi in <em>Progressi</em> (<strong>DA REVISIONARE</strong>). Tocca <strong>Registra commento audio</strong>: il video parte e mentre parli puoi fermarlo, spostarti con la barra e <strong>disegnare</strong> sul fotogramma (mano libera, linea, freccia, cerchio, angolo con i gradi). Riascolta l'anteprima e premi <strong>Salva</strong>: l'atleta rivedrà video, voce e disegni sincronizzati. Puoi aggiungere anche una nota scritta.`),
+      guideCard("8. Check-in settimanali",
+        `In <strong>✅ Check-in</strong> leggi peso, aderenza, sonno, energia, stress e note. Se l'atleta le ha inserite vedi anche le <strong>misure corporee</strong> con la variazione rispetto al check-in precedente e le <strong>foto</strong> (tocca per ingrandire). Con <strong>Confronto foto</strong> metti due date una accanto all'altra, posa per posa, con le differenze di peso e misure. Scrivi il tuo feedback e premi <strong>💾 Salva Feedback</strong>.`),
+      guideCard("9. Statistiche",
+        `In <strong>📈 Statistiche</strong> trovi costanza, tonnellaggio, andamento del peso corporeo, carichi e 1RM stimato per esercizio, serie per gruppo muscolare e calendario delle sedute.`),
+      guideCard("10. Impostazioni e notifiche",
+        `Dall'ingranaggio cambi tema, nome e logo (comparirà anche nell'app dei tuoi atleti e nei PDF). Apri la campanella <strong>🔔</strong> e tocca <strong>📲 Avvisi Device</strong> per ricevere sul telefono gli avvisi di check-in, video e aggiornamenti delle schede.`)
+    ].join("");
   } else {
-    appGuideContent.innerHTML = `
-      <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
-        <strong style="color: var(--primary); display: block; margin-bottom: 4px;">1. Collegamento al Personal Trainer</strong>
-        Al primo accesso incolla il <strong>Codice Invito</strong> ricevuto dal tuo coach per sincronizzare automaticamente il tuo profilo e ricevere le schede. Se hai sbagliato a scrivere il tuo nome in registrazione, puoi correggerlo qui sopra nelle <em>Impostazioni</em>.
-      </div>
-      <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
-        <strong style="color: var(--primary); display: block; margin-bottom: 4px;">2. Modalità Allenamento vs Scheda Pulita</strong>
-        In cima alla scheda puoi alternare <strong>✏️ Modalità Allenamento</strong> (per inserire Kg, Ripetizioni, RIR e note per ogni serie) e <strong>Scheda Pulita</strong> (per consultare solo gli esercizi). Se esegui esattamente ciò che ha indicato il coach, ti basta salvare l'allenamento senza dover riscrivere tutto.
-      </div>
-      <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
-        <strong style="color: var(--primary); display: block; margin-bottom: 4px;">3. Check-in Settimanale e PDF</strong>
-        Nella scheda <strong>✅ Check-in Settimanale</strong> puoi inviare ogni domenica peso corporeo, aderenza e feedback al coach. In fondo alla scheda di allenamento puoi sempre scaricare il <strong>📄 PDF</strong>.
-      </div>
-      <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
-        <strong style="color: var(--primary); display: block; margin-bottom: 4px;">4. Notifiche Push sul Telefono</strong>
-        Apri la campanella <strong>🔔</strong> in alto e tocca <strong>📲 Avvisi Device</strong> (su iPhone aggiungi prima l'app alla schermata Home) per ricevere avvisi quando il coach pubblica una nuova scheda o risponde ai tuoi commenti.
-      </div>
-    `;
+    appGuideContent.innerHTML = [
+      guideCard("1. Collegamento al tuo coach",
+        `Al primo accesso incolla il <strong>Codice Invito</strong> ricevuto dal coach: il tuo profilo si collega e ricevi le schede. Se hai scritto male il nome puoi correggerlo nelle <em>Impostazioni</em>.`),
+      guideCard("2. La tua scheda",
+        `In cima scegli tra <strong>Modalità Allenamento</strong> (per segnare Kg, ripetizioni e RIR di ogni serie, più una nota) e <strong>Scheda Pulita</strong> (solo gli esercizi). Premi <strong>Salva</strong> dopo ogni esercizio: il coach vede subito i tuoi carichi.`),
+      guideCard("3. Schede a settimane (mesociclo)",
+        `Se il coach ha programmato più settimane, in alto trovi i pulsanti <em>Sett. 1, Sett. 2…</em>: la settimana <strong>● in corso</strong> è già selezionata e quelle di <strong>scarico</strong> sono evidenziate. In una settimana nuova vedi in grigio nei campi i carichi della settimana precedente, come riferimento.`),
+      guideCard("4. Video dell'esecuzione",
+        `Sotto ogni esercizio apri <strong>Aggiungi video esecuzione</strong>, scegli un video (massimo 30 secondi), scrivi una domanda per il coach e invialo. Quando il coach risponde tocca <strong>Guarda</strong> e poi <strong>Ascolta con video</strong>: il video si ferma e si sposta insieme alla sua voce, con linee, frecce e angoli disegnati nei punti chiave. I segnalini sulla barra indicano dove si ferma a spiegare; tocca la barra per riascoltare un punto.`),
+      guideCard("5. Check-in settimanale",
+        `In <strong>✅ Check-in Settimanale</strong> invia ogni settimana peso, aderenza, sonno, energia, stress e una nota. Se vuoi aggiungi le <strong>misure corporee</strong> (sempre nello stesso punto, al mattino e a digiuno) e le <strong>foto</strong> fronte, lato e retro (stessa luce e stessa posa): le vede solo il tuo coach. Sotto trovi lo storico con le sue risposte.`),
+      guideCard("6. PDF della scheda",
+        `In fondo alla scheda tocca <strong>📄 Scarica PDF</strong> per averla sempre con te, anche stampata.`),
+      guideCard("7. Notifiche sul telefono",
+        `Apri la campanella <strong>🔔</strong> e tocca <strong>📲 Avvisi Device</strong> per sapere quando il coach pubblica una nuova scheda o ti risponde. Su iPhone aggiungi prima l'app alla schermata Home (Condividi → Aggiungi alla schermata Home).`)
+    ].join("");
   }
 }
 

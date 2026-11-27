@@ -250,6 +250,15 @@
           <button class="btn btn-primary btn-sm" id="btnCopyCode">Copia</button>
         </div>
 
+        <!-- PANNELLO ADERENZA SETTIMANALE (tutti gli atleti collegati) -->
+        <details id="adherencePanel" class="adherence-panel hidden" open>
+          <summary>
+            <span>Aderenza settimanale</span>
+            <span id="adherenceSummary" class="adherence-summary"></span>
+          </summary>
+          <div id="adherenceList" class="adherence-list"></div>
+        </details>
+
         <!-- RICERCA RAPIDA ATLETI (COLLEGATI + ESTERNI) -->
         <div style="position: relative; margin-bottom: 14px;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none;">
@@ -751,6 +760,38 @@
             </select>
           </div>
         </div>
+
+        <details class="checkin-extra" id="checkinMeasuresBox">
+          <summary>Misure corporee <span class="checkin-optional">facoltative · cm</span></summary>
+          <div class="grid-3 checkin-measures-grid">
+            <div class="field"><label>Vita</label><input type="number" step="0.5" min="30" max="250" inputmode="decimal" id="checkinMeasureWaist" placeholder="cm"></div>
+            <div class="field"><label>Fianchi</label><input type="number" step="0.5" min="30" max="250" inputmode="decimal" id="checkinMeasureHips" placeholder="cm"></div>
+            <div class="field"><label>Petto</label><input type="number" step="0.5" min="30" max="250" inputmode="decimal" id="checkinMeasureChest" placeholder="cm"></div>
+            <div class="field"><label>Braccio</label><input type="number" step="0.5" min="10" max="100" inputmode="decimal" id="checkinMeasureArm" placeholder="cm"></div>
+            <div class="field"><label>Coscia</label><input type="number" step="0.5" min="20" max="150" inputmode="decimal" id="checkinMeasureThigh" placeholder="cm"></div>
+            <div class="field"><label>Polpaccio</label><input type="number" step="0.5" min="15" max="100" inputmode="decimal" id="checkinMeasureCalf" placeholder="cm"></div>
+          </div>
+          <div class="checkin-hint">Misura sempre nello stesso punto, al mattino e a digiuno.</div>
+        </details>
+
+        <details class="checkin-extra" id="checkinPhotosBox">
+          <summary>Foto progressi <span class="checkin-optional">facoltative</span></summary>
+          <div class="checkin-photos-grid">
+            <label class="checkin-photo-slot" data-pose="front">
+              <input type="file" accept="image/*" id="checkinPhotoFront" class="checkin-photo-input">
+              <span class="checkin-photo-preview" id="checkinPhotoFrontPreview"><span>+ Fronte</span></span>
+            </label>
+            <label class="checkin-photo-slot" data-pose="side">
+              <input type="file" accept="image/*" id="checkinPhotoSide" class="checkin-photo-input">
+              <span class="checkin-photo-preview" id="checkinPhotoSidePreview"><span>+ Lato</span></span>
+            </label>
+            <label class="checkin-photo-slot" data-pose="back">
+              <input type="file" accept="image/*" id="checkinPhotoBack" class="checkin-photo-input">
+              <span class="checkin-photo-preview" id="checkinPhotoBackPreview"><span>+ Retro</span></span>
+            </label>
+          </div>
+          <div class="checkin-hint">Stessa luce, stessa posa e stessa distanza ogni volta. Le foto le vede solo il tuo coach.</div>
+        </details>
 
         <div class="field">
           <label>Note Settimanali per il Coach</label>
