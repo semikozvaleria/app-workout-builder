@@ -996,14 +996,27 @@ body:not(.light-theme) .note-coach-box {
 /* ============================================================
    ALLINEAMENTI GLOBALI (tutte le schermate, iPhone compresi)
    ============================================================ */
-/* Intestazione: i pulsanti non si comprimono, il titolo può andare a capo */
-.header-brand { min-width: 0; }
-.header-brand h1 { overflow-wrap: anywhere; }
+/* Intestazione: titolo e ruolo sempre su una riga, logo allineato al testo.
+   Su schermi stretti si riducono leggermente testo e pulsanti; se il nome è
+   molto lungo viene accorciato con "…" invece di andare a capo. */
+.header-brand { min-width: 0; flex: 1 1 auto; align-items: center; }
+.header-brand > div { min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.header-brand .site-logo { flex-shrink: 0; display: block; }
+.header-brand h1 {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  line-height: 1.15; font-size: clamp(0.95rem, 4.4vw, 1.1rem);
+}
+#userRoleBadge { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; margin-top: 1px; }
 .header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .header-dbcount { font-size: 0.75rem; color: var(--primary); white-space: nowrap; }
-@media (max-width: 360px) {
+@media (max-width: 480px) {
   .header-dbcount { display: none; }
-  .header-brand .site-logo { height: 32px; max-width: 70px; }
+}
+@media (max-width: 400px) {
+  .header-brand { gap: 8px; }
+  .header-brand .site-logo { height: 34px; max-width: 64px; }
+  .header-actions { gap: 4px; }
+  .header-actions .btn-sm { padding: 6px 8px; }
 }
 
 /* Campi affiancati: sempre allineati in basso anche se un'etichetta va a capo */
