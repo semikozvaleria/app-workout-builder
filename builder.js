@@ -44,7 +44,7 @@ function syncProgrammingModeUi() {
     if (cur < 2) cur = 4;
     if (cur > MAX_PROGRESSION_WEEKS) cur = MAX_PROGRESSION_WEEKS;
     durInput.value = String(cur);
-    if (durLabel) durLabel.textContent = "Settimane Mesociclo (2–10)";
+    if (durLabel) durLabel.textContent = "Settimane (2–10)";
   } else {
     durInput.min = "1";
     durInput.max = "52";
@@ -68,11 +68,12 @@ function normalizeWeeklyProgression(rawProg, baseItem, maxWeeks = MAX_PROGRESSIO
     const entry = rawProg[key];
     if (entry && typeof entry === "object") {
       normalized[key] = {
-        sets_reps: (entry.sets_reps ?? baseItem.setsReps ?? "-").trim() || "-",
-        rest: (entry.rest ?? baseItem.rest ?? "-").trim() || "-",
-        rir: (entry.rir ?? baseItem.rir ?? "-").trim() || "-",
-        notes: (entry.notes ?? "").trim()
+        sets_reps: String(entry.sets_reps ?? baseItem.setsReps ?? "-").trim() || "-",
+        rest: String(entry.rest ?? baseItem.rest ?? "-").trim() || "-",
+        rir: String(entry.rir ?? baseItem.rir ?? "-").trim() || "-",
+        notes: String(entry.notes ?? "").trim()
       };
+      if (isDeloadPrescription(entry)) normalized[key].deload = true;
       hasAny = true;
     }
   }
@@ -86,10 +87,17 @@ function ensureItemWeeklyProgression(item, weeksCount) {
   for (let w = 1; w <= weeksCount; w++) {
     const key = String(w);
     if (!item.weeklyProgression[key]) {
+      // Se il mesociclo viene allungato, la nuova settimana parte dall'ultima
+      // settimana "di carico" programmata (non dal deload, non dalla Sett. 1)
+      let source = null;
+      for (let p = w - 1; p >= 1; p--) {
+        const prev = item.weeklyProgression[String(p)];
+        if (prev && !isDeloadPrescription(prev)) { source = prev; break; }
+      }
       item.weeklyProgression[key] = {
-        sets_reps: item.setsReps || "-",
-        rest: item.rest || "-",
-        rir: item.rir || "-",
+        sets_reps: (source && source.sets_reps) || item.setsReps || "-",
+        rest: (source && source.rest) || item.rest || "-",
+        rir: (source && source.rir) || item.rir || "-",
         notes: ""
       };
     }
@@ -115,6 +123,46 @@ function incrementRepsFormula(setsRepsStr, stepIndex) {
     }
     return `${prefix}${n1}`;
   });
+}
+
+// Progressione dell'intensità: RIR scende di "step" (min 0); se è espresso
+// come RPE (@8, RPE 8) sale di 0,5 per step (max 10). Gestisce anche range "2-3".
+function shiftIntensityFormula(rirStr, step) {
+  if (!rirStr || rirStr === "-" || !step) return rirStr;
+  const isRpe = /@|rpe/i.test(rirStr);
+  return String(rirStr).replace(/\d+(?:[.,]\d+)?/g, (num) => {
+    const n = parseFloat(num.replace(",", "."));
+    if (isNaN(n)) return num;
+    const next = isRpe ? Math.min(10, n + 0.5 * step) : Math.max(0, n - step);
+    return String(Math.round(next * 10) / 10).replace(".", ",");
+  });
+}
+
+// Prescrizione di scarico a partire da una settimana di carico:
+// ~60% delle serie (min 1), RIR +2 oppure RPE -1,5
+function buildDeloadFromEntry(src) {
+  const setsReps = String(src.sets_reps || "-");
+  const reducedSets = setsReps.replace(/^(\s*)(\d+)(\s*[xX×*])/, (_, pre, n, sep) => {
+    return `${pre}${Math.max(1, Math.round(parseInt(n, 10) * 0.6))}${sep}`;
+  });
+  let rir = String(src.rir || "-");
+  if (/\d/.test(rir)) {
+    const isRpe = /@|rpe/i.test(rir);
+    rir = rir.replace(/\d+(?:[.,]\d+)?/g, (num) => {
+      const n = parseFloat(num.replace(",", "."));
+      const next = isRpe ? Math.max(1, n - 1.5) : n + 2;
+      return String(Math.round(next * 10) / 10).replace(".", ",");
+    });
+  } else {
+    rir = "RIR 3";
+  }
+  return {
+    sets_reps: reducedSets === "-" ? "Deload" : reducedSets,
+    rest: src.rest || "-",
+    rir,
+    notes: "Scarico: volume ridotto, carico -10/20%",
+    deload: true
+  };
 }
 
 function rebuildExerciseMap(list) {
@@ -244,9 +292,27 @@ exerciseDaySelect.addEventListener("change", syncCircuitCheckboxes);
 
 if (programmingModeSelect) {
   programmingModeSelect.addEventListener("change", () => {
+    if (!isMesocycleMode()) {
+      const hasProg = currentWorkout.some(it => it.weeklyProgression && Object.keys(it.weeklyProgression).length > 0);
+      if (hasProg && !confirm("Passando alla modalità classica la progressione settimanale non verrà salvata né stampata (resta in memoria se torni al mesociclo prima di salvare). Continuare?")) {
+        programmingModeSelect.value = "mesocycle";
+        return;
+      }
+    }
     syncProgrammingModeUi();
     if (currentWorkout.length > 0) renderList();
   });
+}
+
+// Imposta la modalità (classica/mesociclo) in base agli esercizi caricati
+// nel builder: usata quando si riprende una bozza, si carica o si clona una scheda.
+function applyProgrammingModeFromItems(durationWeeks) {
+  openProgressionUid = null;
+  selectedProgressionWeekByUid.clear();
+  if (!programmingModeSelect) return;
+  const hasMeso = hasAnyMultiWeekProgression(currentWorkout, durationWeeks);
+  programmingModeSelect.value = hasMeso ? "mesocycle" : "classic";
+  syncProgrammingModeUi();
 }
 
 const durationWeeksInput = document.getElementById("durationWeeks");
@@ -698,11 +764,7 @@ window.resumeDraft = async function(draftId) {
       return base;
     });
 
-    if (programmingModeSelect) {
-      const hasMeso = hasAnyMultiWeekProgression(currentWorkout, workout.duration_weeks);
-      programmingModeSelect.value = hasMeso ? "mesocycle" : "classic";
-      syncProgrammingModeUi();
-    }
+    applyProgrammingModeFromItems(workout.duration_weeks);
 
     renderList();
     loadTrainerDrafts();
@@ -893,11 +955,7 @@ document.getElementById("btnLoadExistingWorkout").addEventListener("click", asyn
     return base;
   });
 
-  if (programmingModeSelect) {
-    const hasMeso = hasAnyMultiWeekProgression(currentWorkout, workout.duration_weeks);
-    programmingModeSelect.value = hasMeso ? "mesocycle" : "classic";
-    syncProgrammingModeUi();
-  }
+  applyProgrammingModeFromItems(workout.duration_weeks);
 
   renderList();
   loadTrainerDrafts();
@@ -1102,6 +1160,22 @@ window.updateProgressionField = function(uid, weekNum, fieldKey, value) {
     if (fieldKey === "rest") item.rest = prog[key].rest;
     if (fieldKey === "rir") item.rir = prog[key].rir;
   }
+
+  // Aggiorna etichette e riepilogo senza ridisegnare la lista (così il focus
+  // resta nel campo e il tocco sul campo successivo non va perso)
+  if (fieldKey === "sets_reps") {
+    const tabLabel = document.getElementById(`progTabLabel_${uid}_${weekNum}`);
+    if (tabLabel) {
+      const sr = prog[key].sets_reps;
+      tabLabel.textContent = sr && sr !== "-" ? sr : "\u00a0";
+    }
+  }
+  const summaryEl = document.getElementById(`progSummary_${uid}`);
+  if (summaryEl) summaryEl.innerHTML = buildWeeklyProgressionSummaryBadges(item, weeksCount);
+  if (weekNum === 1) {
+    const subEl = document.getElementById(`itemSub_${uid}`);
+    if (subEl) subEl.innerHTML = `<strong>${escapeHtml(item.setsReps)}</strong> | Rest: ${escapeHtml(item.rest)} | RIR/@: ${escapeHtml(item.rir)}`;
+  }
 };
 
 window.applyProgressionPreset = function(uid, presetType) {
@@ -1130,14 +1204,34 @@ window.applyProgressionPreset = function(uid, presetType) {
         notes: prog[String(w)]?.notes || ""
       };
     }
+  } else if (presetType === "dec_rir") {
+    for (let w = 2; w <= weeksCount; w++) {
+      const cur = prog[String(w)] || {};
+      if (isDeloadPrescription(cur)) continue;
+      prog[String(w)] = {
+        sets_reps: cur.sets_reps || w1.sets_reps,
+        rest: cur.rest || w1.rest,
+        rir: shiftIntensityFormula(w1.rir, w - 1),
+        notes: cur.notes || ""
+      };
+    }
   } else if (presetType === "deload_selected") {
     const selW = selectedProgressionWeekByUid.get(uid) || weeksCount;
-    prog[String(selW)] = {
-      sets_reps: "Deload",
-      rest: w1.rest,
-      rir: "RIR 3",
-      notes: prog[String(selW)]?.notes || "Scarico / volume ridotto"
-    };
+    const selKey = String(selW);
+    if (isDeloadPrescription(prog[selKey])) {
+      // Toggle: toglie il deload e riparte dalla settimana di carico precedente
+      let source = w1;
+      for (let p = selW - 1; p >= 1; p--) {
+        if (prog[String(p)] && !isDeloadPrescription(prog[String(p)])) { source = prog[String(p)]; break; }
+      }
+      prog[selKey] = { sets_reps: source.sets_reps, rest: source.rest, rir: source.rir, notes: "" };
+    } else {
+      let source = w1;
+      for (let p = selW - 1; p >= 1; p--) {
+        if (prog[String(p)] && !isDeloadPrescription(prog[String(p)])) { source = prog[String(p)]; break; }
+      }
+      prog[selKey] = buildDeloadFromEntry(source);
+    }
   } else if (presetType === "reset") {
     item.weeklyProgression = null;
     openProgressionUid = null;
@@ -1152,15 +1246,12 @@ function buildWeeklyProgressionSummaryBadges(item, weeksCount) {
   for (let w = 1; w <= weeksCount; w++) {
     const entry = item.weeklyProgression[String(w)];
     if (!entry) continue;
-    const isDeload = String(entry.sets_reps || "").toLowerCase().includes("deload");
-    chips.push(`
-      <span style="font-size: 0.68rem; padding: 2px 6px; border-radius: 4px; background: ${isDeload ? 'rgba(56,189,248,0.16)' : 'var(--subcard-bg)'}; border: 1px solid ${isDeload ? 'rgba(56,189,248,0.4)' : 'var(--border)'}; color: ${isDeload ? '#38bdf8' : 'var(--text)'};">
-        <strong>S${w}:</strong> ${escapeHtml(entry.sets_reps || "-")}
-      </span>
-    `);
+    const isDeload = isDeloadPrescription(entry);
+    const sr = entry.sets_reps || "-";
+    chips.push(`<span class="prog-chip${isDeload ? " deload" : ""}" title="Settimana ${w}: ${escapeHtml(sr)}"><strong>S${w}</strong> ${escapeHtml(sr)}</span>`);
   }
   if (chips.length === 0) return "";
-  return `<div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;">${chips.join("")}</div>`;
+  return `<div class="prog-summary-grid" style="${progGridColsStyle(chips.length)}">${chips.join("")}</div>`;
 }
 
 function buildWeeklyProgressionEditorHtml(item, weeksCount) {
@@ -1170,9 +1261,9 @@ function buildWeeklyProgressionEditorHtml(item, weeksCount) {
 
   if (!isOpen) {
     return `
-      <div style="margin-top: 7px; display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
-        <button type="button" class="btn btn-outline btn-sm" style="width: auto; font-size: 0.72rem; padding: 3px 9px; ${hasProg ? 'border-color: #38bdf8; color: #38bdf8;' : ''}" onclick="toggleItemProgressionPanel(${item.uid})">
-          📅 ${hasProg ? `Modifica Progressione (1–${weeksCount} sett.)` : `Programma per Settimana (1–${weeksCount} sett.)`}
+      <div style="margin-top: 7px; display: flex; justify-content: center;">
+        <button type="button" class="btn btn-outline btn-sm" style="width: auto; font-size: 0.72rem; padding: 4px 10px; ${hasProg ? 'border-color: var(--primary); color: var(--primary);' : ''}" onclick="toggleItemProgressionPanel(${item.uid})">
+          📅 ${hasProg ? `Modifica Progressione (${weeksCount} sett.)` : `Programma per Settimana (${weeksCount} sett.)`}
         </button>
       </div>
     `;
@@ -1181,55 +1272,57 @@ function buildWeeklyProgressionEditorHtml(item, weeksCount) {
   const prog = ensureItemWeeklyProgression(item, weeksCount);
   const activeWeek = Math.min(weeksCount, Math.max(1, selectedProgressionWeekByUid.get(item.uid) || 1));
   const activeData = prog[String(activeWeek)] || { sets_reps: item.setsReps, rest: item.rest, rir: item.rir, notes: "" };
+  const activeIsDeload = isDeloadPrescription(activeData);
 
   let weekTabsHtml = "";
   for (let w = 1; w <= weeksCount; w++) {
     const wData = prog[String(w)] || {};
     const isSel = w === activeWeek;
-    const isDeload = String(wData.sets_reps || "").toLowerCase().includes("deload");
+    const isDeload = isDeloadPrescription(wData);
+    const sr = wData.sets_reps && wData.sets_reps !== "-" ? wData.sets_reps : "";
     weekTabsHtml += `
-      <button type="button" onclick="selectProgressionWeek(${item.uid}, ${w})" style="padding: 4px 8px; border-radius: 6px; font-size: 0.72rem; font-weight: 700; cursor: pointer; border: 1px solid ${isSel ? 'var(--primary)' : 'var(--border)'}; background: ${isSel ? 'var(--primary)' : (isDeload ? 'rgba(56,189,248,0.14)' : 'var(--card-bg)')}; color: ${isSel ? 'var(--primary-text)' : (isDeload ? '#38bdf8' : 'var(--text)')};">
-        Sett. ${w}${wData.sets_reps && wData.sets_reps !== '-' ? ` (${escapeHtml(wData.sets_reps)})` : ''}
+      <button type="button" class="prog-week-tab${isDeload ? " deload" : ""}${isSel ? " selected" : ""}" onclick="selectProgressionWeek(${item.uid}, ${w})">
+        <span class="wk">Sett. ${w}</span>
+        <span class="sr" id="progTabLabel_${item.uid}_${w}">${escapeHtml(sr) || "&nbsp;"}</span>
       </button>
     `;
   }
 
   return `
-    <div style="margin-top: 8px; padding: 9px; border-radius: 8px; background: var(--subcard-bg); border: 1.5px solid rgba(56, 189, 248, 0.45);">
-      <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 7px;">
-        <strong style="font-size: 0.76rem; color: #38bdf8;">📅 Progressione Settimanale (1–${weeksCount} sett.)</strong>
-        <button type="button" class="btn btn-outline btn-sm" style="width: auto; padding: 2px 7px; font-size: 0.7rem;" onclick="toggleItemProgressionPanel(${item.uid})">Chiudi ✖</button>
+    <div class="prog-panel">
+      <div class="prog-panel-head">
+        <span class="prog-panel-title">📅 Settimana ${activeWeek} di ${weeksCount}${activeIsDeload ? " · Deload" : ""}</span>
+        <button type="button" class="btn btn-outline btn-sm" style="width: auto; padding: 3px 9px; font-size: 0.7rem;" onclick="toggleItemProgressionPanel(${item.uid})">Chiudi ✖</button>
       </div>
 
-      <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px;">
-        ${weekTabsHtml}
-      </div>
+      <div class="prog-weeks-grid" style="${progGridColsStyle(weeksCount)}">${weekTabsHtml}</div>
 
-      <div class="grid-3">
-        <div class="field" style="margin:0;">
-          <label style="font-size:0.7rem;">Sett. ${activeWeek} — Serie/Reps</label>
-          <input type="text" value="${activeData.sets_reps === '-' ? '' : escapeHtml(activeData.sets_reps)}" placeholder="es. 3x8 / Deload" oninput="updateProgressionField(${item.uid}, ${activeWeek}, 'sets_reps', this.value)" onblur="renderList()">
+      <div class="prog-fields">
+        <div class="field">
+          <label>Serie/Reps</label>
+          <input type="text" value="${activeData.sets_reps === '-' ? '' : escapeHtml(activeData.sets_reps)}" placeholder="3x8" oninput="updateProgressionField(${item.uid}, ${activeWeek}, 'sets_reps', this.value)">
         </div>
-        <div class="field" style="margin:0;">
-          <label style="font-size:0.7rem;">Rest</label>
-          <input type="text" value="${activeData.rest === '-' ? '' : escapeHtml(activeData.rest)}" placeholder="es. 90''" oninput="updateProgressionField(${item.uid}, ${activeWeek}, 'rest', this.value)">
+        <div class="field">
+          <label>Rest</label>
+          <input type="text" value="${activeData.rest === '-' ? '' : escapeHtml(activeData.rest)}" placeholder="90''" oninput="updateProgressionField(${item.uid}, ${activeWeek}, 'rest', this.value)">
         </div>
-        <div class="field" style="margin:0;">
-          <label style="font-size:0.7rem;">RIR / @</label>
-          <input type="text" value="${activeData.rir === '-' ? '' : escapeHtml(activeData.rir)}" placeholder="es. RIR 1" oninput="updateProgressionField(${item.uid}, ${activeWeek}, 'rir', this.value)">
+        <div class="field">
+          <label>RIR / @</label>
+          <input type="text" value="${activeData.rir === '-' ? '' : escapeHtml(activeData.rir)}" placeholder="RIR 2" oninput="updateProgressionField(${item.uid}, ${activeWeek}, 'rir', this.value)">
         </div>
       </div>
 
-      <div class="field" style="margin: 6px 0 0 0;">
-        <label style="font-size:0.7rem;">Nota specifica Settimana ${activeWeek} (opzionale)</label>
-        <input type="text" value="${escapeHtml(activeData.notes || '')}" placeholder="es. Test 12RM, oppure Carico -20%..." oninput="updateProgressionField(${item.uid}, ${activeWeek}, 'notes', this.value)">
+      <div class="field prog-note">
+        <label>Nota della settimana (opzionale)</label>
+        <input type="text" value="${escapeHtml(activeData.notes || '')}" placeholder="es. Test 12RM, carico -20%..." oninput="updateProgressionField(${item.uid}, ${activeWeek}, 'notes', this.value)">
       </div>
 
-      <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; padding-top: 7px; border-top: 1px dashed var(--border);">
-        <button type="button" class="btn btn-outline btn-sm" style="width: auto; font-size: 0.69rem; padding: 2px 7px;" onclick="applyProgressionPreset(${item.uid}, 'copy_w1')">📋 Copia Sett. 1 su tutte</button>
-        <button type="button" class="btn btn-outline btn-sm" style="width: auto; font-size: 0.69rem; padding: 2px 7px;" onclick="applyProgressionPreset(${item.uid}, 'inc_reps')">📈 +1 rep/sett.</button>
-        <button type="button" class="btn btn-outline btn-sm" style="width: auto; font-size: 0.69rem; padding: 2px 7px; border-color: #38bdf8; color: #38bdf8;" onclick="applyProgressionPreset(${item.uid}, 'deload_selected')">🔋 Deload su Sett. ${activeWeek}</button>
-        <button type="button" class="btn btn-outline btn-sm" style="width: auto; font-size: 0.69rem; padding: 2px 7px; border-color: var(--danger); color: var(--danger);" onclick="applyProgressionPreset(${item.uid}, 'reset')">Rimuovi</button>
+      <div class="prog-presets">
+        <button type="button" class="btn btn-outline btn-sm" onclick="applyProgressionPreset(${item.uid}, 'copy_w1')">Copia Sett. 1 su tutte</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="applyProgressionPreset(${item.uid}, 'inc_reps')">+1 rep/sett.</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="applyProgressionPreset(${item.uid}, 'dec_rir')" title="RIR -1 a settimana (o RPE +0,5)">-1 RIR/sett.</button>
+        <button type="button" class="btn btn-outline btn-sm" style="border-color: var(--primary); color: var(--primary);" onclick="applyProgressionPreset(${item.uid}, 'deload_selected')">${activeIsDeload ? `Togli Deload S${activeWeek}` : `Deload Sett. ${activeWeek}`}</button>
+        <button type="button" class="btn btn-outline btn-sm btn-reset" style="border-color: var(--danger); color: var(--danger); grid-column: 1 / -1;" onclick="applyProgressionPreset(${item.uid}, 'reset')">Rimuovi progressione</button>
       </div>
     </div>
   `;
@@ -1289,9 +1382,8 @@ function buildBuilderItemHtml(item, idx, totalInDay) {
         </div>
         <div class="item-details">
           <strong>${idx + 1}. ${escapeHtml(item.name)}</strong> ${roleTag}
-          <div class="item-sub"><strong>${escapeHtml(item.setsReps)}</strong> | Rest: ${escapeHtml(item.rest)} | RIR/@: ${escapeHtml(item.rir)}</div>
+          <div class="item-sub" id="itemSub_${item.uid}"><strong>${escapeHtml(item.setsReps)}</strong> | Rest: ${escapeHtml(item.rest)} | RIR/@: ${escapeHtml(item.rir)}</div>
           ${item.notes !== '-' ? `<div class="item-notes" style="white-space: pre-wrap;">Note: ${escapeHtml(item.notes)}</div>` : ''}
-          ${progSummaryHtml}
         </div>
         <div class="item-actions">
           <button class="btn-icon" title="Sposta su" onclick="moveItem(${item.uid}, -1)" ${idx === 0 ? 'disabled' : ''}>▲</button>
@@ -1300,6 +1392,7 @@ function buildBuilderItemHtml(item, idx, totalInDay) {
           <button class="btn-icon" title="Rimuovi" style="color:var(--danger);" onclick="removeItem(${item.uid})">✖</button>
         </div>
       </div>
+      ${openProgressionUid === item.uid ? "" : `<div id="progSummary_${item.uid}">${progSummaryHtml}</div>`}
       ${editFormHtml}
       ${progEditorHtml}
     </div>
@@ -1332,7 +1425,7 @@ function renderList() {
     const dayItems = grouped[dayName];
     const groupDiv = document.createElement("div");
     groupDiv.className = "day-group";
-    groupDiv.innerHTML = `<div class="day-badge">📅 ${escapeHtml(dayName)} (${dayItems.length} ESERCIZI)</div>`;
+    groupDiv.innerHTML = `<div class="day-badge">${escapeHtml(dayName)} (${dayItems.length} ESERCIZI)</div>`;
 
     let inCircuit = false;
     let circuitHtmlBuffer = "";
@@ -1584,7 +1677,7 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
     showTrainerView("trainerClientsView");
     loadTrainerClients();
   } finally {
-    btn.textContent = "☁️ Salva e Invia all'app dell'Atleta";
+    btn.textContent = "Salva e Invia all'app dell'Atleta";
     syncSaveCloudButtonState();
   }
 });
@@ -1700,12 +1793,15 @@ window.exportPaginatedWorkoutPdf = async function({
             notes: ""
           };
           const sr = wObj.sets_reps || "-";
-          const isDeload = String(sr).toLowerCase().includes("deload");
+          const isDeload = isDeloadPrescription(wObj);
           const wNote = (wObj.notes || "").trim();
           const wRir = (wObj.rir && wObj.rir !== "-" && wObj.rir !== item.rir) ? ` (${wObj.rir})` : "";
+          const wRest = (wObj.rest && wObj.rest !== "-" && wObj.rest !== item.rest) ? `Rest ${wObj.rest}` : "";
           weekCellsHtml += `
             <td style="text-align: center; padding: 4px 3px; font-size: 9px; line-height: 1.25; ${isDeload ? 'background: #e0f2fe; color: #0369a1; font-weight: 700;' : ''}">
+              ${isDeload && !/deload/i.test(sr) ? `<div style="font-size: 7.5px; letter-spacing: 0.3px;">DELOAD</div>` : ""}
               <div><strong>${escapeHtml(sr)}</strong>${escapeHtml(wRir)}</div>
+              ${wRest ? `<div style="font-size: 7.8px; color: #475569;">${escapeHtml(wRest)}</div>` : ""}
               ${wNote ? `<div style="font-size: 7.8px; color: #475569; margin-top: 2px;">${escapeHtml(wNote)}</div>` : ""}
             </td>
           `;

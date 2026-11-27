@@ -27,8 +27,7 @@
           <span id="userRoleBadge" style="font-size: 0.72rem; color: var(--text-muted);">Cloud Coaching System</span>
         </div>
       </div>
-      <div style="display: flex; align-items: center; gap: 6px;">
-        <span style="font-size: 0.75rem; color: var(--primary);" id="dbCount">...</span>
+      <div class="header-actions">
         <div class="notif-btn-wrap">
           <button id="btnOpenNotifications" class="btn btn-outline btn-sm hidden" title="Avvisi e Scadenze">🔔</button>
           <span id="notifCountBadge" class="notif-badge hidden">0</span>
@@ -236,8 +235,8 @@
     <div id="trainerSection" class="hidden" style="display: flex; flex-direction: column; gap: 14px;">
       
       <div class="grid-2">
-        <button class="btn btn-primary" id="navTrainerClients">👥 I Miei Atleti</button>
-        <button class="btn btn-outline" id="navTrainerBuilder">✏️ Crea/Modifica Scheda</button>
+        <button class="btn btn-primary" id="navTrainerClients">I Miei Atleti</button>
+        <button class="btn btn-outline" id="navTrainerBuilder">Crea/Modifica Scheda</button>
       </div>
 
       <!-- VISTA A: DASHBOARD CLIENTI & SCADENZE -->
@@ -454,11 +453,11 @@
           <div class="field">
             <label>Modalità Programmazione</label>
             <select id="programmingMode">
-              <option value="classic">Programmazione Classica (scheda unica)</option>
-              <option value="mesocycle">Programmazione Mesociclo (per settimane, max 10)</option>
+              <option value="classic">Classica (scheda unica)</option>
+              <option value="mesocycle">Mesociclo (per settimane, max 10)</option>
             </select>
           </div>
-          <div class="grid-2">
+          <div class="grid-2 builder-meta-grid">
             <div class="field">
               <label>Nome sul PDF</label>
               <input type="text" id="athleteName" placeholder="es. Mario Rossi">
@@ -637,7 +636,7 @@
           </div>
 
           <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 14px;">
-            <button class="btn btn-success" id="btnSaveCloud">☁️ Salva e Invia all'app dell'Atleta</button>
+            <button class="btn btn-success" id="btnSaveCloud">Salva e Invia all'app dell'Atleta</button>
             <div class="grid-2">
               <button class="btn btn-primary" id="btnSaveDraft" style="background: var(--subcard-bg); color: var(--text); border: 1px solid var(--border);">📝 Salva Bozza</button>
               <button class="btn btn-outline" id="btnPdf">📄 Scarica PDF</button>
@@ -771,6 +770,13 @@
       </div>
 
     </div>
+
+    <!-- Footer (visibile solo dopo il login) -->
+    <footer id="appFooter" class="app-footer hidden">
+      <span>Libreria: <strong id="dbCount">...</strong></span>
+      <span class="app-footer-sep">·</span>
+      <span>Workout Builder</span>
+    </footer>
 
   </div>
 

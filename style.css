@@ -219,9 +219,9 @@ textarea { resize: vertical; min-height: 70px; font-size: 0.85rem; line-height: 
 .past-log-item-flex { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; }
 
 /* Vista Progressi Trainer affiancata */
-.progress-split { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.progress-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 @media (min-width: 560px) {
-  .progress-split { grid-template-columns: 1.15fr 0.85fr; align-items: start; }
+  .progress-split { grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); align-items: start; }
 }
 .athlete-feedback-box { background: var(--log-bg); border: 1px solid var(--log-border); border-left: 3px solid var(--success); border-radius: 6px; padding: 8px 10px; font-size: 0.8rem; }
 .athlete-feedback-box.empty { border-left-color: var(--border); color: var(--text-muted); }
@@ -584,18 +584,18 @@ body:not(.light-theme) .note-coach-box {
 }
 
 .athlete-inputs-row .inp-kg {
-  width: 68px;
-  flex-shrink: 0;
+  flex: 0 1 68px;
+  min-width: 50px;
 }
 
 .athlete-inputs-row .inp-reps {
-  flex: 1;
-  min-width: 85px;
+  flex: 1 1 85px;
+  min-width: 0;
 }
 
 .athlete-inputs-row .inp-rir {
-  width: 58px;
-  flex-shrink: 0;
+  flex: 0 1 58px;
+  min-width: 46px;
 }
 
 .athlete-inputs-row .btn {
@@ -933,3 +933,122 @@ body:not(.light-theme) .note-coach-box {
 .vf-legend { font-size: 0.68rem; color: var(--text-muted); margin-top: 3px; }
 .vf-legend i { display: inline-block; width: 3px; height: 9px; background: #f59e0b; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
 .vf-scrubber-locked { opacity: 0.45; pointer-events: none; }
+
+/* ============================================================
+   PROGRESSIONE SETTIMANALE (MESOCICLO): griglie allineate su mobile
+   ============================================================ */
+.prog-panel { margin-top: 8px; padding: 10px; border-radius: 10px; background: var(--subcard-bg); border: 1.5px solid rgba(56, 189, 248, 0.45); }
+.prog-panel-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+.prog-panel-title { font-size: 0.78rem; font-weight: 700; color: var(--primary); }
+.prog-weeks-grid {
+  display: grid; grid-template-columns: repeat(var(--cols-s, 3), minmax(0, 1fr));
+  gap: 5px; margin-bottom: 10px;
+}
+.prog-week-tab {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 44px; padding: 4px 3px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--card-bg); color: var(--text);
+  font-family: inherit; text-align: center; line-height: 1.15; min-width: 0;
+}
+.prog-week-tab .wk { font-size: 0.72rem; font-weight: 800; }
+.prog-week-tab .sr {
+  font-size: 0.66rem; opacity: 0.85; margin-top: 2px; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.prog-week-tab.deload { background: rgba(56, 189, 248, 0.14); border-color: rgba(56, 189, 248, 0.45); color: var(--primary); }
+.prog-week-tab.selected { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+.prog-fields { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 6px; align-items: end; }
+.prog-fields .field, .prog-note.field { margin: 0; min-width: 0; }
+.prog-fields label, .prog-note label {
+  display: block; font-size: 0.7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.prog-fields input, .prog-note input { width: 100%; min-width: 0; text-align: center; padding: 9px 4px; }
+.prog-note { margin-top: 6px !important; }
+.prog-note input { text-align: left; padding: 9px 8px; }
+.prog-presets {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;
+  margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border);
+}
+.prog-presets .btn { width: 100%; margin: 0; font-size: 0.7rem; padding: 6px 4px; text-align: center; justify-content: center; white-space: normal; line-height: 1.2; }
+@media (min-width: 560px) {
+  .prog-presets { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .prog-presets .btn-reset { grid-column: auto; }
+}
+.prog-summary-grid {
+  display: grid; grid-template-columns: repeat(var(--cols-s, 3), minmax(0, 1fr));
+  gap: 4px; margin-top: 8px;
+}
+.prog-chip strong { display: inline; font-size: inherit; }
+.prog-chip {
+  font-size: 0.66rem; padding: 3px 4px; border-radius: 5px; text-align: center; line-height: 1.2;
+  background: var(--subcard-bg); border: 1px solid var(--border); color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.prog-chip.deload { background: rgba(56, 189, 248, 0.16); border-color: rgba(56, 189, 248, 0.4); color: var(--primary); }
+@media (min-width: 400px) { .prog-weeks-grid, .prog-summary-grid { grid-template-columns: repeat(var(--cols-m, 4), minmax(0, 1fr)); } }
+@media (min-width: 560px) { .prog-weeks-grid, .prog-summary-grid { grid-template-columns: repeat(var(--cols-l, 6), minmax(0, 1fr)); } }
+
+/* Builder: "Nome sul PDF" e "Durata/Settimane" sempre sulla stessa riga */
+.builder-meta-grid { align-items: end; }
+.builder-meta-grid > .field { min-width: 0; }
+.builder-meta-grid > .field > label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ============================================================
+   ALLINEAMENTI GLOBALI (tutte le schermate, iPhone compresi)
+   ============================================================ */
+/* Intestazione: titolo e ruolo sempre su una riga, logo allineato al testo.
+   Su schermi stretti si riducono leggermente testo e pulsanti; se il nome è
+   molto lungo viene accorciato con "…" invece di andare a capo. */
+.header-brand { min-width: 0; flex: 1 1 auto; align-items: center; }
+.header-brand > div { min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.header-brand .site-logo { flex-shrink: 0; display: block; }
+.header-brand h1 {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  line-height: 1.15; font-size: clamp(0.95rem, 4.4vw, 1.1rem);
+}
+#userRoleBadge { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; margin-top: 1px; }
+.header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+@media (max-width: 400px) {
+  .header-brand { gap: 8px; }
+  .header-brand .site-logo { height: 34px; max-width: 64px; }
+  .header-actions { gap: 4px; }
+  .header-actions .btn-sm { padding: 6px 8px; }
+}
+
+/* Campi affiancati: sempre allineati in basso anche se un'etichetta va a capo */
+.grid-2, .grid-3 { align-items: end; }
+.grid-2 > .field, .grid-3 > .field { min-width: 0; }
+.grid-2 > .field > input, .grid-2 > .field > select,
+.grid-3 > .field > input, .grid-3 > .field > select { min-width: 0; }
+/* I pulsanti affiancati (es. tab I Miei Atleti / Crea Scheda) restano alti uguali */
+.grid-2 > .btn, .grid-3 > .btn { align-self: stretch; }
+
+/* Pulsanti nei titoli di sezione: testo su una riga, va a capo il titolo */
+.section-title { gap: 8px; flex-wrap: wrap; }
+.section-title .btn { white-space: nowrap; flex-shrink: 0; }
+
+/* Anamnesi su iPhone: Sesso a riga intera, Altezza e Peso affiancati */
+@media (max-width: 480px) {
+  #trainerAnamnesisView .grid-3 { grid-template-columns: 1fr 1fr; }
+  #trainerAnamnesisView .grid-3 > .field:first-child { grid-column: 1 / -1; }
+}
+
+/* Campi Kg/RIR stretti: meno padding laterale e testo centrato (iPhone SE) */
+.athlete-inputs-row .inp-kg, .athlete-inputs-row .inp-rir { padding-left: 4px; padding-right: 4px; text-align: center; }
+
+/* Footer dopo il login: numero esercizi in libreria */
+.app-footer {
+  display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 6px;
+  margin-top: 4px; padding: 12px 0 18px; border-top: 1px solid var(--border);
+  font-size: 0.74rem; color: var(--text-muted); text-align: center;
+}
+.app-footer.hidden { display: none; }
+.app-footer strong { color: var(--primary); font-weight: 700; }
+.app-footer-sep { opacity: 0.6; }
+
+/* Card video (coach): titolo, data e stato sempre sulla stessa riga */
+.vf-card-title { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1 1 auto; white-space: nowrap; }
+.vf-card-title strong { font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.vf-card-date { font-size: 0.72rem; color: var(--text-muted); flex-shrink: 0; }
+.vf-card-badge { font-size: 0.64rem; font-weight: 700; padding: 1px 5px; border-radius: 4px; flex-shrink: 0; white-space: nowrap; }
+@media (max-width: 360px) { .vf-hide-xs { display: none; } }
