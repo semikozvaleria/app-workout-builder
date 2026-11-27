@@ -4,7 +4,12 @@
 
 const VIDEO_STORAGE_BUCKET = "exercise-videos";
 const MAX_VIDEO_DURATION_SEC = 30;
-const MAX_RAW_UPLOAD_MB = 30;
+const MAX_RAW_UPLOAD_MB = 250;          // file scelto dall'atleta (viene compresso se serve)
+const MAX_FINAL_UPLOAD_MB = 45;         // file effettivamente caricato
+const KEEP_ORIGINAL_MAX_MB = 15;        // fino a qui si carica l'originale (qualità piena)
+const COMPRESS_SHORT_SIDE = 720;        // 720p reale: lato corto 720 px (es. 720x1280)
+const COMPRESS_BITRATE = 4000000;       // 4 Mbps
+const COMPRESS_FPS = 30;
 const MAX_COACH_AUDIO_DURATION_SEC = 120; // 2 minuti massimi
 
 // Stato attivo delle registrazioni vocali del Coach per ogni feedbackId
@@ -17,7 +22,8 @@ function formatSecondsMmSs(totalSec) {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
-// Verifica durata (sempre, max 30s) + compressione lato client a max 720p
+// Verifica durata (sempre, max 30s). Fino a 15 MB carica l'originale; oltre
+// ricodifica in 720p reale (lato corto 720 px) a 4 Mbps / 30 fps.
 async function validateAndCompressVideo(file, onProgressText) {
   return new Promise((resolve) => {
     const video = document.createElement("video");
@@ -28,7 +34,7 @@ async function validateAndCompressVideo(file, onProgressText) {
     video.src = objectUrl;
 
     video.onloadedmetadata = async () => {
-      if (video.duration && video.duration > MAX_VIDEO_DURATION_SEC + 1) {
+      if (Number.isFinite(video.duration) && video.duration > MAX_VIDEO_DURATION_SEC + 1) {
         URL.revokeObjectURL(objectUrl);
         resolve({
           error: `Il video dura ${Math.round(video.duration)} secondi. Il limite massimo consentito è di ${MAX_VIDEO_DURATION_SEC} secondi.`
@@ -36,57 +42,60 @@ async function validateAndCompressVideo(file, onProgressText) {
         return;
       }
 
-      if (file.size <= 8 * 1024 * 1024) {
+      // Se non si può comprimere: originale solo se entro il limite di caricamento
+      const originalOrError = () => {
+        URL.revokeObjectURL(objectUrl);
+        if (file.size > MAX_FINAL_UPLOAD_MB * 1024 * 1024) {
+          resolve({ error: `Il video è troppo pesante (${Math.round(file.size / 1048576)} MB) e questo dispositivo non riesce a comprimerlo. Registra in 1080p o accorcia la clip.` });
+        } else {
+          resolve(file);
+        }
+      };
+
+      if (file.size <= KEEP_ORIGINAL_MAX_MB * 1024 * 1024) {
         URL.revokeObjectURL(objectUrl);
         resolve(file);
         return;
       }
 
       if (typeof MediaRecorder === "undefined" || !HTMLCanvasElement.prototype.captureStream) {
-        URL.revokeObjectURL(objectUrl);
-        resolve(file);
+        originalOrError();
         return;
       }
 
-      const maxDim = 720;
+      // 720p reale: il lato CORTO diventa 720 px (es. 1080x1920 -> 720x1280)
       let width = video.videoWidth || 720;
       let height = video.videoHeight || 1280;
-
-      if (width > maxDim || height > maxDim) {
-        if (width >= height) {
-          height = Math.round((height * maxDim) / width);
-          width = maxDim;
-        } else {
-          width = Math.round((width * maxDim) / height);
-          height = maxDim;
-        }
+      const shortSide = Math.min(width, height);
+      if (shortSide > COMPRESS_SHORT_SIDE) {
+        const k = COMPRESS_SHORT_SIDE / shortSide;
+        width = Math.round(width * k);
+        height = Math.round(height * k);
       }
       width = width % 2 === 0 ? width : width - 1;
       height = height % 2 === 0 ? height : height - 1;
 
-      const mimeType = MediaRecorder.isTypeSupported("video/mp4;codecs=avc1")
-        ? "video/mp4;codecs=avc1"
-        : MediaRecorder.isTypeSupported("video/webm;codecs=vp8")
-          ? "video/webm;codecs=vp8"
-          : "";
+      const mimeType = ["video/mp4;codecs=avc1", "video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"]
+        .find((t) => MediaRecorder.isTypeSupported(t)) || "";
 
       if (!mimeType) {
-        URL.revokeObjectURL(objectUrl);
-        resolve(file);
+        originalOrError();
         return;
       }
 
       try {
-        if (onProgressText) onProgressText("⏳ Ottimizzazione video in corso...");
+        if (onProgressText) onProgressText(`Ottimizzazione video in corso (${width}x${height})...`);
         const canvas = document.createElement("canvas");
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext("2d");
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
 
-        const stream = canvas.captureStream(24);
+        const stream = canvas.captureStream(COMPRESS_FPS);
         const recorder = new MediaRecorder(stream, {
           mimeType,
-          videoBitsPerSecond: 1200000
+          videoBitsPerSecond: COMPRESS_BITRATE
         });
 
         const chunks = [];
@@ -103,8 +112,10 @@ async function validateAndCompressVideo(file, onProgressText) {
               type: compressedBlob.type
             });
             resolve(compressedFile);
-          } else {
+          } else if (file.size <= MAX_FINAL_UPLOAD_MB * 1024 * 1024) {
             resolve(file);
+          } else {
+            resolve({ error: "Non è stato possibile ottimizzare il video. Registra in 1080p o accorcia la clip." });
           }
         };
 
@@ -126,8 +137,7 @@ async function validateAndCompressVideo(file, onProgressText) {
         };
       } catch (err) {
         console.warn("Fallback upload video originale:", err);
-        URL.revokeObjectURL(objectUrl);
-        resolve(file);
+        originalOrError();
       }
     };
 
@@ -184,6 +194,148 @@ function isTimelinePausedAt(timeline, t) {
     else break;
   }
   return Boolean(active && active.paused);
+}
+
+// ============================================================
+// DISEGNI DEL COACH SUL VIDEO (linee, frecce, cerchi, angoli)
+// I disegni sono eventi della timeline del commento audio con la proprietà
+// "draw" e lo stesso stato del video (in pausa): le versioni precedenti
+// dell'app li trattano come eventi neutri e li ignorano.
+// Regola: i disegni spariscono quando il video riparte o cambia fotogramma.
+// ============================================================
+
+const VF_DRAW_COLORS = ["#facc15", "#ef4444", "#38bdf8", "#ffffff"];
+
+// Icone SVG degli strumenti (tratto = colore del testo del pulsante)
+const vfSvg = (inner) => `<svg class="vf-tool-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+const VF_DRAW_TOOLS = [
+  { id: "free", label: "Libero", icon: vfSvg('<path d="M3 17c3-6 5-9 7-6s1 7 4 5 4-9 7-10"/>') },
+  { id: "line", label: "Linea", icon: vfSvg('<path d="M4 20L20 4"/>') },
+  { id: "arrow", label: "Freccia", icon: vfSvg('<path d="M4 20L19 5"/><path d="M11 5h8v8"/>') },
+  { id: "circle", label: "Cerchio", icon: vfSvg('<circle cx="12" cy="12" r="8"/>') },
+  { id: "angle", label: "Angolo", icon: vfSvg('<path d="M19 6L5 19h15"/><path d="M10 19a6 6 0 0 0-1.6-4.2"/>') }
+];
+const VF_ICON_UNDO = vfSvg('<path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>');
+const VF_ICON_CLEAR = vfSvg('<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/>');
+
+// Disegni visibili all'istante t dell'audio: { shapes, key }
+function getTimelineDrawingsAt(timeline, t) {
+  const shapes = [];
+  if (!Array.isArray(timeline)) return { shapes, key: "0" };
+  let prevVideoTime = null;
+  let lastIdx = -1;
+  for (let i = 0; i < timeline.length; i++) {
+    const evt = timeline[i];
+    if (!evt || evt.t > t) break;
+    lastIdx = i;
+    if (evt.draw) {
+      if (evt.draw.clear) shapes.length = 0;
+      else if (evt.draw.undo) shapes.pop();
+      else if (evt.draw.tool && Array.isArray(evt.draw.pts)) shapes.push(evt.draw);
+      continue;
+    }
+    if (!evt.paused) {
+      shapes.length = 0;
+    } else if (prevVideoTime !== null && Math.abs((evt.videoTime || 0) - prevVideoTime) > 0.05) {
+      shapes.length = 0;
+    }
+    prevVideoTime = evt.videoTime || 0;
+  }
+  return { shapes, key: `${lastIdx}:${shapes.length}` };
+}
+
+// Angolo in gradi nel vertice b tra i segmenti b->a e b->c (coordinate in pixel)
+function vfAngleDeg(a, b, c) {
+  const v1x = a[0] - b[0], v1y = a[1] - b[1];
+  const v2x = c[0] - b[0], v2y = c[1] - b[1];
+  const n1 = Math.hypot(v1x, v1y), n2 = Math.hypot(v2x, v2y);
+  if (!n1 || !n2) return 0;
+  const cos = Math.max(-1, Math.min(1, (v1x * v2x + v1y * v2y) / (n1 * n2)));
+  return Math.round((Math.acos(cos) * 180) / Math.PI);
+}
+
+// Disegna le forme sul contesto; rect = area del video (x, y, w, h in pixel)
+function renderVfDrawings(ctx, shapes, rect) {
+  const toPx = (p) => [rect.x + p[0] * rect.w, rect.y + p[1] * rect.h];
+  const lw = Math.max(2.5, rect.w * 0.007);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  (shapes || []).forEach((s) => {
+    if (!s || !Array.isArray(s.pts) || s.pts.length === 0) return;
+    const color = s.color || VF_DRAW_COLORS[0];
+    const pts = s.pts.map(toPx);
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = lw;
+    ctx.shadowColor = "rgba(0,0,0,0.55)";
+    ctx.shadowBlur = 3;
+
+    if (s.tool === "free") {
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      if (pts.length === 1) ctx.lineTo(pts[0][0] + 0.1, pts[0][1]);
+      ctx.stroke();
+    } else if ((s.tool === "line" || s.tool === "arrow") && pts.length >= 2) {
+      const [a, b] = pts;
+      ctx.beginPath();
+      ctx.moveTo(a[0], a[1]);
+      ctx.lineTo(b[0], b[1]);
+      ctx.stroke();
+      if (s.tool === "arrow") {
+        const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+        const head = lw * 4.2;
+        ctx.beginPath();
+        ctx.moveTo(b[0], b[1]);
+        ctx.lineTo(b[0] - head * Math.cos(ang - Math.PI / 6), b[1] - head * Math.sin(ang - Math.PI / 6));
+        ctx.lineTo(b[0] - head * Math.cos(ang + Math.PI / 6), b[1] - head * Math.sin(ang + Math.PI / 6));
+        ctx.closePath();
+        ctx.fill();
+      }
+    } else if (s.tool === "circle" && pts.length >= 2) {
+      const [c, e] = pts;
+      const r = Math.max(4, Math.hypot(e[0] - c[0], e[1] - c[1]));
+      ctx.beginPath();
+      ctx.arc(c[0], c[1], r, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (s.tool === "angle") {
+      // pts: [estremo A, vertice B, estremo C] (C assente durante l'anteprima)
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      if (pts[1]) ctx.lineTo(pts[1][0], pts[1][1]);
+      if (pts[2]) ctx.lineTo(pts[2][0], pts[2][1]);
+      ctx.stroke();
+      if (pts.length >= 3) {
+        const [a, b, c] = pts;
+        const deg = vfAngleDeg(a, b, c);
+        const r = Math.min(Math.hypot(a[0] - b[0], a[1] - b[1]), Math.hypot(c[0] - b[0], c[1] - b[1]), lw * 10) * 0.6;
+        const a1 = Math.atan2(a[1] - b[1], a[0] - b[0]);
+        const a2 = Math.atan2(c[1] - b[1], c[0] - b[0]);
+        let diff = a2 - a1;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        ctx.beginPath();
+        ctx.arc(b[0], b[1], r, a1, a1 + diff, diff < 0);
+        ctx.lineWidth = lw * 0.7;
+        ctx.stroke();
+        const mid = a1 + diff / 2;
+        const label = `${deg}°`;
+        const fontPx = Math.max(12, Math.round(lw * 4.2));
+        ctx.font = `700 ${fontPx}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+        const tx = b[0] + Math.cos(mid) * (r + fontPx * 1.1);
+        const ty = b[1] + Math.sin(mid) * (r + fontPx * 1.1);
+        const tw = ctx.measureText(label).width;
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "rgba(0,0,0,0.7)";
+        ctx.fillRect(tx - tw / 2 - 4, ty - fontPx * 0.75, tw + 8, fontPx * 1.3);
+        ctx.fillStyle = color;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(label, tx, ty - fontPx * 0.1);
+      }
+    }
+    ctx.shadowBlur = 0;
+  });
 }
 
 // Helper condiviso per applicare la timeline al controller video
@@ -297,11 +449,23 @@ window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPa
     <div style="margin-top: 6px; background: #000; border-radius: 8px; overflow: hidden; border: 1px solid var(--border);">
       <div class="vf-stage">
         <canvas id="videoCanvas_${feedbackId}" style="width: 100%; max-height: 330px; display: block; object-fit: contain; background: #000; cursor: pointer;"></canvas>
+        <canvas id="vfDrawCanvas_${feedbackId}" class="vf-draw-canvas"></canvas>
         <div class="vf-overlay">
           <span id="vfRecChip_${feedbackId}" class="vf-chip rec hidden"><span class="vf-rec-dot"></span><span id="vfRecChipText_${feedbackId}">REC 0:00</span></span>
           <span id="vfPauseChip_${feedbackId}" class="vf-chip coach-pause hidden">⏸ Pausa del coach</span>
         </div>
         <div id="vfHint_${feedbackId}" class="vf-hint hidden"></div>
+      </div>
+      <div id="vfDrawBar_${feedbackId}" class="vf-drawbar hidden">
+        <div class="vf-drawbar-group">
+          ${VF_DRAW_TOOLS.map((t) => `<button type="button" class="vf-tool" data-tool="${t.id}" title="${t.label}">${t.icon}<span class="vf-tool-label">${t.label}</span></button>`).join("")}
+        </div>
+        <div class="vf-drawbar-group">
+          ${VF_DRAW_COLORS.map((c) => `<button type="button" class="vf-color" data-color="${c}" style="background:${c};" title="Colore"></button>`).join("")}
+          <span class="vf-drawbar-spacer"></span>
+          <button type="button" class="vf-tool vf-tool-action" data-action="undo" title="Annulla">${VF_ICON_UNDO}<span class="vf-tool-label">Annulla</span></button>
+          <button type="button" class="vf-tool vf-tool-action" data-action="clear" title="Pulisci">${VF_ICON_CLEAR}<span class="vf-tool-label">Pulisci</span></button>
+        </div>
       </div>
       <div id="vfControls_${feedbackId}" style="display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: rgba(15, 23, 42, 0.95); border-top: 1px solid rgba(255,255,255,0.1);">
         <button type="button" id="btnCanvasPlayPause_${feedbackId}" class="btn btn-outline btn-sm" style="width: auto; padding: 3px 10px; font-size: 0.74rem; min-width: 72px;">
@@ -490,6 +654,164 @@ window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPa
     seekVideo(parseFloat(scrubber.value), false);
   });
 
+  // ------------------------------------------------------------
+  // STRATO DISEGNI (sopra il video): mostra i disegni della timeline e,
+  // durante la registrazione del coach, permette di disegnare.
+  // Coordinate salvate normalizzate (0..1) sull'area visibile del video.
+  // ------------------------------------------------------------
+  const drawCanvas = document.getElementById(`vfDrawCanvas_${feedbackId}`);
+  const drawCtx = drawCanvas.getContext("2d");
+  const drawBar = document.getElementById(`vfDrawBar_${feedbackId}`);
+  let displayShapes = [];      // disegni da mostrare (riproduzione o live)
+  let drawingEnabled = false;
+  let drawOnAction = null;     // callback verso la registrazione
+  let drawTool = "free";
+  let drawColor = VF_DRAW_COLORS[0];
+  let draftShape = null;       // forma in corso di disegno
+  let activePointerId = null;
+
+  // Area del video dentro il canvas (object-fit: contain lascia bande nere)
+  const getVideoRect = () => {
+    const cw = canvas.clientWidth, ch = canvas.clientHeight;
+    const vw = hiddenVideo.videoWidth || canvas.width || cw;
+    const vh = hiddenVideo.videoHeight || canvas.height || ch;
+    const scale = Math.min(cw / vw, ch / vh) || 1;
+    const w = vw * scale, h = vh * scale;
+    return { x: (cw - w) / 2, y: (ch - h) / 2, w, h };
+  };
+
+  const renderDrawLayer = () => {
+    const cw = canvas.clientWidth, ch = canvas.clientHeight;
+    if (!cw || !ch) return;
+    const dpr = window.devicePixelRatio || 1;
+    if (drawCanvas.width !== Math.round(cw * dpr) || drawCanvas.height !== Math.round(ch * dpr)) {
+      drawCanvas.width = Math.round(cw * dpr);
+      drawCanvas.height = Math.round(ch * dpr);
+    }
+    drawCanvas.style.width = `${cw}px`;
+    drawCanvas.style.height = `${ch}px`;
+    drawCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawCtx.clearRect(0, 0, cw, ch);
+    const shapes = draftShape ? displayShapes.concat([draftShape]) : displayShapes;
+    if (shapes.length) renderVfDrawings(drawCtx, shapes, getVideoRect());
+  };
+
+  const pointerToNorm = (e) => {
+    const box = drawCanvas.getBoundingClientRect();
+    const r = getVideoRect();
+    const x = (e.clientX - box.left - r.x) / r.w;
+    const y = (e.clientY - box.top - r.y) / r.h;
+    const clamp = (v) => Math.round(Math.max(0, Math.min(1, v)) * 1000) / 1000;
+    return [clamp(x), clamp(y)];
+  };
+
+  const emitDraw = (draw) => {
+    if (typeof drawOnAction === "function") drawOnAction(draw);
+  };
+
+  const commitShape = (shape) => {
+    displayShapes = displayShapes.concat([shape]);
+    emitDraw({ tool: shape.tool, color: shape.color, pts: shape.pts });
+  };
+
+  drawCanvas.addEventListener("pointerdown", (e) => {
+    if (!drawingEnabled) return;
+    e.preventDefault();
+    // Per disegnare il video si ferma da solo (la pausa entra nella timeline)
+    if (isPlaying) pauseVideo(false);
+    const p = pointerToNorm(e);
+    if (drawTool === "angle") {
+      // Angolo: tre tocchi (estremo, vertice, estremo) con anteprima
+      if (!draftShape || draftShape.tool !== "angle") {
+        draftShape = { tool: "angle", color: drawColor, pts: [p, p] };
+      } else {
+        draftShape.pts[draftShape.pts.length - 1] = p;
+        if (draftShape.pts.length === 3) {
+          const done = draftShape;
+          draftShape = null;
+          commitShape(done);
+        } else {
+          draftShape.pts.push(p);
+        }
+      }
+      renderDrawLayer();
+      return;
+    }
+    activePointerId = e.pointerId;
+    try { drawCanvas.setPointerCapture(e.pointerId); } catch (_) {}
+    draftShape = { tool: drawTool, color: drawColor, pts: drawTool === "free" ? [p] : [p, p] };
+    renderDrawLayer();
+  });
+
+  drawCanvas.addEventListener("pointermove", (e) => {
+    if (!drawingEnabled || !draftShape) return;
+    const p = pointerToNorm(e);
+    if (draftShape.tool === "angle") {
+      draftShape.pts[draftShape.pts.length - 1] = p;
+    } else if (e.pointerId === activePointerId) {
+      if (draftShape.tool === "free") {
+        const last = draftShape.pts[draftShape.pts.length - 1];
+        if (Math.hypot(p[0] - last[0], p[1] - last[1]) >= 0.006 && draftShape.pts.length < 240) draftShape.pts.push(p);
+      } else {
+        draftShape.pts[1] = p;
+      }
+    } else {
+      return;
+    }
+    renderDrawLayer();
+  });
+
+  const finishPointer = (e) => {
+    if (!drawingEnabled || !draftShape || draftShape.tool === "angle" || e.pointerId !== activePointerId) return;
+    activePointerId = null;
+    const s = draftShape;
+    draftShape = null;
+    const [a, b] = [s.pts[0], s.pts[s.pts.length - 1]];
+    const tooSmall = s.tool !== "free" && Math.hypot(b[0] - a[0], b[1] - a[1]) < 0.015;
+    if (!tooSmall) commitShape(s);
+    renderDrawLayer();
+  };
+  drawCanvas.addEventListener("pointerup", finishPointer);
+  drawCanvas.addEventListener("pointercancel", finishPointer);
+
+  const syncDrawBarUi = () => {
+    if (!drawBar) return;
+    drawBar.querySelectorAll(".vf-tool[data-tool]").forEach((b) => b.classList.toggle("selected", b.dataset.tool === drawTool));
+    drawBar.querySelectorAll(".vf-color").forEach((b) => b.classList.toggle("selected", b.dataset.color === drawColor));
+  };
+  if (drawBar) {
+    drawBar.addEventListener("click", (e) => {
+      const btn = e.target.closest("button");
+      if (!btn || !drawingEnabled) return;
+      if (btn.dataset.tool) {
+        drawTool = btn.dataset.tool;
+        draftShape = null;
+      } else if (btn.dataset.color) {
+        drawColor = btn.dataset.color;
+        if (draftShape) draftShape.color = drawColor;
+      } else if (btn.dataset.action === "undo") {
+        if (draftShape) {
+          draftShape = null;
+        } else if (displayShapes.length) {
+          displayShapes = displayShapes.slice(0, -1);
+          emitDraw({ undo: true });
+        }
+      } else if (btn.dataset.action === "clear") {
+        draftShape = null;
+        if (displayShapes.length) {
+          displayShapes = [];
+          emitDraw({ clear: true });
+        }
+      }
+      syncDrawBarUi();
+      renderDrawLayer();
+    });
+  }
+
+  hiddenVideo.addEventListener("loadedmetadata", () => requestAnimationFrame(renderDrawLayer));
+  const onWindowResize = () => renderDrawLayer();
+  window.addEventListener("resize", onWindowResize);
+
   const recChip = document.getElementById(`vfRecChip_${feedbackId}`);
   const recChipText = document.getElementById(`vfRecChipText_${feedbackId}`);
   const pauseChip = document.getElementById(`vfPauseChip_${feedbackId}`);
@@ -519,6 +841,37 @@ window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPa
       scrubber.classList.toggle("vf-scrubber-locked", Boolean(locked));
     },
     setUserToggleOverride(fn) { userToggleOverride = fn || null; },
+    // Disegni da mostrare (riproduzione sincronizzata o anteprima)
+    setDrawings(shapes) {
+      displayShapes = Array.isArray(shapes) ? shapes.slice() : [];
+      renderDrawLayer();
+    },
+    // Abilita il disegno durante la registrazione del coach
+    enableDrawing(onAction) {
+      drawingEnabled = true;
+      drawOnAction = onAction || null;
+      displayShapes = [];
+      draftShape = null;
+      drawCanvas.classList.add("active");
+      if (drawBar) drawBar.classList.remove("hidden");
+      syncDrawBarUi();
+      renderDrawLayer();
+    },
+    disableDrawing() {
+      drawingEnabled = false;
+      drawOnAction = null;
+      draftShape = null;
+      drawCanvas.classList.remove("active");
+      if (drawBar) drawBar.classList.add("hidden");
+      renderDrawLayer();
+    },
+    // Pulisce i disegni a schermo (video ripartito o cambio fotogramma)
+    clearLiveDrawings() {
+      if (!displayShapes.length && !draftShape) return;
+      displayShapes = [];
+      draftShape = null;
+      renderDrawLayer();
+    },
     get currentTime() { return hiddenVideo.currentTime || 0; },
     get duration() { return hiddenVideo.duration || 0; },
     get paused() { return !isPlaying; },
@@ -537,6 +890,7 @@ window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPa
     stopAudioSync: null,
     destroy() {
       if (this.stopAudioSync) this.stopAudioSync();
+      window.removeEventListener("resize", onWindowResize);
       pauseVideo(true);
       hiddenVideo.src = "";
       if (localBlobUrl) {
@@ -569,6 +923,15 @@ window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPa
   let audioRafId = null;
 
   const getAudioTotal = () => (audioBuffer ? audioBuffer.duration : 0) || 0;
+
+  // Disegni del coach alla posizione corrente del commento (ridisegna solo se cambiano)
+  let lastDrawKey = "";
+  const syncDrawingsAt = (sec) => {
+    const { shapes, key } = getTimelineDrawingsAt(timeline, sec);
+    if (key === lastDrawKey) return;
+    lastDrawKey = key;
+    controller.setDrawings(shapes);
+  };
 
   const updateAudioUi = (elapsed) => {
     const total = getAudioTotal();
@@ -640,6 +1003,8 @@ window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPa
     controller.setCoachPauseOverlay(false);
     if (resetToStart) {
       pausedOffsetSec = 0;
+      lastDrawKey = "";
+      controller.setDrawings([]);
       if (progressBar) progressBar.style.width = "0%";
       if (timerLabel && audioBuffer) {
         timerLabel.textContent = `0:00 / ${formatSecondsMmSs(Math.round(audioBuffer.duration))}`;
@@ -670,6 +1035,7 @@ window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPa
 
     updateAudioUi(elapsed);
     applyTimelineToController(controller, timeline, elapsed);
+    syncDrawingsAt(elapsed);
     audioRafId = requestAnimationFrame(audioTick);
   };
 
@@ -738,9 +1104,11 @@ window.playExerciseVideoFeedback = async function(feedbackId, videoPath, audioPa
       stopSource();
       startSourceAt(target);
       applyTimelineToController(controller, timeline, target);
+      syncDrawingsAt(target);
     } else {
       pausedOffsetSec = target;
       seekVideo(getTimelineVideoTimeAt(target), true);
+      syncDrawingsAt(target);
       if (syncBtn) syncBtn.textContent = target > 0 ? "▶️ Riprendi" : "▶️ Ascolta con video";
     }
     updateAudioUi(target);
@@ -795,6 +1163,8 @@ window.playCoachDraftPreviewSync = async function(feedbackId) {
     controller.setCoachPauseOverlay(false);
     controller.setUserToggleOverride(null);
     controller.setScrubberLocked(false);
+    controller.setDrawings([]);
+    recState._previewDrawKey = "";
     if (btn) btn.textContent = "▶️ Riascolta con video";
     if (timerEl) timerEl.textContent = "0:00";
     return;
@@ -834,6 +1204,8 @@ window.playCoachDraftPreviewSync = async function(feedbackId) {
       controller.setCoachPauseOverlay(false);
       controller.setUserToggleOverride(null);
       controller.setScrubberLocked(false);
+      controller.setDrawings([]);
+      recState._previewDrawKey = "";
       if (btn) btn.textContent = "▶️ Riascolta con video";
       if (timerEl) timerEl.textContent = `0:00 / ${formatSecondsMmSs(Math.round(audioBuffer.duration))}`;
     };
@@ -853,6 +1225,11 @@ window.playCoachDraftPreviewSync = async function(feedbackId) {
       }
       controller.setCoachPauseOverlay(isTimelinePausedAt(recState.timeline, elapsed));
       applyTimelineToController(controller, recState.timeline, elapsed);
+      const dr = getTimelineDrawingsAt(recState.timeline, elapsed);
+      if (dr.key !== recState._previewDrawKey) {
+        recState._previewDrawKey = dr.key;
+        controller.setDrawings(dr.shapes);
+      }
       recState._previewRaf = requestAnimationFrame(tick);
     };
 
@@ -967,6 +1344,7 @@ window.toggleCoachAudioRecording = async function(feedbackId, videoPath) {
 
     const getElapsedSec = () => (startPerfMs === null ? 0 : (performance.now() - startPerfMs) / 1000);
 
+    let lastStateVideoTime = null;
     const recordEvent = () => {
       if (startPerfMs === null) return;
       const evt = {
@@ -974,16 +1352,36 @@ window.toggleCoachAudioRecording = async function(feedbackId, videoPath) {
         videoTime: Math.round((controller.currentTime || 0) * 100) / 100,
         paused: Boolean(controller.paused)
       };
+      // Disegni a schermo: spariscono quando il video riparte o cambia fotogramma
+      if (!evt.paused || (lastStateVideoTime !== null && Math.abs(evt.videoTime - lastStateVideoTime) > 0.05)) {
+        controller.clearLiveDrawings();
+      }
+      lastStateVideoTime = evt.videoTime;
       const last = timeline[timeline.length - 1];
       // Trascinamento della barra: eventi ravvicinati con lo stesso stato
-      // play/pausa aggiornano l'ultimo invece di accumularsi
-      if (last && last.paused === evt.paused && lastPushT >= 0 && (evt.t - lastPushT) < DRAG_COALESCE_SEC) {
+      // play/pausa aggiornano l'ultimo invece di accumularsi (mai un disegno)
+      if (last && !last.draw && last.paused === evt.paused && lastPushT >= 0 && (evt.t - lastPushT) < DRAG_COALESCE_SEC) {
         last.t = evt.t;
         last.videoTime = evt.videoTime;
         return;
       }
       timeline.push(evt);
       lastPushT = evt.t;
+    };
+
+    // Disegno del coach: evento con lo stesso stato del video + "draw"
+    let hintTimer = null;
+    const recordDrawEvent = (draw) => {
+      if (startPerfMs === null || !draw) return;
+      controller.setHint(""); // il suggerimento non deve coprire i disegni
+      const t = Math.round(getElapsedSec() * 100) / 100;
+      timeline.push({
+        t,
+        videoTime: Math.round((controller.currentTime || 0) * 100) / 100,
+        paused: Boolean(controller.paused),
+        draw
+      });
+      lastPushT = t;
     };
 
     const updateRecUi = () => {
@@ -1000,6 +1398,7 @@ window.toggleCoachAudioRecording = async function(feedbackId, videoPath) {
       }
       startPerfMs = performance.now();
       controller.onStateChange(recordEvent);
+      controller.enableDrawing(recordDrawEvent);
       controller.play(); // emette lo stato iniziale (t = 0, video in play)
       recordEvent();
       updateRecUi();
@@ -1022,7 +1421,10 @@ window.toggleCoachAudioRecording = async function(feedbackId, videoPath) {
     recorder.onstop = () => {
       if (fallbackStartTimer) clearTimeout(fallbackStartTimer);
       if (timerInterval) clearInterval(timerInterval);
+      if (hintTimer) clearTimeout(hintTimer);
       controller.offStateChange(recordEvent);
+      controller.disableDrawing();
+      controller.setDrawings([]);
       controller.setMicSafeMode(false);
       controller.setRecordingOverlay(null);
       controller.setHint("");
@@ -1032,6 +1434,7 @@ window.toggleCoachAudioRecording = async function(feedbackId, videoPath) {
       const finalMime = (recorder.mimeType || mimeType || "audio/mp4").split(";")[0];
       const audioBlob = new Blob(chunks, { type: finalMime });
       const pauseCount = getTimelinePauseMarkers(timeline).length;
+      const drawCount = timeline.filter(e => e && e.draw && e.draw.tool).length;
 
       activeCoachAudioRecorders.set(feedbackId, {
         recordedBlob: audioBlob,
@@ -1045,7 +1448,7 @@ window.toggleCoachAudioRecording = async function(feedbackId, videoPath) {
         btnRec.style.color = "";
       }
       if (statusEl) {
-        statusEl.textContent = `Audio pronto (${formatSecondsMmSs(Math.round(getElapsedSec()))}${pauseCount > 0 ? ` · ${pauseCount} ${pauseCount === 1 ? "pausa" : "pause"} sul video` : ""}). Riascoltalo e poi clicca "Salva" per inviarlo.`;
+        statusEl.textContent = `Audio pronto (${formatSecondsMmSs(Math.round(getElapsedSec()))}${pauseCount > 0 ? ` · ${pauseCount} ${pauseCount === 1 ? "pausa" : "pause"} sul video` : ""}${drawCount > 0 ? ` · ${drawCount} ${drawCount === 1 ? "disegno" : "disegni"}` : ""}). Riascoltalo e poi clicca "Salva" per inviarlo.`;
       }
       if (previewWrap) {
         previewWrap.classList.remove("hidden");
@@ -1078,12 +1481,14 @@ window.toggleCoachAudioRecording = async function(feedbackId, videoPath) {
       btnRec.style.color = "#fff";
     }
     controller.setRecordingOverlay("REC");
-    controller.setHint("Parla pure · tocca il video per fermarlo/riprenderlo · trascina la barra per andare avanti e indietro");
+    controller.setHint("Parla pure · disegna sul video per fermarlo e spiegare · Play per ripartire · barra per spostarti");
+    hintTimer = setTimeout(() => controller.setHint(""), 5000);
     if (statusEl) {
       statusEl.textContent = "Registrazione in corso: commenta e metti in pausa il video nei punti chiave (max 2 min).";
     }
   } catch (err) {
     console.error(err);
+    controller.disableDrawing();
     controller.setMicSafeMode(false);
     controller.setRecordingOverlay(null);
     controller.setHint("");
@@ -1399,8 +1804,8 @@ function buildAthleteVideoSectionHtml(row, videoFeedbacksForExercise) {
     const timelineEncoded = vf.coach_audio_timeline ? encodeURIComponent(JSON.stringify(vf.coach_audio_timeline)) : "";
 
     const statusBadge = isReviewed
-      ? `<span style="font-size:0.68rem; background:rgba(16,185,129,0.18); color:#10b981; padding:1px 6px; border-radius:4px; font-weight:700;">✅ Revisionato</span>`
-      : `<span style="font-size:0.68rem; background:rgba(245,158,11,0.18); color:#f59e0b; padding:1px 6px; border-radius:4px; font-weight:700;">⏳ In attesa del Coach</span>`;
+      ? `<span class="vf-clip-badge" style="background:rgba(16,185,129,0.18); color:#10b981;">✅ Revisionato</span>`
+      : `<span class="vf-clip-badge" style="background:rgba(245,158,11,0.18); color:#f59e0b;">In attesa del Coach</span>`;
 
     const coachMessageHtml = isReviewed
       ? `<div class="note-coach-box" style="margin-top: 6px; white-space: pre-wrap; text-align: left;"><strong>Nota Tecnica ${escapeHtml(coachFirstName)}:</strong>${hasAudio ? `\nAscolta il commento sul video` : ""}${hasText ? `\n${escapeHtml(vf.coach_feedback)}` : ""}</div>`
@@ -1408,11 +1813,11 @@ function buildAthleteVideoSectionHtml(row, videoFeedbacksForExercise) {
 
     return `
       <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 7px; padding: 8px; margin-top: 6px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
-          <span style="font-size: 0.74rem; color: var(--text-muted);">🎥 Clip del ${dateStr} ${statusBadge}</span>
-          <div style="display: flex; gap: 5px;">
-            ${vf.video_path ? `<button type="button" class="btn btn-outline btn-sm" style="padding: 2px 8px; font-size: 0.72rem; width: auto;" onclick="playExerciseVideoFeedback('${vf.id}', '${escapeJsAttr(vf.video_path)}', '${escapeJsAttr(vf.coach_audio_path || "")}', '${timelineEncoded}')">▶️ Guarda</button>` : `<span style="font-size:0.7rem; color:var(--text-muted);">File archiviato</span>`}
-            <button type="button" class="btn btn-outline btn-sm" style="padding: 2px 7px; font-size: 0.72rem; width: auto; border-color: var(--danger); color: var(--danger);" onclick="deleteAthleteExerciseVideo('${vf.id}', '${escapeJsAttr(vf.video_path || "")}', '${escapeJsAttr(vf.coach_audio_path || "")}')">🗑️</button>
+        <div class="vf-clip-row">
+          <div class="vf-clip-info"><span>🎥 Clip del ${dateStr}</span>${statusBadge}</div>
+          <div class="vf-clip-actions">
+            ${vf.video_path ? `<button type="button" class="btn btn-outline btn-sm vf-clip-btn" onclick="playExerciseVideoFeedback('${vf.id}', '${escapeJsAttr(vf.video_path)}', '${escapeJsAttr(vf.coach_audio_path || "")}', '${timelineEncoded}')">▶️ Guarda</button>` : `<span style="font-size:0.7rem; color:var(--text-muted);">File archiviato</span>`}
+            <button type="button" class="btn btn-outline btn-sm vf-clip-btn vf-clip-btn-del" title="Elimina video" onclick="deleteAthleteExerciseVideo('${vf.id}', '${escapeJsAttr(vf.video_path || "")}', '${escapeJsAttr(vf.coach_audio_path || "")}')">🗑️</button>
           </div>
         </div>
         ${vf.athlete_note ? `<div style="font-size: 0.76rem; margin-top: 4px; color: var(--text);"><strong>La tua nota:</strong> ${escapeHtml(vf.athlete_note)}</div>` : ""}
@@ -1491,7 +1896,7 @@ function buildTrainerVideoFeedbackHtml(videoFeedbacksForExercise, clientId, clie
             ${hasAudio ? `<span style="font-size: 0.7rem; color: #10b981; font-weight: 700;">✅ Audio salvato</span>` : `<span style="font-size: 0.7rem; color: var(--text-muted);">Max 2 min</span>`}
           </div>
           <div style="font-size: 0.68rem; color: var(--text-muted); margin-top: 4px;">
-            Il video parte con la registrazione: fermalo, riprendilo e spostati con la barra mentre parli. L'atleta lo rivedrà esattamente così.
+            Il video parte con la registrazione: fermalo, spostati con la barra e disegna linee, frecce, cerchi e angoli mentre parli. L'atleta lo rivedrà esattamente così.
           </div>
           <div id="coachAudioRecStatus_${vf.id}" style="font-size: 0.72rem; color: var(--primary); margin-top: 4px;"></div>
           <div id="coachAudioPreviewWrap_${vf.id}" class="hidden"></div>
