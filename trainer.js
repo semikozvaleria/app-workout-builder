@@ -1,5 +1,6 @@
 let enrichedClientsCache = [];
 let trainerClientsSearchTerm = "";
+const loadedWorkoutExercisesCache = new Map();
 
 async function initTrainerArea() {
   document.getElementById("trainerInviteCode").textContent = currentProfile.id;
@@ -328,7 +329,7 @@ async function loadTrainerClients() {
   const [{ data: workouts }, { data: unreadLogs }, { data: unreviewedCheckins }, { data: pendingVideos }] = await Promise.all([
     supabaseClient
       .from('workouts')
-      .select('*')
+      .select('id, athlete_id, end_date, status')
       .eq('trainer_id', currentProfile.id)
       .eq('status', 'active'),
     supabaseClient
@@ -443,27 +444,167 @@ async function loadTrainerClients() {
   updateNotificationCenter(coachAlerts);
 }
 
+// ============================================================
+// STORICO SCHEDE ATLETA (CARICAMENTO LEGGERO + LAZY LOADING)
+// ============================================================
+
+function renderWorkoutDaysHtml(items) {
+  if (!items || items.length === 0) {
+    return '<span style="font-size: 0.8rem; color: var(--text-muted);">Nessun esercizio salvato.</span>';
+  }
+
+  const grouped = {};
+  items.forEach(item => {
+    if (!grouped[item.day_name]) grouped[item.day_name] = [];
+    grouped[item.day_name].push(item);
+  });
+
+  return Object.keys(grouped)
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+    .map(dayName => {
+      const dayItems = grouped[dayName];
+      let inCircuit = false;
+      let circuitBuffer = "";
+      let circuitTitle = "CIRCUITO";
+      let dayContent = "";
+
+      dayItems.forEach((row, idx) => {
+        const exFromMap = (typeof EXERCISE_MAP !== "undefined") ? EXERCISE_MAP.get(row.exercise_id) : null;
+        const ex = row.exercises || exFromMap;
+        const start = ex ? (ex.img_start || "") : "";
+        const end = ex ? (ex.img_end || ex.img_start || "") : "";
+        const isSingle = start === end;
+
+        const roleBadge = row.circuit_role === 'start'
+          ? `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 INIZIO CIRCUITO</span>`
+          : row.circuit_role === 'end'
+            ? `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🏁 FINE CIRCUITO</span>`
+            : row.circuit_role === 'single'
+              ? `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 BLOCCO CIRCUITO</span>`
+              : '';
+
+        const rowHtml = `
+          <div class="exercise-item">
+            <div class="exercise-top">
+              <div class="item-photos">
+                ${start ? (isSingle ? `
+                  <img src="${start}" loading="lazy" decoding="async" class="item-img" style="width: 82px; object-fit: contain;">
+                ` : `
+                  <img src="${start}" loading="lazy" decoding="async" class="item-img">
+                  <img src="${end}" loading="lazy" decoding="async" class="item-img">
+                `) : ''}
+              </div>
+              <div class="item-details">
+                <strong>${idx + 1}. ${escapeHtml(ex ? ex.name : 'Esercizio')}</strong> ${roleBadge}
+                <div class="item-sub"><strong>${escapeHtml(row.sets_reps)}</strong> | Rest: ${escapeHtml(row.rest)} | RIR/@: ${escapeHtml(row.rir)}</div>
+                ${row.notes && row.notes !== '-' ? `<div class="item-notes" style="white-space: pre-wrap;">Note: ${escapeHtml(row.notes)}</div>` : ''}
+              </div>
+            </div>
+          </div>
+        `;
+
+        if (row.circuit_role === 'single') {
+          if (inCircuit) {
+            dayContent += `<div class="circuit-group-box"><div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitTitle)}</span><span>INIZIO CIRCUITO</span></div>${circuitBuffer}<div class="circuit-group-footer">🏁 Fine Circuito</div></div>`;
+            inCircuit = false;
+            circuitBuffer = "";
+          }
+          const lbl = row.circuit_label || "BLOCCO CIRCUITO";
+          dayContent += `<div class="circuit-group-box"><div class="circuit-group-header"><span>🔄 ${escapeHtml(lbl)}</span><span>CIRCUITO</span></div>${rowHtml}<div class="circuit-group-footer">🏁 Fine Circuito</div></div>`;
+        } else if (row.circuit_role === 'start') {
+          if (inCircuit) {
+            dayContent += `<div class="circuit-group-box"><div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitTitle)}</span><span>INIZIO CIRCUITO</span></div>${circuitBuffer}<div class="circuit-group-footer">🏁 Fine Circuito</div></div>`;
+          }
+          inCircuit = true;
+          circuitTitle = row.circuit_label || "CIRCUITO";
+          circuitBuffer = rowHtml;
+        } else if (row.circuit_role === 'end' && inCircuit) {
+          circuitBuffer += rowHtml;
+          dayContent += `<div class="circuit-group-box"><div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitTitle)}</span><span>INIZIO CIRCUITO</span></div>${circuitBuffer}<div class="circuit-group-footer">🏁 Fine Circuito</div></div>`;
+          inCircuit = false;
+          circuitBuffer = "";
+        } else if (inCircuit) {
+          circuitBuffer += rowHtml;
+        } else {
+          dayContent += rowHtml;
+        }
+      });
+
+      if (inCircuit) {
+        dayContent += `<div class="circuit-group-box" style="border-style: dashed;"><div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitTitle)}</span><span>INIZIO CIRCUITO</span></div>${circuitBuffer}<div class="circuit-group-footer">🏁 Fine Circuito</div></div>`;
+      }
+
+      return `
+        <div class="day-group" style="margin-top: 8px;">
+          <div class="day-badge">
+            📅 ${escapeHtml(dayName)} (${dayItems.length} ESERCIZI)
+          </div>
+          ${dayContent}
+        </div>
+      `;
+    }).join("");
+}
+
+async function fetchWorkoutExercisesFast(workoutId) {
+  if (loadedWorkoutExercisesCache.has(workoutId)) {
+    return loadedWorkoutExercisesCache.get(workoutId);
+  }
+
+  const hasLocalMap = typeof EXERCISE_MAP !== "undefined" && EXERCISE_MAP.size > 0;
+  const selectFields = hasLocalMap
+    ? 'id, workout_id, exercise_id, day_name, sets_reps, rest, rir, notes, order_index, circuit_role, circuit_label'
+    : 'id, workout_id, exercise_id, day_name, sets_reps, rest, rir, notes, order_index, circuit_role, circuit_label, exercises(name, muscle, img_start, img_end)';
+
+  const { data: rows, error } = await supabaseClient
+    .from('workout_exercises')
+    .select(selectFields)
+    .eq('workout_id', workoutId)
+    .order('order_index', { ascending: true });
+
+  if (error || !rows) return [];
+  loadedWorkoutExercisesCache.set(workoutId, rows);
+  return rows;
+}
+
+window.loadLazyWorkoutExercises = async function(workoutId) {
+  const targetEl = document.getElementById(`workoutExBody_${workoutId}`);
+  const summaryEl = document.getElementById(`workoutExSummary_${workoutId}`);
+  if (!targetEl || targetEl.dataset.loaded === "1") return;
+
+  targetEl.dataset.loaded = "1";
+  targetEl.innerHTML = `<div style="font-size: 0.78rem; color: var(--text-muted); padding: 6px;">Caricamento esercizi...</div>`;
+
+  const items = await fetchWorkoutExercisesFast(workoutId);
+  if (summaryEl) {
+    summaryEl.textContent = `Mostra esercizi (${items.length})`;
+  }
+  targetEl.innerHTML = renderWorkoutDaysHtml(items);
+};
+
 window.viewClientWorkouts = async function(clientId, clientName) {
   showTrainerView("trainerWorkoutsView");
   document.getElementById("workoutsAthleteTitle").textContent = `📋 Schede: ${clientName}`;
   const container = document.getElementById("athleteWorkoutsHistoryContainer");
-  container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento schede e bozze...</div>`;
+  container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Caricamento schede...</div>`;
 
+  // Query leggera sulle sole intestazioni delle ultime 25 schede (senza join annidati pesanti)
   const [{ data: clientWorkouts, error }, { data: unlinkedDrafts }] = await Promise.all([
     supabaseClient
       .from('workouts')
-      .select('*, workout_exercises(*, exercises(name, muscle, img_start, img_end))')
+      .select('id, title, status, duration_weeks, start_date, end_date, general_notes, created_at')
       .eq('trainer_id', currentProfile.id)
       .eq('athlete_id', clientId)
-      .order('created_at', { ascending: false }),
+      .order('created_at', { ascending: false })
+      .limit(25),
     supabaseClient
       .from('workouts')
-      .select('*, workout_exercises(*, exercises(name, muscle, img_start, img_end))')
+      .select('id, title, status, duration_weeks, start_date, end_date, general_notes, created_at')
       .eq('trainer_id', currentProfile.id)
       .eq('status', 'draft')
       .is('athlete_id', null)
       .ilike('title', clientName.trim())
       .order('created_at', { ascending: false })
+      .limit(5)
   ]);
 
   const combinedMap = new Map();
@@ -484,6 +625,12 @@ window.viewClientWorkouts = async function(clientId, clientName) {
     return new Date(b.created_at) - new Date(a.created_at);
   });
 
+  // Pre-carica subito SOLO la scheda attiva (se esiste) in parallelo al rendering
+  const activeWorkout = sortedWorkouts.find(w => w.status === 'active');
+  const activeItemsPromise = activeWorkout
+    ? fetchWorkoutExercisesFast(activeWorkout.id)
+    : Promise.resolve([]);
+
   container.innerHTML = "";
   const archivedList = sortedWorkouts.filter(w => w.status === 'archived');
 
@@ -491,7 +638,6 @@ window.viewClientWorkouts = async function(clientId, clientName) {
     const isDraft = w.status === 'draft';
     const isActive = w.status === 'active';
     const createdStr = new Date(w.created_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
-    const items = (w.workout_exercises || []).sort((a, b) => a.order_index - b.order_index);
 
     const box = document.createElement("div");
 
@@ -524,96 +670,6 @@ window.viewClientWorkouts = async function(clientId, clientName) {
     const startStr = w.start_date ? new Date(w.start_date).toLocaleDateString('it-IT') : '-';
     const endStr = w.end_date ? new Date(w.end_date).toLocaleDateString('it-IT') : '-';
 
-    const grouped = {};
-    items.forEach(item => {
-      if (!grouped[item.day_name]) grouped[item.day_name] = [];
-      grouped[item.day_name].push(item);
-    });
-
-    const daysHtml = Object.keys(grouped)
-      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-      .map(dayName => {
-        const dayItems = grouped[dayName];
-        let inCircuit = false;
-        let circuitBuffer = "";
-        let circuitTitle = "CIRCUITO";
-        let dayContent = "";
-
-        dayItems.forEach((row, idx) => {
-          const ex = row.exercises;
-          const start = ex ? ex.img_start : "";
-          const end = ex ? (ex.img_end || ex.img_start) : "";
-          const isSingle = start === end;
-
-          const roleBadge = row.circuit_role === 'start'
-            ? `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 INIZIO CIRCUITO</span>`
-            : row.circuit_role === 'end'
-              ? `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🏁 FINE CIRCUITO</span>`
-              : row.circuit_role === 'single'
-                ? `<span style="display:inline-block; font-size:0.68rem; background:var(--primary); color:var(--primary-text); padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px;">🔄 BLOCCO CIRCUITO</span>`
-                : '';
-
-          const rowHtml = `
-            <div class="exercise-item">
-              <div class="exercise-top">
-                <div class="item-photos">
-                  ${start ? (isSingle ? `
-                    <img src="${start}" class="item-img" style="width: 82px; object-fit: contain;">
-                  ` : `
-                    <img src="${start}" class="item-img">
-                    <img src="${end}" class="item-img">
-                  `) : ''}
-                </div>
-                <div class="item-details">
-                  <strong>${idx + 1}. ${escapeHtml(ex ? ex.name : 'Esercizio')}</strong> ${roleBadge}
-                  <div class="item-sub"><strong>${escapeHtml(row.sets_reps)}</strong> | Rest: ${escapeHtml(row.rest)} | RIR/@: ${escapeHtml(row.rir)}</div>
-                  ${row.notes && row.notes !== '-' ? `<div class="item-notes" style="white-space: pre-wrap;">Note: ${escapeHtml(row.notes)}</div>` : ''}
-                </div>
-              </div>
-            </div>
-          `;
-
-          if (row.circuit_role === 'single') {
-            if (inCircuit) {
-              dayContent += `<div class="circuit-group-box"><div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitTitle)}</span><span>INIZIO CIRCUITO</span></div>${circuitBuffer}<div class="circuit-group-footer">🏁 Fine Circuito</div></div>`;
-              inCircuit = false;
-              circuitBuffer = "";
-            }
-            const lbl = row.circuit_label || "BLOCCO CIRCUITO";
-            dayContent += `<div class="circuit-group-box"><div class="circuit-group-header"><span>🔄 ${escapeHtml(lbl)}</span><span>CIRCUITO</span></div>${rowHtml}<div class="circuit-group-footer">🏁 Fine Circuito</div></div>`;
-          } else if (row.circuit_role === 'start') {
-            if (inCircuit) {
-              dayContent += `<div class="circuit-group-box"><div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitTitle)}</span><span>INIZIO CIRCUITO</span></div>${circuitBuffer}<div class="circuit-group-footer">🏁 Fine Circuito</div></div>`;
-            }
-            inCircuit = true;
-            circuitTitle = row.circuit_label || "CIRCUITO";
-            circuitBuffer = rowHtml;
-          } else if (row.circuit_role === 'end' && inCircuit) {
-            circuitBuffer += rowHtml;
-            dayContent += `<div class="circuit-group-box"><div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitTitle)}</span><span>INIZIO CIRCUITO</span></div>${circuitBuffer}<div class="circuit-group-footer">🏁 Fine Circuito</div></div>`;
-            inCircuit = false;
-            circuitBuffer = "";
-          } else if (inCircuit) {
-            circuitBuffer += rowHtml;
-          } else {
-            dayContent += rowHtml;
-          }
-        });
-
-        if (inCircuit) {
-          dayContent += `<div class="circuit-group-box" style="border-style: dashed;"><div class="circuit-group-header"><span>🔄 ${escapeHtml(circuitTitle)}</span><span>INIZIO CIRCUITO</span></div>${circuitBuffer}<div class="circuit-group-footer">🏁 Fine Circuito</div></div>`;
-        }
-
-        return `
-          <div class="day-group" style="margin-top: 8px;">
-            <div class="day-badge">
-              📅 ${escapeHtml(dayName)} (${dayItems.length} ESERCIZI)
-            </div>
-            ${dayContent}
-          </div>
-        `;
-      }).join("");
-
     box.style.cssText = `background: var(--subcard-bg); color: var(--text); border: 1.5px solid ${isActive ? 'var(--success)' : 'var(--border)'}; border-radius: 8px; padding: 12px; margin-bottom: 12px;`;
 
     box.innerHTML = `
@@ -638,18 +694,26 @@ window.viewClientWorkouts = async function(clientId, clientName) {
 
       ${w.general_notes ? `<div style="background: var(--notes-bg); color: var(--notes-text); border: 1px solid var(--border); padding: 7px 9px; border-radius: 6px; font-size: 0.8rem; margin-top: 8px; white-space: pre-wrap;"><strong>Note generali:</strong> ${escapeHtml(w.general_notes)}</div>` : ''}
 
-      <details ${isActive ? 'open' : ''} style="margin-top: 8px;">
-        <summary style="cursor: pointer; font-size: 0.82rem; color: var(--primary); font-weight: 700;">
-          Mostra esercizi (${items.length})
+      <details ${isActive ? 'open' : ''} ontoggle="if(this.open) loadLazyWorkoutExercises('${w.id}')" style="margin-top: 8px;">
+        <summary id="workoutExSummary_${w.id}" style="cursor: pointer; font-size: 0.82rem; color: var(--primary); font-weight: 700;">
+          Mostra esercizi
         </summary>
-        <div class="exercise-list" style="margin-top: 6px;">
-          ${items.length > 0 ? daysHtml : '<span style="font-size: 0.8rem; color: var(--text-muted);">Nessun esercizio salvato.</span>'}
+        <div id="workoutExBody_${w.id}" data-loaded="${isActive ? '1' : '0'}" class="exercise-list" style="margin-top: 6px;">
+          ${isActive ? '<div style="font-size: 0.78rem; color: var(--text-muted); padding: 6px;">Caricamento esercizi...</div>' : ''}
         </div>
       </details>
     `;
 
     container.appendChild(box);
   });
+
+  if (activeWorkout) {
+    const activeItems = await activeItemsPromise;
+    const targetEl = document.getElementById(`workoutExBody_${activeWorkout.id}`);
+    const summaryEl = document.getElementById(`workoutExSummary_${activeWorkout.id}`);
+    if (summaryEl) summaryEl.textContent = `Mostra esercizi (${activeItems.length})`;
+    if (targetEl) targetEl.innerHTML = renderWorkoutDaysHtml(activeItems);
+  }
 };
 
 window.deleteClientWorkout = async function(workoutId, clientId, clientName) {
@@ -668,6 +732,8 @@ window.deleteClientWorkout = async function(workoutId, clientId, clientName) {
     return;
   }
 
+  loadedWorkoutExercisesCache.delete(workoutId);
+
   if (typeof currentDraftId !== "undefined" && currentDraftId === workoutId) {
     currentDraftId = null;
   }
@@ -677,11 +743,14 @@ window.deleteClientWorkout = async function(workoutId, clientId, clientName) {
 };
 
 window.cloneWorkoutToBuilder = async function(workoutId, clientId, clientName) {
-  const { data: workout, error } = await supabaseClient
-    .from('workouts')
-    .select('*, workout_exercises(*, exercises(*))')
-    .eq('id', workoutId)
-    .single();
+  const [{ data: workout, error }, items] = await Promise.all([
+    supabaseClient
+      .from('workouts')
+      .select('id, duration_weeks, general_notes')
+      .eq('id', workoutId)
+      .single(),
+    fetchWorkoutExercisesFast(workoutId)
+  ]);
 
   if (error || !workout) {
     alert("Errore nel caricamento della scheda.");
@@ -693,22 +762,25 @@ window.cloneWorkoutToBuilder = async function(workoutId, clientId, clientName) {
   document.getElementById("durationWeeks").value = workout.duration_weeks || 4;
   document.getElementById("generalNotes").value = workout.general_notes || "";
 
-  const sortedItems = (workout.workout_exercises || []).sort((a, b) => a.order_index - b.order_index);
-  currentWorkout = sortedItems.map((row, idx) => ({
-    uid: Date.now() + idx,
-    id: row.exercise_id,
-    day: row.day_name,
-    name: row.exercises ? row.exercises.name : "Esercizio",
-    muscle: row.exercises ? row.exercises.muscle : "",
-    imgStart: row.exercises ? (row.exercises.img_start || "") : "",
-    imgEnd: row.exercises ? (row.exercises.img_end || row.exercises.img_start || "") : "",
-    setsReps: row.sets_reps,
-    rest: row.rest,
-    rir: row.rir,
-    notes: row.notes,
-    circuitRole: row.circuit_role || null,
-    circuitLabel: row.circuit_label || ""
-  }));
+  currentWorkout = items.map((row, idx) => {
+    const exFromMap = (typeof EXERCISE_MAP !== "undefined") ? EXERCISE_MAP.get(row.exercise_id) : null;
+    const ex = row.exercises || exFromMap;
+    return {
+      uid: Date.now() + idx,
+      id: row.exercise_id,
+      day: row.day_name,
+      name: ex ? ex.name : "Esercizio",
+      muscle: ex ? ex.muscle : "",
+      imgStart: ex ? (ex.img_start || "") : "",
+      imgEnd: ex ? (ex.img_end || ex.img_start || "") : "",
+      setsReps: row.sets_reps,
+      rest: row.rest,
+      rir: row.rir,
+      notes: row.notes,
+      circuitRole: row.circuit_role || null,
+      circuitLabel: row.circuit_label || ""
+    };
+  });
 
   renderList();
 };
@@ -722,11 +794,12 @@ window.viewClientProgress = async function(clientId, clientName, selectedWorkout
   const [{ data: allWorkouts }, { data: logs }] = await Promise.all([
     supabaseClient
       .from('workouts')
-      .select('*')
+      .select('id, title, status, duration_weeks, start_date, end_date, general_notes, created_at')
       .eq('trainer_id', currentProfile.id)
       .eq('athlete_id', clientId)
       .in('status', ['active', 'archived'])
-      .order('created_at', { ascending: false }),
+      .order('created_at', { ascending: false })
+      .limit(25),
     supabaseClient
       .from('workout_logs')
       .select('*')
@@ -737,13 +810,12 @@ window.viewClientProgress = async function(clientId, clientName, selectedWorkout
   const unseenIdsSet = new Set((logs || []).filter(l => !l.trainer_seen_at).map(l => l.id));
 
   if (unseenIdsSet.size > 0) {
-    await supabaseClient
+    supabaseClient
       .from('workout_logs')
       .update({ trainer_seen_at: new Date().toISOString() })
       .eq('athlete_id', clientId)
-      .is('trainer_seen_at', null);
-
-    loadTrainerClients();
+      .is('trainer_seen_at', null)
+      .then(() => loadTrainerClients());
   }
 
   const workoutsList = allWorkouts || [];
@@ -777,12 +849,8 @@ window.viewClientProgress = async function(clientId, clientName, selectedWorkout
     return `<option value="${w.id}" ${w.id === targetWorkout.id ? 'selected' : ''}>${escapeHtml(label)}</option>`;
   }).join("");
 
-  const [{ data: items }, { data: workoutVideos }] = await Promise.all([
-    supabaseClient
-      .from('workout_exercises')
-      .select('*, exercises(*)')
-      .eq('workout_id', targetWorkout.id)
-      .order('order_index', { ascending: true }),
+  const [items, { data: workoutVideos }] = await Promise.all([
+    fetchWorkoutExercisesFast(targetWorkout.id),
     supabaseClient
       .from('exercise_video_feedbacks')
       .select('*')
@@ -833,9 +901,10 @@ window.viewClientProgress = async function(clientId, clientName, selectedWorkout
       html += `<div class="day-group"><div class="day-badge">📅 ${escapeHtml(dayName)}</div>`;
 
       grouped[dayName].forEach((row, idx) => {
-        const ex = row.exercises;
-        const start = ex ? ex.img_start : "";
-        const end = ex ? (ex.img_end || ex.img_start) : "";
+        const exFromMap = (typeof EXERCISE_MAP !== "undefined") ? EXERCISE_MAP.get(row.exercise_id) : null;
+        const ex = row.exercises || exFromMap;
+        const start = ex ? (ex.img_start || "") : "";
+        const end = ex ? (ex.img_end || ex.img_start || "") : "";
         const rawExLogs = (logs || []).filter(l => l.workout_exercise_id === row.id);
         const dailyLogs = consolidateTrainerLogsByDay(rawExLogs, unseenIdsSet);
         const latest = dailyLogs[0];
@@ -904,10 +973,10 @@ window.viewClientProgress = async function(clientId, clientName, selectedWorkout
               <div class="exercise-top">
                 <div class="item-photos">
                   ${start ? (start === end ? `
-                    <img src="${start}" class="item-img" style="width: 82px; object-fit: contain;">
+                    <img src="${start}" loading="lazy" decoding="async" class="item-img" style="width: 82px; object-fit: contain;">
                   ` : `
-                    <img src="${start}" class="item-img">
-                    <img src="${end}" class="item-img">
+                    <img src="${start}" loading="lazy" decoding="async" class="item-img">
+                    <img src="${end}" loading="lazy" decoding="async" class="item-img">
                   `) : ''}
                 </div>
                 <div class="item-details">

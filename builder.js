@@ -1735,8 +1735,7 @@ window.exportPaginatedWorkoutPdf = async function({
             `) : '-'}
           </td>
           <td>
-            <strong>${escapeHtml(item.name)}</strong><br>
-            <span style="font-size: 9px; color: #64748b;">${escapeHtml(item.muscle || "")}</span>
+            <strong>${escapeHtml(item.name)}</strong>
           </td>
           <td><strong>${escapeHtml(item.setsReps || "-")}</strong></td>
           <td>${escapeHtml(item.rest || "-")}</td>
