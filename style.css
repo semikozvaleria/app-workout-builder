@@ -987,3 +987,8 @@ body:not(.light-theme) .note-coach-box {
 .prog-chip.deload { background: rgba(56, 189, 248, 0.16); border-color: rgba(56, 189, 248, 0.4); color: var(--primary); }
 @media (min-width: 400px) { .prog-weeks-grid, .prog-summary-grid { grid-template-columns: repeat(var(--cols-m, 4), minmax(0, 1fr)); } }
 @media (min-width: 560px) { .prog-weeks-grid, .prog-summary-grid { grid-template-columns: repeat(var(--cols-l, 6), minmax(0, 1fr)); } }
+
+/* Builder: "Nome sul PDF" e "Durata/Settimane" sempre sulla stessa riga */
+.builder-meta-grid { align-items: end; }
+.builder-meta-grid > .field { min-width: 0; }
+.builder-meta-grid > .field > label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

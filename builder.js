@@ -44,7 +44,7 @@ function syncProgrammingModeUi() {
     if (cur < 2) cur = 4;
     if (cur > MAX_PROGRESSION_WEEKS) cur = MAX_PROGRESSION_WEEKS;
     durInput.value = String(cur);
-    if (durLabel) durLabel.textContent = "Settimane Mesociclo (2–10)";
+    if (durLabel) durLabel.textContent = "Settimane (2–10)";
   } else {
     durInput.min = "1";
     durInput.max = "52";
