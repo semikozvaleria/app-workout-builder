@@ -1,4 +1,4 @@
-const CACHE_NAME = 'workout-builder-v85';
+const CACHE_NAME = 'workout-builder-v86';
 const IMAGE_CACHE_NAME = 'exercise-images-cache-v1';
 const ASSETS_TO_CACHE = [
   './',
@@ -16,7 +16,7 @@ const ASSETS_TO_CACHE = [
   './checkins.js',
   './manifest.json',
   './logo_W.jpeg',
-  './video-feedback.js'
+  './video-feedback.js',
   './icon.png',
   './privacy.html',
   './terms.html'
