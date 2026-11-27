@@ -425,7 +425,7 @@ async function loadTrainerClients() {
     if (clientPendingVideos.length > 0) {
       coachAlerts.push({
         level: "info",
-        title: `Video da revisionare: ${escapeHtml(client.full_name)}`,
+        title: `🎥 Video da revisionare: ${escapeHtml(client.full_name)}`,
         message: `${clientPendingVideos.length} video esecuzione in attesa della tua nota tecnica.`,
         actionHtml: `<button class="btn btn-primary btn-sm" onclick="document.getElementById('notificationsSection').classList.add('hidden'); viewClientProgress('${client.id}', '${escapeJsAttr(client.full_name)}')">Guarda Video</button>`
       });

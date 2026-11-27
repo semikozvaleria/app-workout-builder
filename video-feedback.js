@@ -1617,7 +1617,7 @@ window.uploadAthleteExerciseVideo = async function(workoutId, exerciseIndex, exe
       throw new Error("Errore salvataggio record: " + dbErr.message);
     }
 
-    alert("Video inviato al Coach! Riceverai una notifica appena inserirà la sua nota tecnica.");
+    alert("🎥 Video inviato al Coach! Riceverai una notifica appena inserirà la sua nota tecnica.");
     if (typeof loadAthleteWorkout === "function") {
       await loadAthleteWorkout();
     }
