@@ -27,7 +27,8 @@ function formatSecondsMmSs(totalSec) {
 
 // Verifica durata (sempre, max 30s). Fino a 48 MB carica l'originale; oltre
 // (es. 4K / 60 fps) ricodifica in 720p reale (lato corto 720 px) a 4 Mbps / 30 fps.
-async function validateAndCompressVideo(file, onProgressText) {
+async function validateAndCompressVideo(file, onProgressText, options = {}) {
+  const forceCompress = Boolean(options.force);
   return new Promise((resolve) => {
     const video = document.createElement("video");
     video.preload = "metadata";
@@ -55,7 +56,7 @@ async function validateAndCompressVideo(file, onProgressText) {
         }
       };
 
-      if (file.size <= KEEP_ORIGINAL_MAX_MB * 1024 * 1024) {
+      if (!forceCompress && file.size <= KEEP_ORIGINAL_MAX_MB * 1024 * 1024) {
         URL.revokeObjectURL(objectUrl);
         resolve(file);
         return;
@@ -1569,34 +1570,49 @@ window.uploadAthleteExerciseVideo = async function(workoutId, exerciseIndex, exe
       return;
     }
 
-    const fileToUpload = processed;
-    const ext = (fileToUpload.name.split(".").pop() || "mp4").toLowerCase();
-    const storagePath = `${currentProfile.trainer_id}/${currentProfile.id}/${workoutId}_${exerciseIndex}_${Date.now()}.${ext}`;
+    let fileToUpload = processed;
+    const buildStoragePath = (f) => {
+      const ext = (f.name.split(".").pop() || "mp4").toLowerCase();
+      return `${currentProfile.trainer_id}/${currentProfile.id}/${workoutId}_${exerciseIndex}_${Date.now()}.${ext}`;
+    };
+    let storagePath = buildStoragePath(fileToUpload);
+
+    const uploadToStorage = async (path, f) => {
+      const opts = { cacheControl: "3600", upsert: false, contentType: f.type || "video/mp4" };
+      let { error } = await supabaseClient.storage.from(VIDEO_STORAGE_BUCKET).upload(path, f, opts);
+      if (error && String(error.message || "").includes("Load failed")) {
+        await supabaseClient.auth.getSession();
+        ({ error } = await supabaseClient.storage.from(VIDEO_STORAGE_BUCKET).upload(path, f, opts));
+      }
+      return error;
+    };
 
     if (statusEl) statusEl.textContent = "☁️ Caricamento su cloud...";
+    let uploadErr = await uploadToStorage(storagePath, fileToUpload);
 
-    let { error: uploadErr } = await supabaseClient.storage
-      .from(VIDEO_STORAGE_BUCKET)
-      .upload(storagePath, fileToUpload, {
-        cacheControl: "3600",
-        upsert: false,
-        contentType: fileToUpload.type || "video/mp4"
-      });
-
-    if (uploadErr && String(uploadErr.message || "").includes("Load failed")) {
-      await supabaseClient.auth.getSession();
-      const retryUpload = await supabaseClient.storage
-        .from(VIDEO_STORAGE_BUCKET)
-        .upload(storagePath, fileToUpload, {
-          cacheControl: "3600",
-          upsert: false,
-          contentType: fileToUpload.type || "video/mp4"
-        });
-      uploadErr = retryUpload.error;
+    // Se il file supera il limite di dimensione del bucket Supabase,
+    // comprime il video e riprova (invece di bloccare l'atleta)
+    const isTooLarge = (err) => err && /maximum allowed size|exceeded|too large|payload|413/i.test(String(err.message || err.statusCode || ""));
+    if (isTooLarge(uploadErr)) {
+      const compressed = await validateAndCompressVideo(rawFile, (txt) => {
+        if (statusEl) statusEl.textContent = txt;
+      }, { force: true });
+      if (compressed && compressed.error) {
+        alert(compressed.error);
+        return;
+      }
+      if (compressed && compressed !== rawFile && compressed.size < fileToUpload.size) {
+        fileToUpload = compressed;
+        storagePath = buildStoragePath(fileToUpload);
+        if (statusEl) statusEl.textContent = "☁️ Caricamento su cloud...";
+        uploadErr = await uploadToStorage(storagePath, fileToUpload);
+      }
     }
 
     if (uploadErr) {
-      throw new Error("Errore upload storage: " + uploadErr.message);
+      throw new Error(isTooLarge(uploadErr)
+        ? "Il video è troppo pesante per lo spazio di archiviazione. Registra una clip più breve o in qualità più bassa."
+        : "Errore upload storage: " + uploadErr.message);
     }
 
     const athleteNote = noteInput ? noteInput.value.trim() : "";
