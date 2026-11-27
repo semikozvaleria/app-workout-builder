@@ -1154,13 +1154,10 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
     endDate.setDate(startDate.getDate() + (durationWeeks * 7));
 
     // Archivia eventuale scheda precedente e crea la nuova in parallelo
-    const [, insertWorkoutRes] = await Promise.all([
-      supabaseClient
-        .from('workouts')
-        .update({ status: 'archived' })
-        .eq('athlete_id', athleteId)
-        .eq('status', 'active'),
-      supabaseClient
+    // Ordine sequenziale: 1) crea la nuova scheda, 2) inserisce gli esercizi,
+    // 3) archivia le altre schede attive escludendo quella nuova.
+    // (In parallelo l'archiviazione poteva colpire anche la scheda appena creata.)
+    const insertWorkoutRes = await supabaseClient
         .from('workouts')
         .insert({
           trainer_id: currentProfile.id,
@@ -1173,8 +1170,7 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
           status: 'active'
         })
         .select('id')
-        .single()
-    ]);
+        .single();
 
     const { data: newWorkout, error: wError } = insertWorkoutRes;
 
@@ -1201,8 +1197,21 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
       .insert(rowsToInsert);
 
     if (exError) {
-      alert("Scheda creata ma errore negli esercizi: " + exError.message);
+      // Annulla la scheda nuova: quella precedente resta attiva per l'atleta
+      await supabaseClient.from('workouts').delete().eq('id', newWorkout.id);
+      alert("Errore nel salvataggio degli esercizi: " + exError.message + "\nLa scheda precedente dell'atleta resta attiva. Riprova.");
       return;
+    }
+
+    const { error: archiveError } = await supabaseClient
+      .from('workouts')
+      .update({ status: 'archived' })
+      .eq('athlete_id', athleteId)
+      .eq('status', 'active')
+      .neq('id', newWorkout.id);
+
+    if (archiveError) {
+      console.warn("Archiviazione schede precedenti non riuscita:", archiveError.message);
     }
 
     if (currentDraftId) {
