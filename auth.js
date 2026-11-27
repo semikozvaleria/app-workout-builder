@@ -48,7 +48,10 @@ function resetUIOnSignOut() {
   document.getElementById("btnOpenNotifications").classList.add("hidden");
   document.getElementById("notifCountBadge").classList.add("hidden");
   document.getElementById("notificationsSection").classList.add("hidden");
-  document.getElementById("userRoleBadge").textContent = "Cloud Coaching System";
+  const roleBadgeEl = document.getElementById("userRoleBadge");
+  roleBadgeEl.dataset.fullName = "";
+  roleBadgeEl.title = "";
+  roleBadgeEl.textContent = "Cloud Coaching System";
 }
 
 function showPasswordRecoveryScreen() {
@@ -338,13 +341,13 @@ async function checkSession() {
   }
 
   if (profile.role === 'trainer') {
-    document.getElementById("userRoleBadge").textContent = `Coach: ${profile.full_name}`;
+    setHeaderRoleBadge("Coach", profile.full_name);
     document.getElementById("trainerSection").classList.remove("hidden");
     document.getElementById("athleteSection").classList.add("hidden");
     if (typeof applyBrandLogo === "function") applyBrandLogo(profile.logo_url);
     initTrainerArea();
   } else {
-    document.getElementById("userRoleBadge").textContent = `Atleta: ${profile.full_name}`;
+    setHeaderRoleBadge("Atleta", profile.full_name);
     document.getElementById("athleteSection").classList.remove("hidden");
     document.getElementById("trainerSection").classList.add("hidden");
     initAthleteArea();

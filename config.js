@@ -57,3 +57,37 @@ function progGridColsStyle(n) {
   const cols = (maxCols) => Math.ceil(count / Math.ceil(count / maxCols));
   return `--cols-s:${cols(3)};--cols-m:${cols(4)};--cols-l:${cols(6)};`;
 }
+
+// "Maria Antonietta Rossi" -> "M. Antonietta Rossi": il primo nome diventa
+// l'iniziale, il resto (secondo nome/cognome anche composto) resta intero.
+function formatShortPersonName(fullName) {
+  const parts = String(fullName || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return parts.join(" ");
+  return `${parts[0].charAt(0).toUpperCase()}. ${parts.slice(1).join(" ")}`;
+}
+
+// Intestazione "Coach: Nome Cognome": se non entra in una riga usa
+// "Coach: N. Cognome"; se ancora non basta interviene l'ellissi del CSS.
+function setHeaderRoleBadge(prefix, fullName) {
+  const el = document.getElementById("userRoleBadge");
+  if (!el) return;
+  el.dataset.prefix = prefix || "";
+  el.dataset.fullName = fullName || "";
+  fitHeaderRoleBadge();
+}
+
+function fitHeaderRoleBadge() {
+  const el = document.getElementById("userRoleBadge");
+  if (!el || !el.dataset.fullName) return;
+  const prefix = el.dataset.prefix ? `${el.dataset.prefix}: ` : "";
+  el.textContent = `${prefix}${el.dataset.fullName}`;
+  el.title = el.textContent;
+  if (el.clientWidth > 0 && el.scrollWidth > el.clientWidth + 1) {
+    el.textContent = `${prefix}${formatShortPersonName(el.dataset.fullName)}`;
+  }
+}
+
+window.addEventListener("resize", () => {
+  clearTimeout(window.__roleBadgeFitTimer);
+  window.__roleBadgeFitTimer = setTimeout(fitHeaderRoleBadge, 120);
+});

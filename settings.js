@@ -110,12 +110,7 @@ if (btnSaveProfileName) {
     }
 
     currentProfile.full_name = newName;
-    const roleBadge = document.getElementById("userRoleBadge");
-    if (roleBadge) {
-      roleBadge.textContent = currentProfile.role === "trainer"
-        ? `Coach: ${newName}`
-        : `Atleta: ${newName}`;
-    }
+    setHeaderRoleBadge(currentProfile.role === "trainer" ? "Coach" : "Atleta", newName);
 
     syncSupportMailtoLink();
     alert("✅ Nome aggiornato con successo!");
