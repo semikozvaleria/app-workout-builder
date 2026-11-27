@@ -13,8 +13,8 @@
   <link rel="apple-touch-icon" href="logo_W.jpeg">
   <link rel="stylesheet" href="style.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.6.2"></script>
 </head>
 <body>
 
@@ -451,13 +451,20 @@
               <option value="">-- Nessun atleta collegato (Solo PDF) --</option>
             </select>
           </div>
+          <div class="field">
+            <label>Modalità Programmazione</label>
+            <select id="programmingMode">
+              <option value="classic">Programmazione Classica (scheda unica)</option>
+              <option value="mesocycle">Programmazione Mesociclo (per settimane, max 10)</option>
+            </select>
+          </div>
           <div class="grid-2">
             <div class="field">
               <label>Nome sul PDF</label>
               <input type="text" id="athleteName" placeholder="es. Mario Rossi">
             </div>
             <div class="field">
-              <label>Durata (Settimane)</label>
+              <label id="durationWeeksLabel">Durata (Settimane)</label>
               <input type="number" id="durationWeeks" value="4" min="1" max="52">
             </div>
           </div>

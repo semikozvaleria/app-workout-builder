@@ -19,3 +19,24 @@ function escapeHtml(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+
+// Escape per testi inseriti dentro stringhe JS tra apici in attributi HTML
+// (es. onclick="fn('${escapeJsAttr(nome)}')"): gestisce apostrofi (D'Angelo),
+// backslash e a capo, poi applica l'escape HTML.
+function escapeJsAttr(str) {
+  if (str === null || str === undefined) return "";
+  const js = String(str)
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'")
+    .replace(/\r?\n/g, "\\n");
+  return escapeHtml(js);
+}
+
+// Data locale "YYYY-MM-DD" (fuso del dispositivo). Da usare al posto di
+// toISOString().split("T")[0], che restituisce la data UTC e tra mezzanotte
+// e l'1/2 di notte in Italia darebbe il giorno precedente.
+function toLocalDateKey(value) {
+  const d = value instanceof Date ? value : new Date(value);
+  if (isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}

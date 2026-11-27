@@ -264,12 +264,12 @@ function renderConnectedClientsList() {
         ${badgeHtml}
       </div>
       <div class="client-actions">
-        <button class="btn btn-outline btn-sm" style="${hasUnreviewedCheckin ? 'border-color: #10b981; color: #10b981;' : ''}" onclick="openTrainerAthleteCheckins('${client.id}', '${escapeHtml(client.full_name)}')">✅ Check-in${hasUnreviewedCheckin ? ' ●' : ''}</button>
-        <button class="btn btn-outline btn-sm" style="${hasAnamnesis ? 'border-color: var(--primary); color: var(--primary);' : ''}" onclick="openClientAnamnesis('${client.id}', '${escapeHtml(client.full_name)}')">🩺 Anamnesi</button>
-        <button class="btn btn-outline btn-sm" onclick="viewClientWorkouts('${client.id}', '${escapeHtml(client.full_name)}')">📋 Schede</button>
-        <button class="btn btn-outline btn-sm" style="${hasPendingVideos ? 'border-color: #38bdf8; color: #38bdf8;' : ''}" onclick="viewClientProgress('${client.id}', '${escapeHtml(client.full_name)}')">📊 Progressi${hasPendingVideos ? ' 🎥' : ''}</button>
-        <button class="btn btn-outline btn-sm" onclick="viewClientStats('${client.id}', '${escapeHtml(client.full_name)}')">📈 Statistiche</button>
-        <button class="btn btn-primary btn-sm" onclick="openBuilderForClient('${client.id}', '${escapeHtml(client.full_name)}')">Crea Scheda</button>
+        <button class="btn btn-outline btn-sm" style="${hasUnreviewedCheckin ? 'border-color: #10b981; color: #10b981;' : ''}" onclick="openTrainerAthleteCheckins('${client.id}', '${escapeJsAttr(client.full_name)}')">✅ Check-in${hasUnreviewedCheckin ? ' ●' : ''}</button>
+        <button class="btn btn-outline btn-sm" style="${hasAnamnesis ? 'border-color: var(--primary); color: var(--primary);' : ''}" onclick="openClientAnamnesis('${client.id}', '${escapeJsAttr(client.full_name)}')">🩺 Anamnesi</button>
+        <button class="btn btn-outline btn-sm" onclick="viewClientWorkouts('${client.id}', '${escapeJsAttr(client.full_name)}')">📋 Schede</button>
+        <button class="btn btn-outline btn-sm" style="${hasPendingVideos ? 'border-color: #38bdf8; color: #38bdf8;' : ''}" onclick="viewClientProgress('${client.id}', '${escapeJsAttr(client.full_name)}')">📊 Progressi${hasPendingVideos ? ' 🎥' : ''}</button>
+        <button class="btn btn-outline btn-sm" onclick="viewClientStats('${client.id}', '${escapeJsAttr(client.full_name)}')">📈 Statistiche</button>
+        <button class="btn btn-primary btn-sm" onclick="openBuilderForClient('${client.id}', '${escapeJsAttr(client.full_name)}')">Crea Scheda</button>
       </div>
     `;
     container.appendChild(card);
@@ -366,7 +366,7 @@ async function loadTrainerClients() {
         level: "warning",
         title: `${escapeHtml(client.full_name)} — Nessuna scheda`,
         message: "Questo atleta non ha ancora una scheda attiva assegnata.",
-        actionHtml: `<button class="btn btn-primary btn-sm" onclick="document.getElementById('notificationsSection').classList.add('hidden'); openBuilderForClient('${client.id}', '${escapeHtml(client.full_name)}')">Assegna Ora</button>`
+        actionHtml: `<button class="btn btn-primary btn-sm" onclick="document.getElementById('notificationsSection').classList.add('hidden'); openBuilderForClient('${client.id}', '${escapeJsAttr(client.full_name)}')">Assegna Ora</button>`
       });
     } else if (activeWorkout.end_date) {
       const end = new Date(activeWorkout.end_date);
@@ -378,7 +378,7 @@ async function loadTrainerClients() {
           level: "danger",
           title: `⚠️ Scaduta: ${escapeHtml(client.full_name)}`,
           message: `La scheda è scaduta da ${Math.abs(diffDays)} giorni (${end.toLocaleDateString('it-IT')}).`,
-          actionHtml: `<button class="btn btn-primary btn-sm" onclick="document.getElementById('notificationsSection').classList.add('hidden'); openBuilderForClient('${client.id}', '${escapeHtml(client.full_name)}')">Rinnova</button>`
+          actionHtml: `<button class="btn btn-primary btn-sm" onclick="document.getElementById('notificationsSection').classList.add('hidden'); openBuilderForClient('${client.id}', '${escapeJsAttr(client.full_name)}')">Rinnova</button>`
         });
       } else if (diffDays <= 5) {
         priority = 1;
@@ -387,7 +387,7 @@ async function loadTrainerClients() {
           level: "warning",
           title: `⏳ In scadenza: ${escapeHtml(client.full_name)}`,
           message: `La scheda scade tra ${diffDays} giorni (${end.toLocaleDateString('it-IT')}).`,
-          actionHtml: `<button class="btn btn-primary btn-sm" onclick="document.getElementById('notificationsSection').classList.add('hidden'); openBuilderForClient('${client.id}', '${escapeHtml(client.full_name)}')">Prepara Nuova</button>`
+          actionHtml: `<button class="btn btn-primary btn-sm" onclick="document.getElementById('notificationsSection').classList.add('hidden'); openBuilderForClient('${client.id}', '${escapeJsAttr(client.full_name)}')">Prepara Nuova</button>`
         });
       } else {
         priority = 3;
@@ -402,7 +402,7 @@ async function loadTrainerClients() {
         level: "info",
         title: `Nuove modifiche da ${escapeHtml(client.full_name)}`,
         message: `L'atleta ha aggiornato la scheda${hasNotes ? ' e inserito nuove note' : ''}.`,
-        actionHtml: `<button class="btn btn-primary btn-sm" onclick="document.getElementById('notificationsSection').classList.add('hidden'); viewClientProgress('${client.id}', '${escapeHtml(client.full_name)}')">Apri e Segna Letto</button>`
+        actionHtml: `<button class="btn btn-primary btn-sm" onclick="document.getElementById('notificationsSection').classList.add('hidden'); viewClientProgress('${client.id}', '${escapeJsAttr(client.full_name)}')">Apri e Segna Letto</button>`
       });
     }
 
@@ -412,7 +412,7 @@ async function loadTrainerClients() {
         level: "info",
         title: `✅ Nuovo Check-in da ${escapeHtml(client.full_name)}`,
         message: `Report settimanale inviato e in attesa di tua revisione.`,
-        actionHtml: `<button class="btn btn-primary btn-sm" onclick="document.getElementById('notificationsSection').classList.add('hidden'); openTrainerAthleteCheckins('${client.id}', '${escapeHtml(client.full_name)}')">Apri Check-in</button>`
+        actionHtml: `<button class="btn btn-primary btn-sm" onclick="document.getElementById('notificationsSection').classList.add('hidden'); openTrainerAthleteCheckins('${client.id}', '${escapeJsAttr(client.full_name)}')">Apri Check-in</button>`
       });
     }
 
@@ -422,7 +422,7 @@ async function loadTrainerClients() {
         level: "info",
         title: `🎥 Video da revisionare: ${escapeHtml(client.full_name)}`,
         message: `${clientPendingVideos.length} video esecuzione in attesa della tua nota tecnica.`,
-        actionHtml: `<button class="btn btn-primary btn-sm" onclick="document.getElementById('notificationsSection').classList.add('hidden'); viewClientProgress('${client.id}', '${escapeHtml(client.full_name)}')">Guarda Video</button>`
+        actionHtml: `<button class="btn btn-primary btn-sm" onclick="document.getElementById('notificationsSection').classList.add('hidden'); viewClientProgress('${client.id}', '${escapeJsAttr(client.full_name)}')">Guarda Video</button>`
       });
     }
 
@@ -657,7 +657,7 @@ window.viewClientWorkouts = async function(clientId, clientName) {
             <button class="btn btn-primary btn-sm" onclick="resumeDraft('${w.id}')">
               ✏️ Riprendi
             </button>
-            <button class="btn btn-outline btn-sm" style="border-color: var(--danger); color: var(--danger);" onclick="deleteClientWorkout('${w.id}', '${clientId}', '${escapeHtml(clientName)}')">
+            <button class="btn btn-outline btn-sm" style="border-color: var(--danger); color: var(--danger);" onclick="deleteClientWorkout('${w.id}', '${clientId}', '${escapeJsAttr(clientName)}')">
               🗑️ Cancella
             </button>
           </div>
@@ -683,10 +683,10 @@ window.viewClientWorkouts = async function(clientId, clientName) {
           </div>
         </div>
         <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-          <button class="btn btn-outline btn-sm" onclick="cloneWorkoutToBuilder('${w.id}', '${clientId}', '${escapeHtml(clientName)}')">
+          <button class="btn btn-outline btn-sm" onclick="cloneWorkoutToBuilder('${w.id}', '${clientId}', '${escapeJsAttr(clientName)}')">
             📥 Carica nel Builder
           </button>
-          <button class="btn btn-outline btn-sm" style="border-color: var(--danger); color: var(--danger);" onclick="deleteClientWorkout('${w.id}', '${clientId}', '${escapeHtml(clientName)}')">
+          <button class="btn btn-outline btn-sm" style="border-color: var(--danger); color: var(--danger);" onclick="deleteClientWorkout('${w.id}', '${clientId}', '${escapeJsAttr(clientName)}')">
             🗑️ Elimina
           </button>
         </div>
@@ -953,7 +953,7 @@ window.viewClientProgress = async function(clientId, clientName, selectedWorkout
           const replyFormHtml = isTargetActive ? `
             <div class="coach-reply-form" style="align-items: flex-end;">
               <textarea id="coachReplyInput_${latest.id}" rows="2" placeholder="Aggiungi messaggio del coach..." style="flex: 1; min-height: 44px; font-size: 0.78rem; padding: 6px 8px; resize: vertical;"></textarea>
-              <button type="button" class="btn btn-sm" style="background:#ef4444; color:#fff; width:auto; flex-shrink:0; align-self: stretch;" onclick="saveCoachNoteOnLog('${latest.id}', '${clientId}', '${escapeHtml(clientName)}')">Invia</button>
+              <button type="button" class="btn btn-sm" style="background:#ef4444; color:#fff; width:auto; flex-shrink:0; align-self: stretch;" onclick="saveCoachNoteOnLog('${latest.id}', '${clientId}', '${escapeJsAttr(clientName)}')">Invia</button>
             </div>
           ` : "";
 

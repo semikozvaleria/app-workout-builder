@@ -7,12 +7,16 @@ const chkCircuitStart = document.getElementById("chkCircuitStart");
 const chkCircuitEnd = document.getElementById("chkCircuitEnd");
 const circuitLabelWrap = document.getElementById("circuitLabelWrap");
 const inCircuitLabel = document.getElementById("inCircuitLabel");
+const programmingModeSelect = document.getElementById("programmingMode");
 
 const ADMIN_GLOBAL_EXERCISE_EMAIL = "carlo.ratto250889@gmail.com";
 const EXERCISE_CACHE_KEY = "wb_exercise_db_cache_v1";
+const MAX_PROGRESSION_WEEKS = 10;
 
 let currentDraftId = null;
 let editingItemUid = null;
+let openProgressionUid = null;
+let selectedProgressionWeekByUid = new Map();
 let searchDebounceTimer = null;
 let EXERCISE_MAP = new Map();
 let isLoadingExercises = false;
@@ -22,6 +26,95 @@ if (exerciseSearch) {
 }
 if (exerciseSuggestions) {
   exerciseSuggestions.innerHTML = "";
+}
+
+function isMesocycleMode() {
+  return programmingModeSelect && programmingModeSelect.value === "mesocycle";
+}
+
+function syncProgrammingModeUi() {
+  const durInput = document.getElementById("durationWeeks");
+  const durLabel = document.getElementById("durationWeeksLabel");
+  if (!durInput) return;
+
+  if (isMesocycleMode()) {
+    durInput.min = "2";
+    durInput.max = String(MAX_PROGRESSION_WEEKS);
+    let cur = parseInt(durInput.value, 10) || 4;
+    if (cur < 2) cur = 4;
+    if (cur > MAX_PROGRESSION_WEEKS) cur = MAX_PROGRESSION_WEEKS;
+    durInput.value = String(cur);
+    if (durLabel) durLabel.textContent = "Settimane Mesociclo (2–10)";
+  } else {
+    durInput.min = "1";
+    durInput.max = "52";
+    if (durLabel) durLabel.textContent = "Durata (Settimane)";
+    openProgressionUid = null;
+  }
+}
+
+function getEffectiveProgressionWeeks() {
+  if (!isMesocycleMode()) return 1;
+  const raw = parseInt(document.getElementById("durationWeeks")?.value, 10) || 4;
+  return Math.max(2, Math.min(MAX_PROGRESSION_WEEKS, raw));
+}
+
+function normalizeWeeklyProgression(rawProg, baseItem, maxWeeks = MAX_PROGRESSION_WEEKS) {
+  if (!rawProg || typeof rawProg !== "object") return null;
+  const normalized = {};
+  let hasAny = false;
+  for (let w = 1; w <= maxWeeks; w++) {
+    const key = String(w);
+    const entry = rawProg[key];
+    if (entry && typeof entry === "object") {
+      normalized[key] = {
+        sets_reps: (entry.sets_reps ?? baseItem.setsReps ?? "-").trim() || "-",
+        rest: (entry.rest ?? baseItem.rest ?? "-").trim() || "-",
+        rir: (entry.rir ?? baseItem.rir ?? "-").trim() || "-",
+        notes: (entry.notes ?? "").trim()
+      };
+      hasAny = true;
+    }
+  }
+  return hasAny ? normalized : null;
+}
+
+function ensureItemWeeklyProgression(item, weeksCount) {
+  if (!item.weeklyProgression || typeof item.weeklyProgression !== "object") {
+    item.weeklyProgression = {};
+  }
+  for (let w = 1; w <= weeksCount; w++) {
+    const key = String(w);
+    if (!item.weeklyProgression[key]) {
+      item.weeklyProgression[key] = {
+        sets_reps: item.setsReps || "-",
+        rest: item.rest || "-",
+        rir: item.rir || "-",
+        notes: ""
+      };
+    }
+  }
+  return item.weeklyProgression;
+}
+
+function hasAnyMultiWeekProgression(items, durationWeeks) {
+  if ((parseInt(durationWeeks, 10) || 1) <= 1) return false;
+  return (items || []).some(it => {
+    const prog = it.weeklyProgression || it.weekly_progression;
+    return prog && typeof prog === "object" && Object.keys(prog).length > 0;
+  });
+}
+
+function incrementRepsFormula(setsRepsStr, stepIndex) {
+  if (!setsRepsStr || setsRepsStr === "-" || stepIndex <= 0) return setsRepsStr;
+  return String(setsRepsStr).replace(/(\d+\s*[xX×*]\s*)(\d+)(\s*-\s*(\d+))?/, (_, prefix, firstNum, rangePart, secondNum) => {
+    const n1 = parseInt(firstNum, 10) + stepIndex;
+    if (rangePart && secondNum) {
+      const n2 = parseInt(secondNum, 10) + stepIndex;
+      return `${prefix}${n1}-${n2}`;
+    }
+    return `${prefix}${n1}`;
+  });
 }
 
 function rebuildExerciseMap(list) {
@@ -149,6 +242,21 @@ function syncCircuitCheckboxes() {
 
 exerciseDaySelect.addEventListener("change", syncCircuitCheckboxes);
 
+if (programmingModeSelect) {
+  programmingModeSelect.addEventListener("change", () => {
+    syncProgrammingModeUi();
+    if (currentWorkout.length > 0) renderList();
+  });
+}
+
+const durationWeeksInput = document.getElementById("durationWeeks");
+if (durationWeeksInput) {
+  durationWeeksInput.addEventListener("change", () => {
+    syncProgrammingModeUi();
+    if (currentWorkout.length > 0) renderList();
+  });
+}
+
 chkCircuitStart.addEventListener("change", () => {
   if (chkCircuitStart.checked) {
     chkCircuitEnd.checked = false;
@@ -210,7 +318,6 @@ if (btnCloseNewExBox && newExerciseBox) {
   });
 }
 
-// Comprime automaticamente immagini pesanti prima dell'upload (da MB a ~60KB)
 async function compressImageBeforeUpload(file, maxDim = 720, quality = 0.82) {
   if (!file || !file.type || !file.type.startsWith("image/") || file.type === "image/gif") {
     return file;
@@ -404,8 +511,8 @@ if (btnDeleteCustomExercise) {
 async function loadExercisesFromCloud(forceRefresh = false) {
   syncSaveCloudButtonState();
   syncNewExerciseScopeUi();
+  syncProgrammingModeUi();
 
-  // Mostra subito la cache locale se disponibile (zero attesa al boot)
   if (!forceRefresh && (!Array.isArray(EXERCISE_DB) || EXERCISE_DB.length === 0)) {
     try {
       const cachedRaw = localStorage.getItem(EXERCISE_CACHE_KEY);
@@ -461,27 +568,35 @@ async function loadExercisesFromCloud(forceRefresh = false) {
 async function loadTrainerDrafts() {
   if (!currentProfile || currentProfile.role !== 'trainer') return;
 
-  const { data: drafts, error } = await supabaseClient
+  const clientsList = getSafeTrainerClients();
+  const clientIds = clientsList.map(c => c.id).filter(Boolean);
+
+  let query = supabaseClient
     .from('workouts')
-    .select('id, athlete_id, title, duration_weeks, created_at, workout_exercises(count)')
-    .eq('trainer_id', currentProfile.id)
+    .select('id, athlete_id, trainer_id, title, duration_weeks, created_at, workout_exercises(count)')
     .eq('status', 'draft')
     .order('created_at', { ascending: false });
+
+  if (clientIds.length > 0) {
+    query = query.or(`trainer_id.eq.${currentProfile.id},athlete_id.in.(${clientIds.join(',')})`);
+  } else {
+    query = query.eq('trainer_id', currentProfile.id);
+  }
+
+  const { data: drafts, error } = await query;
 
   const card = document.getElementById("trainerDraftsCard");
   const listEl = document.getElementById("trainerDraftsList");
   const countEl = document.getElementById("draftsCountBadge");
 
   if (error || !drafts || drafts.length === 0) {
-    card.classList.add("hidden");
-    listEl.innerHTML = "";
+    if (card) card.classList.add("hidden");
+    if (listEl) listEl.innerHTML = "";
     return;
   }
 
   card.classList.remove("hidden");
   countEl.textContent = `${drafts.length} ${drafts.length === 1 ? 'bozza' : 'bozze'}`;
-
-  const clientsList = getSafeTrainerClients();
 
   listEl.innerHTML = drafts.map(d => {
     const client = clientsList.find(c => c.id === d.athlete_id);
@@ -505,11 +620,18 @@ async function loadTrainerDrafts() {
   }).join("");
 }
 
+const navBuilderTabBtn = document.getElementById("navTrainerBuilder");
+if (navBuilderTabBtn) {
+  navBuilderTabBtn.addEventListener("click", () => {
+    loadTrainerDrafts();
+  });
+}
+
 window.resumeDraft = async function(draftId) {
   try {
     const { data: workout, error } = await supabaseClient
       .from('workouts')
-      .select('id, athlete_id, title, duration_weeks, general_notes, workout_exercises(id, exercise_id, day_name, sets_reps, rest, rir, notes, order_index, circuit_role, circuit_label)')
+      .select('id, athlete_id, title, duration_weeks, general_notes, workout_exercises(id, exercise_id, day_name, sets_reps, rest, rir, notes, order_index, circuit_role, circuit_label, weekly_progression)')
       .eq('id', draftId)
       .single();
 
@@ -523,6 +645,7 @@ window.resumeDraft = async function(draftId) {
     }
     currentDraftId = workout.id;
     editingItemUid = null;
+    openProgressionUid = null;
 
     const selectEl = document.getElementById("builderAthleteSelect");
     const loadBtn = document.getElementById("btnLoadExistingWorkout");
@@ -555,7 +678,7 @@ window.resumeDraft = async function(draftId) {
     currentWorkout = sortedItems.map((row, idx) => {
       const exFromDb = EXERCISE_MAP.get(row.exercise_id) || null;
       const imgs = resolveExerciseImages(exFromDb);
-      return {
+      const base = {
         uid: Date.now() + idx,
         id: row.exercise_id,
         day: row.day_name,
@@ -568,9 +691,18 @@ window.resumeDraft = async function(draftId) {
         rir: row.rir,
         notes: row.notes,
         circuitRole: row.circuit_role || null,
-        circuitLabel: row.circuit_label || ""
+        circuitLabel: row.circuit_label || "",
+        weeklyProgression: null
       };
+      base.weeklyProgression = normalizeWeeklyProgression(row.weekly_progression, base);
+      return base;
     });
+
+    if (programmingModeSelect) {
+      const hasMeso = hasAnyMultiWeekProgression(currentWorkout, workout.duration_weeks);
+      programmingModeSelect.value = hasMeso ? "mesocycle" : "classic";
+      syncProgrammingModeUi();
+    }
 
     renderList();
     loadTrainerDrafts();
@@ -583,10 +715,12 @@ window.resumeDraft = async function(draftId) {
 window.deleteDraft = async function(draftId) {
   if (!confirm("Eliminare questa bozza?")) return;
 
-  await Promise.all([
-    supabaseClient.from('workout_exercises').delete().eq('workout_id', draftId),
-    supabaseClient.from('workouts').delete().eq('id', draftId).eq('trainer_id', currentProfile.id)
-  ]);
+  await supabaseClient.from('workout_exercises').delete().eq('workout_id', draftId);
+  const { error: delErr } = await supabaseClient.from('workouts').delete().eq('id', draftId);
+  if (delErr) {
+    alert("Errore eliminazione bozza: " + delErr.message);
+    return;
+  }
 
   if (currentDraftId === draftId) currentDraftId = null;
   loadTrainerDrafts();
@@ -605,7 +739,7 @@ document.getElementById("btnSaveDraft").addEventListener("click", async () => {
   try {
     const athleteId = document.getElementById("builderAthleteSelect").value || null;
     const pdfName = document.getElementById("athleteName").value.trim();
-    const durationWeeks = parseInt(document.getElementById("durationWeeks").value) || 4;
+    const durationWeeks = parseInt(document.getElementById("durationWeeks").value, 10) || 4;
     const generalNotes = document.getElementById("generalNotes").value.trim();
 
     let targetWorkoutId = currentDraftId;
@@ -615,13 +749,13 @@ document.getElementById("btnSaveDraft").addEventListener("click", async () => {
         supabaseClient
           .from('workouts')
           .update({
+            trainer_id: currentProfile.id,
             athlete_id: athleteId,
             title: pdfName || "Bozza Scheda",
             general_notes: generalNotes,
             duration_weeks: durationWeeks
           })
-          .eq('id', targetWorkoutId)
-          .eq('trainer_id', currentProfile.id),
+          .eq('id', targetWorkoutId),
         supabaseClient
           .from('workout_exercises')
           .delete()
@@ -659,6 +793,7 @@ document.getElementById("btnSaveDraft").addEventListener("click", async () => {
       currentDraftId = targetWorkoutId;
     }
 
+    const effWeeks = getEffectiveProgressionWeeks();
     const rowsToInsert = currentWorkout.map((ex, idx) => ({
       workout_id: targetWorkoutId,
       exercise_id: ex.id,
@@ -669,7 +804,8 @@ document.getElementById("btnSaveDraft").addEventListener("click", async () => {
       notes: ex.notes,
       order_index: idx,
       circuit_role: ex.circuitRole || null,
-      circuit_label: ex.circuitLabel || null
+      circuit_label: ex.circuitLabel || null,
+      weekly_progression: effWeeks > 1 ? normalizeWeeklyProgression(ex.weeklyProgression, ex, effWeeks) : null
     }));
 
     const { error: exError } = await supabaseClient
@@ -711,7 +847,7 @@ document.getElementById("btnLoadExistingWorkout").addEventListener("click", asyn
 
   const { data: workout, error } = await supabaseClient
     .from('workouts')
-    .select('id, duration_weeks, general_notes, workout_exercises(id, exercise_id, day_name, sets_reps, rest, rir, notes, order_index, circuit_role, circuit_label)')
+    .select('id, duration_weeks, general_notes, workout_exercises(id, exercise_id, day_name, sets_reps, rest, rir, notes, order_index, circuit_role, circuit_label, weekly_progression)')
     .eq('trainer_id', currentProfile.id)
     .eq('athlete_id', athleteId)
     .eq('status', 'active')
@@ -729,6 +865,7 @@ document.getElementById("btnLoadExistingWorkout").addEventListener("click", asyn
 
   currentDraftId = null;
   editingItemUid = null;
+  openProgressionUid = null;
   document.getElementById("durationWeeks").value = workout.duration_weeks || 4;
   document.getElementById("generalNotes").value = workout.general_notes || "";
 
@@ -736,7 +873,7 @@ document.getElementById("btnLoadExistingWorkout").addEventListener("click", asyn
   currentWorkout = sortedItems.map((row, idx) => {
     const exFromDb = EXERCISE_MAP.get(row.exercise_id) || null;
     const imgs = resolveExerciseImages(exFromDb);
-    return {
+    const base = {
       uid: Date.now() + idx,
       id: row.exercise_id,
       day: row.day_name,
@@ -749,9 +886,18 @@ document.getElementById("btnLoadExistingWorkout").addEventListener("click", asyn
       rir: row.rir,
       notes: row.notes,
       circuitRole: row.circuit_role || null,
-      circuitLabel: row.circuit_label || ""
+      circuitLabel: row.circuit_label || "",
+      weeklyProgression: null
     };
+    base.weeklyProgression = normalizeWeeklyProgression(row.weekly_progression, base);
+    return base;
   });
+
+  if (programmingModeSelect) {
+    const hasMeso = hasAnyMultiWeekProgression(currentWorkout, workout.duration_weeks);
+    programmingModeSelect.value = hasMeso ? "mesocycle" : "classic";
+    syncProgrammingModeUi();
+  }
 
   renderList();
   loadTrainerDrafts();
@@ -762,6 +908,8 @@ document.getElementById("btnClearBuilder").addEventListener("click", () => {
   currentWorkout = [];
   currentDraftId = null;
   editingItemUid = null;
+  openProgressionUid = null;
+  selectedProgressionWeekByUid.clear();
   renderList();
   loadTrainerDrafts();
 });
@@ -891,7 +1039,8 @@ document.getElementById("btnAddEx").addEventListener("click", () => {
     rir: document.getElementById("inRir").value.trim() || "-",
     notes: document.getElementById("inNotes").value.trim() || "-",
     circuitRole: circuitRole,
-    circuitLabel: isStart ? inCircuitLabel.value.trim() : ""
+    circuitLabel: isStart ? inCircuitLabel.value.trim() : "",
+    weeklyProgression: null
   });
 
   document.getElementById("inSetsReps").value = "";
@@ -906,11 +1055,192 @@ document.getElementById("btnAddEx").addEventListener("click", () => {
   renderList();
 });
 
+// ============================================================
+// PROGRESSIONE MULTI-SETTIMANA (SOLO IN MODALITÀ MESOCICLO)
+// ============================================================
+
+window.toggleItemProgressionPanel = function(uid) {
+  const index = currentWorkout.findIndex(item => item.uid === uid);
+  if (index === -1) return;
+  const item = currentWorkout[index];
+  const weeksCount = getEffectiveProgressionWeeks();
+  if (weeksCount <= 1) return;
+
+  if (openProgressionUid === uid) {
+    openProgressionUid = null;
+  } else {
+    openProgressionUid = uid;
+    ensureItemWeeklyProgression(item, weeksCount);
+    if (!selectedProgressionWeekByUid.has(uid)) {
+      selectedProgressionWeekByUid.set(uid, 1);
+    }
+  }
+  renderList();
+};
+
+window.selectProgressionWeek = function(uid, weekNum) {
+  const index = currentWorkout.findIndex(item => item.uid === uid);
+  if (index === -1) return;
+  const item = currentWorkout[index];
+  const weeksCount = getEffectiveProgressionWeeks();
+  ensureItemWeeklyProgression(item, weeksCount);
+  selectedProgressionWeekByUid.set(uid, weekNum);
+  renderList();
+};
+
+window.updateProgressionField = function(uid, weekNum, fieldKey, value) {
+  const index = currentWorkout.findIndex(item => item.uid === uid);
+  if (index === -1) return;
+  const item = currentWorkout[index];
+  const weeksCount = getEffectiveProgressionWeeks();
+  const prog = ensureItemWeeklyProgression(item, weeksCount);
+  const key = String(weekNum);
+  prog[key][fieldKey] = fieldKey === "notes" ? value.trim() : (value.trim() || "-");
+
+  if (weekNum === 1) {
+    if (fieldKey === "sets_reps") item.setsReps = prog[key].sets_reps;
+    if (fieldKey === "rest") item.rest = prog[key].rest;
+    if (fieldKey === "rir") item.rir = prog[key].rir;
+  }
+};
+
+window.applyProgressionPreset = function(uid, presetType) {
+  const index = currentWorkout.findIndex(item => item.uid === uid);
+  if (index === -1) return;
+  const item = currentWorkout[index];
+  const weeksCount = getEffectiveProgressionWeeks();
+  const prog = ensureItemWeeklyProgression(item, weeksCount);
+  const w1 = prog["1"] || { sets_reps: item.setsReps, rest: item.rest, rir: item.rir, notes: "" };
+
+  if (presetType === "copy_w1") {
+    for (let w = 2; w <= weeksCount; w++) {
+      prog[String(w)] = {
+        sets_reps: w1.sets_reps,
+        rest: w1.rest,
+        rir: w1.rir,
+        notes: w1.notes || ""
+      };
+    }
+  } else if (presetType === "inc_reps") {
+    for (let w = 2; w <= weeksCount; w++) {
+      prog[String(w)] = {
+        sets_reps: incrementRepsFormula(w1.sets_reps, w - 1),
+        rest: w1.rest,
+        rir: w1.rir,
+        notes: prog[String(w)]?.notes || ""
+      };
+    }
+  } else if (presetType === "deload_selected") {
+    const selW = selectedProgressionWeekByUid.get(uid) || weeksCount;
+    prog[String(selW)] = {
+      sets_reps: "Deload",
+      rest: w1.rest,
+      rir: "RIR 3",
+      notes: prog[String(selW)]?.notes || "Scarico / volume ridotto"
+    };
+  } else if (presetType === "reset") {
+    item.weeklyProgression = null;
+    openProgressionUid = null;
+  }
+
+  renderList();
+};
+
+function buildWeeklyProgressionSummaryBadges(item, weeksCount) {
+  if (weeksCount <= 1 || !item.weeklyProgression) return "";
+  const chips = [];
+  for (let w = 1; w <= weeksCount; w++) {
+    const entry = item.weeklyProgression[String(w)];
+    if (!entry) continue;
+    const isDeload = String(entry.sets_reps || "").toLowerCase().includes("deload");
+    chips.push(`
+      <span style="font-size: 0.68rem; padding: 2px 6px; border-radius: 4px; background: ${isDeload ? 'rgba(56,189,248,0.16)' : 'var(--subcard-bg)'}; border: 1px solid ${isDeload ? 'rgba(56,189,248,0.4)' : 'var(--border)'}; color: ${isDeload ? '#38bdf8' : 'var(--text)'};">
+        <strong>S${w}:</strong> ${escapeHtml(entry.sets_reps || "-")}
+      </span>
+    `);
+  }
+  if (chips.length === 0) return "";
+  return `<div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;">${chips.join("")}</div>`;
+}
+
+function buildWeeklyProgressionEditorHtml(item, weeksCount) {
+  if (weeksCount <= 1) return "";
+  const isOpen = openProgressionUid === item.uid;
+  const hasProg = Boolean(item.weeklyProgression && Object.keys(item.weeklyProgression).length > 0);
+
+  if (!isOpen) {
+    return `
+      <div style="margin-top: 7px; display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
+        <button type="button" class="btn btn-outline btn-sm" style="width: auto; font-size: 0.72rem; padding: 3px 9px; ${hasProg ? 'border-color: #38bdf8; color: #38bdf8;' : ''}" onclick="toggleItemProgressionPanel(${item.uid})">
+          📅 ${hasProg ? `Modifica Progressione (1–${weeksCount} sett.)` : `Programma per Settimana (1–${weeksCount} sett.)`}
+        </button>
+      </div>
+    `;
+  }
+
+  const prog = ensureItemWeeklyProgression(item, weeksCount);
+  const activeWeek = Math.min(weeksCount, Math.max(1, selectedProgressionWeekByUid.get(item.uid) || 1));
+  const activeData = prog[String(activeWeek)] || { sets_reps: item.setsReps, rest: item.rest, rir: item.rir, notes: "" };
+
+  let weekTabsHtml = "";
+  for (let w = 1; w <= weeksCount; w++) {
+    const wData = prog[String(w)] || {};
+    const isSel = w === activeWeek;
+    const isDeload = String(wData.sets_reps || "").toLowerCase().includes("deload");
+    weekTabsHtml += `
+      <button type="button" onclick="selectProgressionWeek(${item.uid}, ${w})" style="padding: 4px 8px; border-radius: 6px; font-size: 0.72rem; font-weight: 700; cursor: pointer; border: 1px solid ${isSel ? 'var(--primary)' : 'var(--border)'}; background: ${isSel ? 'var(--primary)' : (isDeload ? 'rgba(56,189,248,0.14)' : 'var(--card-bg)')}; color: ${isSel ? 'var(--primary-text)' : (isDeload ? '#38bdf8' : 'var(--text)')};">
+        Sett. ${w}${wData.sets_reps && wData.sets_reps !== '-' ? ` (${escapeHtml(wData.sets_reps)})` : ''}
+      </button>
+    `;
+  }
+
+  return `
+    <div style="margin-top: 8px; padding: 9px; border-radius: 8px; background: var(--subcard-bg); border: 1.5px solid rgba(56, 189, 248, 0.45);">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 7px;">
+        <strong style="font-size: 0.76rem; color: #38bdf8;">📅 Progressione Settimanale (1–${weeksCount} sett.)</strong>
+        <button type="button" class="btn btn-outline btn-sm" style="width: auto; padding: 2px 7px; font-size: 0.7rem;" onclick="toggleItemProgressionPanel(${item.uid})">Chiudi ✖</button>
+      </div>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px;">
+        ${weekTabsHtml}
+      </div>
+
+      <div class="grid-3">
+        <div class="field" style="margin:0;">
+          <label style="font-size:0.7rem;">Sett. ${activeWeek} — Serie/Reps</label>
+          <input type="text" value="${activeData.sets_reps === '-' ? '' : escapeHtml(activeData.sets_reps)}" placeholder="es. 3x8 / Deload" oninput="updateProgressionField(${item.uid}, ${activeWeek}, 'sets_reps', this.value)" onblur="renderList()">
+        </div>
+        <div class="field" style="margin:0;">
+          <label style="font-size:0.7rem;">Rest</label>
+          <input type="text" value="${activeData.rest === '-' ? '' : escapeHtml(activeData.rest)}" placeholder="es. 90''" oninput="updateProgressionField(${item.uid}, ${activeWeek}, 'rest', this.value)">
+        </div>
+        <div class="field" style="margin:0;">
+          <label style="font-size:0.7rem;">RIR / @</label>
+          <input type="text" value="${activeData.rir === '-' ? '' : escapeHtml(activeData.rir)}" placeholder="es. RIR 1" oninput="updateProgressionField(${item.uid}, ${activeWeek}, 'rir', this.value)">
+        </div>
+      </div>
+
+      <div class="field" style="margin: 6px 0 0 0;">
+        <label style="font-size:0.7rem;">Nota specifica Settimana ${activeWeek} (opzionale)</label>
+        <input type="text" value="${escapeHtml(activeData.notes || '')}" placeholder="es. Test 12RM, oppure Carico -20%..." oninput="updateProgressionField(${item.uid}, ${activeWeek}, 'notes', this.value)">
+      </div>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; padding-top: 7px; border-top: 1px dashed var(--border);">
+        <button type="button" class="btn btn-outline btn-sm" style="width: auto; font-size: 0.69rem; padding: 2px 7px;" onclick="applyProgressionPreset(${item.uid}, 'copy_w1')">📋 Copia Sett. 1 su tutte</button>
+        <button type="button" class="btn btn-outline btn-sm" style="width: auto; font-size: 0.69rem; padding: 2px 7px;" onclick="applyProgressionPreset(${item.uid}, 'inc_reps')">📈 +1 rep/sett.</button>
+        <button type="button" class="btn btn-outline btn-sm" style="width: auto; font-size: 0.69rem; padding: 2px 7px; border-color: #38bdf8; color: #38bdf8;" onclick="applyProgressionPreset(${item.uid}, 'deload_selected')">🔋 Deload su Sett. ${activeWeek}</button>
+        <button type="button" class="btn btn-outline btn-sm" style="width: auto; font-size: 0.69rem; padding: 2px 7px; border-color: var(--danger); color: var(--danger);" onclick="applyProgressionPreset(${item.uid}, 'reset')">Rimuovi</button>
+      </div>
+    </div>
+  `;
+}
+
 function buildBuilderItemHtml(item, idx, totalInDay) {
   const imgs = resolveExerciseImages(item.id, item.imgStart, item.imgEnd);
   item.imgStart = imgs.imgStart;
   item.imgEnd = imgs.imgEnd;
 
+  const weeksCount = getEffectiveProgressionWeeks();
   const isEditing = editingItemUid === item.uid;
   let roleTag = "";
   if (item.circuitRole === "start") {
@@ -948,6 +1278,9 @@ function buildBuilderItemHtml(item, idx, totalInDay) {
     </div>
   ` : "";
 
+  const progSummaryHtml = buildWeeklyProgressionSummaryBadges(item, weeksCount);
+  const progEditorHtml = buildWeeklyProgressionEditorHtml(item, weeksCount);
+
   return `
     <div class="exercise-item" style="${isEditing ? 'border-color: var(--primary);' : ''}">
       <div class="exercise-top">
@@ -958,6 +1291,7 @@ function buildBuilderItemHtml(item, idx, totalInDay) {
           <strong>${idx + 1}. ${escapeHtml(item.name)}</strong> ${roleTag}
           <div class="item-sub"><strong>${escapeHtml(item.setsReps)}</strong> | Rest: ${escapeHtml(item.rest)} | RIR/@: ${escapeHtml(item.rir)}</div>
           ${item.notes !== '-' ? `<div class="item-notes" style="white-space: pre-wrap;">Note: ${escapeHtml(item.notes)}</div>` : ''}
+          ${progSummaryHtml}
         </div>
         <div class="item-actions">
           <button class="btn-icon" title="Sposta su" onclick="moveItem(${item.uid}, -1)" ${idx === 0 ? 'disabled' : ''}>▲</button>
@@ -967,6 +1301,7 @@ function buildBuilderItemHtml(item, idx, totalInDay) {
         </div>
       </div>
       ${editFormHtml}
+      ${progEditorHtml}
     </div>
   `;
 }
@@ -1101,6 +1436,13 @@ window.saveEditedItem = function(uid) {
   item.rest = newRest || "-";
   item.rir = newRir || "-";
   item.notes = newNotes || "-";
+
+  if (item.weeklyProgression && item.weeklyProgression["1"]) {
+    item.weeklyProgression["1"].sets_reps = item.setsReps;
+    item.weeklyProgression["1"].rest = item.rest;
+    item.weeklyProgression["1"].rir = item.rir;
+  }
+
   editingItemUid = null;
   renderList();
 };
@@ -1126,6 +1468,8 @@ window.moveItem = function(uid, direction) {
 
 window.removeItem = function(uid) {
   if (editingItemUid === uid) editingItemUid = null;
+  if (openProgressionUid === uid) openProgressionUid = null;
+  selectedProgressionWeekByUid.delete(uid);
   currentWorkout = currentWorkout.filter(item => item.uid !== uid);
   renderList();
 };
@@ -1146,14 +1490,13 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   btn.textContent = "Invio in corso...";
 
   try {
-    const durationWeeks = parseInt(document.getElementById("durationWeeks").value) || 4;
+    const durationWeeks = parseInt(document.getElementById("durationWeeks").value, 10) || 4;
     const generalNotes = document.getElementById("generalNotes").value.trim();
 
     const startDate = new Date();
     const endDate = new Date();
     endDate.setDate(startDate.getDate() + (durationWeeks * 7));
 
-    // Archivia eventuale scheda precedente e crea la nuova in parallelo
     // Ordine sequenziale: 1) crea la nuova scheda, 2) inserisce gli esercizi,
     // 3) archivia le altre schede attive escludendo quella nuova.
     // (In parallelo l'archiviazione poteva colpire anche la scheda appena creata.)
@@ -1165,8 +1508,8 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
           title: `Scheda ${durationWeeks} Settimane`,
           general_notes: generalNotes,
           duration_weeks: durationWeeks,
-          start_date: startDate.toISOString().split('T')[0],
-          end_date: endDate.toISOString().split('T')[0],
+          start_date: toLocalDateKey(startDate),
+          end_date: toLocalDateKey(endDate),
           status: 'active'
         })
         .select('id')
@@ -1179,6 +1522,7 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
       return;
     }
 
+    const effWeeks = getEffectiveProgressionWeeks();
     const rowsToInsert = currentWorkout.map((ex, idx) => ({
       workout_id: newWorkout.id,
       exercise_id: ex.id,
@@ -1189,7 +1533,8 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
       notes: ex.notes,
       order_index: idx,
       circuit_role: ex.circuitRole || null,
-      circuit_label: ex.circuitLabel || null
+      circuit_label: ex.circuitLabel || null,
+      weekly_progression: effWeeks > 1 ? normalizeWeeklyProgression(ex.weeklyProgression, ex, effWeeks) : null
     }));
 
     const { error: exError } = await supabaseClient
@@ -1217,13 +1562,10 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
     if (currentDraftId) {
       const draftToDelete = currentDraftId;
       currentDraftId = null;
-      await Promise.all([
-        supabaseClient.from('workout_exercises').delete().eq('workout_id', draftToDelete),
-        supabaseClient.from('workouts').delete().eq('id', draftToDelete)
-      ]);
+      await supabaseClient.from('workout_exercises').delete().eq('workout_id', draftToDelete);
+      await supabaseClient.from('workouts').delete().eq('id', draftToDelete);
     }
 
-    // Invio email automatica all'atleta (non bloccante)
     supabaseClient.functions.invoke("send-email", {
       body: {
         type: "new_workout",
@@ -1236,6 +1578,8 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
     alert("✅ Scheda salvata e inviata! L'atleta la vedrà immediatamente aprendo la sua app.");
     currentWorkout = [];
     editingItemUid = null;
+    openProgressionUid = null;
+    selectedProgressionWeekByUid.clear();
     renderList();
     showTrainerView("trainerClientsView");
     loadTrainerClients();
@@ -1245,7 +1589,9 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
   }
 });
 
-// Generazione PDF Stampabile centrata su Desktop e iOS Safari con paginazione anti-taglio righe
+// ============================================================
+// GENERAZIONE PDF (CLASSICO VERTICALE O MESOCICLO ORIZZONTALE 2-10 SETT.)
+// ============================================================
 window.exportPaginatedWorkoutPdf = async function({
   athleteName,
   durationWeeks,
@@ -1254,7 +1600,10 @@ window.exportPaginatedWorkoutPdf = async function({
   groupedDays,
   fileName
 }) {
-  const totalExercises = Object.values(groupedDays).reduce((acc, arr) => acc + arr.length, 0);
+  const allItemsFlat = Object.values(groupedDays).flat();
+  const totalExercises = allItemsFlat.length;
+  const numWeeks = Math.max(1, Math.min(MAX_PROGRESSION_WEEKS, parseInt(durationWeeks, 10) || 1));
+  const isMultiWeekMatrix = hasAnyMultiWeekProgression(allItemsFlat, numWeeks);
 
   document.getElementById("pdfAthlete").textContent = athleteName;
   document.getElementById("pdfDuration").textContent = `${durationWeeks} Settimane`;
@@ -1274,7 +1623,25 @@ window.exportPaginatedWorkoutPdf = async function({
   const tablesContainer = document.getElementById("pdfTablesContainer");
   tablesContainer.innerHTML = "";
 
-  const theadHtml = `
+  let weekColsHeader = "";
+  if (isMultiWeekMatrix) {
+    for (let w = 1; w <= numWeeks; w++) {
+      weekColsHeader += `<th style="text-align: center; padding: 5px 3px;">Sett. ${w}</th>`;
+    }
+  }
+
+  const totalColSpan = isMultiWeekMatrix ? (3 + numWeeks) : 7;
+
+  const theadHtml = isMultiWeekMatrix ? `
+    <thead>
+      <tr>
+        <th style="width: 22px;">#</th>
+        <th style="width: 86px;">Esecuzione</th>
+        <th style="width: 155px;">Esercizio & Note</th>
+        ${weekColsHeader}
+      </tr>
+    </thead>
+  ` : `
     <thead>
       <tr>
         <th style="width: 24px;">#</th>
@@ -1315,38 +1682,84 @@ window.exportPaginatedWorkoutPdf = async function({
         const label = item.circuitLabel ? item.circuitLabel : "CIRCUITO";
         const bannerTr = document.createElement("tr");
         bannerTr.dataset.keepWithNext = "true";
-        bannerTr.innerHTML = `<td colspan="7" class="pdf-circuit-banner">🔄 INIZIO ${escapeHtml(label)}</td>`;
+        bannerTr.innerHTML = `<td colspan="${totalColSpan}" class="pdf-circuit-banner">🔄 INIZIO ${escapeHtml(label)}</td>`;
         tbody.appendChild(bannerTr);
       }
 
       const tr = document.createElement("tr");
       if (inCircuit) tr.className = "pdf-circuit-row";
 
-      tr.innerHTML = `
-        <td><strong>${index + 1}</strong></td>
-        <td style="white-space: nowrap;">
-          ${imgs.imgStart ? (isSingle ? `
-            <img src="${imgs.imgStart}" class="pdf-thumb">
-          ` : `
-            <img src="${imgs.imgStart}" class="pdf-thumb">
-            <img src="${imgs.imgEnd}" class="pdf-thumb">
-          `) : '-'}
-        </td>
-        <td>
-          <strong>${escapeHtml(item.name)}</strong>
-        </td>
-        <td><strong>${escapeHtml(item.setsReps || "-")}</strong></td>
-        <td>${escapeHtml(item.rest || "-")}</td>
-        <td>${escapeHtml(item.rir || "-")}</td>
-        <td style="font-size: 9.5px; white-space: pre-wrap;">${escapeHtml(item.notes || "-")}</td>
-      `;
+      if (isMultiWeekMatrix) {
+        const prog = item.weeklyProgression || item.weekly_progression || {};
+        let weekCellsHtml = "";
+        for (let w = 1; w <= numWeeks; w++) {
+          const wObj = prog[String(w)] || {
+            sets_reps: item.setsReps || "-",
+            rest: item.rest || "-",
+            rir: item.rir || "-",
+            notes: ""
+          };
+          const sr = wObj.sets_reps || "-";
+          const isDeload = String(sr).toLowerCase().includes("deload");
+          const wNote = (wObj.notes || "").trim();
+          const wRir = (wObj.rir && wObj.rir !== "-" && wObj.rir !== item.rir) ? ` (${wObj.rir})` : "";
+          weekCellsHtml += `
+            <td style="text-align: center; padding: 4px 3px; font-size: 9px; line-height: 1.25; ${isDeload ? 'background: #e0f2fe; color: #0369a1; font-weight: 700;' : ''}">
+              <div><strong>${escapeHtml(sr)}</strong>${escapeHtml(wRir)}</div>
+              ${wNote ? `<div style="font-size: 7.8px; color: #475569; margin-top: 2px;">${escapeHtml(wNote)}</div>` : ""}
+            </td>
+          `;
+        }
+
+        const baseMetaParts = [];
+        if (item.rest && item.rest !== "-") baseMetaParts.push(`Rest: ${item.rest}`);
+        if (item.rir && item.rir !== "-") baseMetaParts.push(`RIR: ${item.rir}`);
+
+        tr.innerHTML = `
+          <td><strong>${index + 1}</strong></td>
+          <td style="white-space: nowrap;">
+            ${imgs.imgStart ? (isSingle ? `
+              <img src="${imgs.imgStart}" class="pdf-thumb" style="width: 36px; height: 36px;">
+            ` : `
+              <img src="${imgs.imgStart}" class="pdf-thumb" style="width: 36px; height: 36px;">
+              <img src="${imgs.imgEnd}" class="pdf-thumb" style="width: 36px; height: 36px;">
+            `) : '-'}
+          </td>
+          <td style="font-size: 9.2px;">
+            <strong>${escapeHtml(item.name)}</strong>
+            ${baseMetaParts.length > 0 ? `<div style="font-size: 8px; color: #475569;">${escapeHtml(baseMetaParts.join(" • "))}</div>` : ""}
+            ${item.notes && item.notes !== "-" ? `<div style="font-size: 8px; color: #334155; margin-top: 2px; white-space: pre-wrap;">${escapeHtml(item.notes)}</div>` : ""}
+          </td>
+          ${weekCellsHtml}
+        `;
+      } else {
+        tr.innerHTML = `
+          <td><strong>${index + 1}</strong></td>
+          <td style="white-space: nowrap;">
+            ${imgs.imgStart ? (isSingle ? `
+              <img src="${imgs.imgStart}" class="pdf-thumb">
+            ` : `
+              <img src="${imgs.imgStart}" class="pdf-thumb">
+              <img src="${imgs.imgEnd}" class="pdf-thumb">
+            `) : '-'}
+          </td>
+          <td>
+            <strong>${escapeHtml(item.name)}</strong>
+          </td>
+          <td><strong>${escapeHtml(item.setsReps || "-")}</strong></td>
+          <td>${escapeHtml(item.rest || "-")}</td>
+          <td>${escapeHtml(item.rir || "-")}</td>
+          <td style="font-size: 9.5px; white-space: pre-wrap;">${escapeHtml(item.notes || "-")}</td>
+        `;
+      }
+
       tbody.appendChild(tr);
 
       if (isCircuitEnd && inCircuit) {
         tr.dataset.keepWithNext = "true";
         const endTr = document.createElement("tr");
         endTr.dataset.isCircuitEnd = "true";
-        endTr.innerHTML = `<td colspan="7" class="pdf-circuit-end">🏁 FINE CIRCUITO</td>`;
+        endTr.innerHTML = `<td colspan="${totalColSpan}" class="pdf-circuit-end">🏁 FINE CIRCUITO</td>`;
         tbody.appendChild(endTr);
         inCircuit = false;
       }
@@ -1357,12 +1770,15 @@ window.exportPaginatedWorkoutPdf = async function({
   });
 
   const sourceSheet = document.getElementById("pdfSheet");
+  const sheetWidthPx = isMultiWeekMatrix ? 1060 : 740;
+  const pageMaxPx = isMultiWeekMatrix ? 715 : 1044;
+  const pdfOrientation = isMultiWeekMatrix ? "landscape" : "portrait";
 
   const printHost = document.createElement("div");
-  printHost.style.cssText = "position: absolute; top: 0; left: 0; width: 740px; min-width: 740px; margin: 0; padding: 0; background: #ffffff; z-index: 999999; -webkit-text-size-adjust: 100%; text-size-adjust: 100%;";
+  printHost.style.cssText = `position: absolute; top: 0; left: 0; width: ${sheetWidthPx}px; min-width: ${sheetWidthPx}px; margin: 0; padding: 0; background: #ffffff; z-index: 999999; -webkit-text-size-adjust: 100%; text-size-adjust: 100%;`;
 
   const clonedSheet = sourceSheet.cloneNode(true);
-  clonedSheet.style.cssText = "width: 740px; min-width: 740px; max-width: 740px; margin: 0; box-sizing: border-box; background: #ffffff; color: #0f172a; -webkit-text-size-adjust: 100%; text-size-adjust: 100%;";
+  clonedSheet.style.cssText = `width: ${sheetWidthPx}px; min-width: ${sheetWidthPx}px; max-width: ${sheetWidthPx}px; margin: 0; box-sizing: border-box; background: #ffffff; color: #0f172a; -webkit-text-size-adjust: 100%; text-size-adjust: 100%;`;
   printHost.appendChild(clonedSheet);
   document.body.appendChild(printHost);
 
@@ -1380,7 +1796,6 @@ window.exportPaginatedWorkoutPdf = async function({
   }));
   await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 150)));
 
-  const PAGE_MAX_PX = 1044;
   const sheetTop = clonedSheet.getBoundingClientRect().top;
   const tablesTop = clonedSheet.querySelector("#pdfTablesContainer").getBoundingClientRect().top;
   let usedInCurrentPage = Math.max(0, tablesTop - sheetTop);
@@ -1414,7 +1829,7 @@ window.exportPaginatedWorkoutPdf = async function({
       initialBlockH += allRows[1].getBoundingClientRect().height;
     }
 
-    if (usedInCurrentPage > 40 && (usedInCurrentPage + titleTotalH + theadHeight + initialBlockH > PAGE_MAX_PX)) {
+    if (usedInCurrentPage > 40 && (usedInCurrentPage + titleTotalH + theadHeight + initialBlockH > pageMaxPx)) {
       section.insertBefore(createPageBreakMarker(), titleEl);
       usedInCurrentPage = titleTotalH + theadHeight;
     } else {
@@ -1436,7 +1851,7 @@ window.exportPaginatedWorkoutPdf = async function({
         neededH += allRows[i + 1].getBoundingClientRect().height;
       }
 
-      if (i > 0 && !tr.dataset.isCircuitEnd && usedInCurrentPage > 50 && (usedInCurrentPage + neededH > PAGE_MAX_PX)) {
+      if (i > 0 && !tr.dataset.isCircuitEnd && usedInCurrentPage > 50 && (usedInCurrentPage + neededH > pageMaxPx)) {
         const brk = createPageBreakMarker();
         activeTable.parentNode.insertBefore(brk, activeTable.nextSibling);
 
@@ -1469,12 +1884,12 @@ window.exportPaginatedWorkoutPdf = async function({
       allowTaint: true,
       x: 0,
       y: 0,
-      width: 740,
+      width: sheetWidthPx,
       scrollX: 0,
       scrollY: 0,
-      windowWidth: 740
+      windowWidth: sheetWidthPx
     },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: pdfOrientation },
     pagebreak: { mode: ['legacy'] }
   };
 
@@ -1489,6 +1904,8 @@ window.exportPaginatedWorkoutPdf = async function({
 async function savePdfSnapshotToHistory({ athleteId, athleteName, durationWeeks, generalNotes, items }) {
   if (!currentProfile || currentProfile.role !== "trainer") return;
 
+  const effWeeks = getEffectiveProgressionWeeks();
+
   if (athleteId) {
     const startDate = new Date();
     const endDate = new Date();
@@ -1502,8 +1919,8 @@ async function savePdfSnapshotToHistory({ athleteId, athleteName, durationWeeks,
         title: `PDF ${durationWeeks} Settimane`,
         general_notes: generalNotes,
         duration_weeks: parseInt(durationWeeks, 10) || 4,
-        start_date: startDate.toISOString().split('T')[0],
-        end_date: endDate.toISOString().split('T')[0],
+        start_date: toLocalDateKey(startDate),
+        end_date: toLocalDateKey(endDate),
         status: 'archived'
       })
       .select('id')
@@ -1520,7 +1937,8 @@ async function savePdfSnapshotToHistory({ athleteId, athleteName, durationWeeks,
         notes: ex.notes,
         order_index: idx,
         circuit_role: ex.circuitRole || null,
-        circuit_label: ex.circuitLabel || null
+        circuit_label: ex.circuitLabel || null,
+        weekly_progression: effWeeks > 1 ? normalizeWeeklyProgression(ex.weeklyProgression, ex, effWeeks) : null
       }));
       await supabaseClient.from('workout_exercises').insert(rows);
     }
@@ -1544,7 +1962,8 @@ async function savePdfSnapshotToHistory({ athleteId, athleteName, durationWeeks,
           rir: ex.rir,
           notes: ex.notes,
           circuitRole: ex.circuitRole || null,
-          circuitLabel: ex.circuitLabel || ""
+          circuitLabel: ex.circuitLabel || "",
+          weeklyProgression: effWeeks > 1 ? normalizeWeeklyProgression(ex.weeklyProgression, ex, effWeeks) : null
         }))
       })
       .select()
@@ -1556,7 +1975,6 @@ async function savePdfSnapshotToHistory({ athleteId, athleteName, durationWeeks,
   }
 }
 
-// Generazione PDF Stampabile centrata su qualsiasi schermo (Desktop e iOS Safari)
 document.getElementById("btnPdf").addEventListener("click", async () => {
   if (currentWorkout.length === 0) {
     alert("Inserisci almeno un esercizio prima di generare il PDF!");
@@ -1572,6 +1990,7 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
   const durationWeeks = document.getElementById("durationWeeks").value || "4";
   const generalNotes = document.getElementById("generalNotes").value.trim();
 
+  const effWeeks = getEffectiveProgressionWeeks();
   const grouped = {};
   currentWorkout.forEach(item => {
     if (!grouped[item.day]) grouped[item.day] = [];
@@ -1586,7 +2005,8 @@ document.getElementById("btnPdf").addEventListener("click", async () => {
       rir: item.rir,
       notes: item.notes,
       circuitRole: item.circuitRole,
-      circuitLabel: item.circuitLabel
+      circuitLabel: item.circuitLabel,
+      weeklyProgression: effWeeks > 1 ? (item.weeklyProgression || null) : null
     });
   });
 

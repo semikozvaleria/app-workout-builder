@@ -888,3 +888,48 @@ body:not(.light-theme) .note-coach-box {
   background-position: right 8px center;
   background-size: 12px 12px;
 }
+
+/* ============================================================
+   VIDEO FEEDBACK: overlay REC coach, pausa coach, barra audio con marker
+   ============================================================ */
+.vf-stage { position: relative; }
+.vf-overlay {
+  position: absolute; left: 8px; right: 8px; top: 8px;
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 6px;
+  pointer-events: none;
+}
+.vf-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 9px; border-radius: 99px;
+  font-size: 0.72rem; font-weight: 700; color: #fff;
+  background: rgba(15, 23, 42, 0.78); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+}
+.vf-chip.rec { background: rgba(220, 38, 38, 0.92); }
+.vf-chip.coach-pause { background: rgba(56, 189, 248, 0.92); color: #00121c; }
+.vf-rec-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #fff;
+  animation: vfPulse 1s ease-in-out infinite;
+}
+@keyframes vfPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+.vf-hint {
+  position: absolute; left: 8px; right: 8px; bottom: 8px;
+  font-size: 0.7rem; color: #e2e8f0; text-align: center;
+  background: rgba(15, 23, 42, 0.72); border-radius: 6px; padding: 4px 6px;
+  pointer-events: none;
+}
+.vf-audio-track {
+  position: relative; width: 100%; height: 14px; margin-top: 7px;
+  cursor: pointer; touch-action: none;
+}
+.vf-audio-track-bg {
+  position: absolute; left: 0; right: 0; top: 4px; height: 6px;
+  background: rgba(148, 163, 184, 0.25); border-radius: 99px; overflow: hidden;
+}
+.vf-audio-track-fill { width: 0%; height: 100%; background: var(--primary); }
+.vf-audio-marker {
+  position: absolute; top: 1px; width: 3px; height: 12px; margin-left: -1px;
+  background: #f59e0b; border-radius: 2px; pointer-events: none;
+}
+.vf-legend { font-size: 0.68rem; color: var(--text-muted); margin-top: 3px; }
+.vf-legend i { display: inline-block; width: 3px; height: 9px; background: #f59e0b; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+.vf-scrubber-locked { opacity: 0.45; pointer-events: none; }
