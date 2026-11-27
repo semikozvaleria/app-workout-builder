@@ -1095,3 +1095,12 @@ body:not(.light-theme) .note-coach-box {
   .vf-tool-label { display: none; }
   .vf-tool-action { padding: 6px 10px; }
 }
+
+/* Storico video atleta: info a sinistra, Guarda + cestino allineati a destra */
+.vf-clip-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.vf-clip-info { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; font-size: 0.74rem; color: var(--text-muted); }
+.vf-clip-badge { font-size: 0.66rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
+.vf-clip-actions { display: flex; align-items: stretch; gap: 5px; flex-shrink: 0; }
+.vf-clip-btn { width: auto; height: 30px; padding: 0 9px; font-size: 0.72rem; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.vf-clip-btn-del { width: 34px; padding: 0; border-color: var(--danger); color: var(--danger); }
+.vf-clip-info > span:first-child { white-space: nowrap; }

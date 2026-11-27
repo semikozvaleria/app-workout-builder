@@ -4,7 +4,12 @@
 
 const VIDEO_STORAGE_BUCKET = "exercise-videos";
 const MAX_VIDEO_DURATION_SEC = 30;
-const MAX_RAW_UPLOAD_MB = 30;
+const MAX_RAW_UPLOAD_MB = 250;          // file scelto dall'atleta (viene compresso se serve)
+const MAX_FINAL_UPLOAD_MB = 45;         // file effettivamente caricato
+const KEEP_ORIGINAL_MAX_MB = 15;        // fino a qui si carica l'originale (qualità piena)
+const COMPRESS_SHORT_SIDE = 720;        // 720p reale: lato corto 720 px (es. 720x1280)
+const COMPRESS_BITRATE = 4000000;       // 4 Mbps
+const COMPRESS_FPS = 30;
 const MAX_COACH_AUDIO_DURATION_SEC = 120; // 2 minuti massimi
 
 // Stato attivo delle registrazioni vocali del Coach per ogni feedbackId
@@ -17,7 +22,8 @@ function formatSecondsMmSs(totalSec) {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
-// Verifica durata (sempre, max 30s) + compressione lato client a max 720p
+// Verifica durata (sempre, max 30s). Fino a 15 MB carica l'originale; oltre
+// ricodifica in 720p reale (lato corto 720 px) a 4 Mbps / 30 fps.
 async function validateAndCompressVideo(file, onProgressText) {
   return new Promise((resolve) => {
     const video = document.createElement("video");
@@ -28,7 +34,7 @@ async function validateAndCompressVideo(file, onProgressText) {
     video.src = objectUrl;
 
     video.onloadedmetadata = async () => {
-      if (video.duration && video.duration > MAX_VIDEO_DURATION_SEC + 1) {
+      if (Number.isFinite(video.duration) && video.duration > MAX_VIDEO_DURATION_SEC + 1) {
         URL.revokeObjectURL(objectUrl);
         resolve({
           error: `Il video dura ${Math.round(video.duration)} secondi. Il limite massimo consentito è di ${MAX_VIDEO_DURATION_SEC} secondi.`
@@ -36,57 +42,60 @@ async function validateAndCompressVideo(file, onProgressText) {
         return;
       }
 
-      if (file.size <= 8 * 1024 * 1024) {
+      // Se non si può comprimere: originale solo se entro il limite di caricamento
+      const originalOrError = () => {
+        URL.revokeObjectURL(objectUrl);
+        if (file.size > MAX_FINAL_UPLOAD_MB * 1024 * 1024) {
+          resolve({ error: `Il video è troppo pesante (${Math.round(file.size / 1048576)} MB) e questo dispositivo non riesce a comprimerlo. Registra in 1080p o accorcia la clip.` });
+        } else {
+          resolve(file);
+        }
+      };
+
+      if (file.size <= KEEP_ORIGINAL_MAX_MB * 1024 * 1024) {
         URL.revokeObjectURL(objectUrl);
         resolve(file);
         return;
       }
 
       if (typeof MediaRecorder === "undefined" || !HTMLCanvasElement.prototype.captureStream) {
-        URL.revokeObjectURL(objectUrl);
-        resolve(file);
+        originalOrError();
         return;
       }
 
-      const maxDim = 720;
+      // 720p reale: il lato CORTO diventa 720 px (es. 1080x1920 -> 720x1280)
       let width = video.videoWidth || 720;
       let height = video.videoHeight || 1280;
-
-      if (width > maxDim || height > maxDim) {
-        if (width >= height) {
-          height = Math.round((height * maxDim) / width);
-          width = maxDim;
-        } else {
-          width = Math.round((width * maxDim) / height);
-          height = maxDim;
-        }
+      const shortSide = Math.min(width, height);
+      if (shortSide > COMPRESS_SHORT_SIDE) {
+        const k = COMPRESS_SHORT_SIDE / shortSide;
+        width = Math.round(width * k);
+        height = Math.round(height * k);
       }
       width = width % 2 === 0 ? width : width - 1;
       height = height % 2 === 0 ? height : height - 1;
 
-      const mimeType = MediaRecorder.isTypeSupported("video/mp4;codecs=avc1")
-        ? "video/mp4;codecs=avc1"
-        : MediaRecorder.isTypeSupported("video/webm;codecs=vp8")
-          ? "video/webm;codecs=vp8"
-          : "";
+      const mimeType = ["video/mp4;codecs=avc1", "video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"]
+        .find((t) => MediaRecorder.isTypeSupported(t)) || "";
 
       if (!mimeType) {
-        URL.revokeObjectURL(objectUrl);
-        resolve(file);
+        originalOrError();
         return;
       }
 
       try {
-        if (onProgressText) onProgressText("⏳ Ottimizzazione video in corso...");
+        if (onProgressText) onProgressText(`Ottimizzazione video in corso (${width}x${height})...`);
         const canvas = document.createElement("canvas");
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext("2d");
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
 
-        const stream = canvas.captureStream(24);
+        const stream = canvas.captureStream(COMPRESS_FPS);
         const recorder = new MediaRecorder(stream, {
           mimeType,
-          videoBitsPerSecond: 1200000
+          videoBitsPerSecond: COMPRESS_BITRATE
         });
 
         const chunks = [];
@@ -103,8 +112,10 @@ async function validateAndCompressVideo(file, onProgressText) {
               type: compressedBlob.type
             });
             resolve(compressedFile);
-          } else {
+          } else if (file.size <= MAX_FINAL_UPLOAD_MB * 1024 * 1024) {
             resolve(file);
+          } else {
+            resolve({ error: "Non è stato possibile ottimizzare il video. Registra in 1080p o accorcia la clip." });
           }
         };
 
@@ -126,8 +137,7 @@ async function validateAndCompressVideo(file, onProgressText) {
         };
       } catch (err) {
         console.warn("Fallback upload video originale:", err);
-        URL.revokeObjectURL(objectUrl);
-        resolve(file);
+        originalOrError();
       }
     };
 
@@ -1607,7 +1617,7 @@ window.uploadAthleteExerciseVideo = async function(workoutId, exerciseIndex, exe
       throw new Error("Errore salvataggio record: " + dbErr.message);
     }
 
-    alert("🎥 Video inviato al Coach! Riceverai una notifica appena inserirà la sua nota tecnica.");
+    alert("Video inviato al Coach! Riceverai una notifica appena inserirà la sua nota tecnica.");
     if (typeof loadAthleteWorkout === "function") {
       await loadAthleteWorkout();
     }
@@ -1794,8 +1804,8 @@ function buildAthleteVideoSectionHtml(row, videoFeedbacksForExercise) {
     const timelineEncoded = vf.coach_audio_timeline ? encodeURIComponent(JSON.stringify(vf.coach_audio_timeline)) : "";
 
     const statusBadge = isReviewed
-      ? `<span style="font-size:0.68rem; background:rgba(16,185,129,0.18); color:#10b981; padding:1px 6px; border-radius:4px; font-weight:700;">✅ Revisionato</span>`
-      : `<span style="font-size:0.68rem; background:rgba(245,158,11,0.18); color:#f59e0b; padding:1px 6px; border-radius:4px; font-weight:700;">⏳ In attesa del Coach</span>`;
+      ? `<span class="vf-clip-badge" style="background:rgba(16,185,129,0.18); color:#10b981;">✅ Revisionato</span>`
+      : `<span class="vf-clip-badge" style="background:rgba(245,158,11,0.18); color:#f59e0b;">In attesa del Coach</span>`;
 
     const coachMessageHtml = isReviewed
       ? `<div class="note-coach-box" style="margin-top: 6px; white-space: pre-wrap; text-align: left;"><strong>Nota Tecnica ${escapeHtml(coachFirstName)}:</strong>${hasAudio ? `\nAscolta il commento sul video` : ""}${hasText ? `\n${escapeHtml(vf.coach_feedback)}` : ""}</div>`
@@ -1803,11 +1813,11 @@ function buildAthleteVideoSectionHtml(row, videoFeedbacksForExercise) {
 
     return `
       <div style="background: var(--subcard-bg); border: 1px solid var(--border); border-radius: 7px; padding: 8px; margin-top: 6px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
-          <span style="font-size: 0.74rem; color: var(--text-muted);">🎥 Clip del ${dateStr} ${statusBadge}</span>
-          <div style="display: flex; gap: 5px;">
-            ${vf.video_path ? `<button type="button" class="btn btn-outline btn-sm" style="padding: 2px 8px; font-size: 0.72rem; width: auto;" onclick="playExerciseVideoFeedback('${vf.id}', '${escapeJsAttr(vf.video_path)}', '${escapeJsAttr(vf.coach_audio_path || "")}', '${timelineEncoded}')">▶️ Guarda</button>` : `<span style="font-size:0.7rem; color:var(--text-muted);">File archiviato</span>`}
-            <button type="button" class="btn btn-outline btn-sm" style="padding: 2px 7px; font-size: 0.72rem; width: auto; border-color: var(--danger); color: var(--danger);" onclick="deleteAthleteExerciseVideo('${vf.id}', '${escapeJsAttr(vf.video_path || "")}', '${escapeJsAttr(vf.coach_audio_path || "")}')">🗑️</button>
+        <div class="vf-clip-row">
+          <div class="vf-clip-info"><span>🎥 Clip del ${dateStr}</span>${statusBadge}</div>
+          <div class="vf-clip-actions">
+            ${vf.video_path ? `<button type="button" class="btn btn-outline btn-sm vf-clip-btn" onclick="playExerciseVideoFeedback('${vf.id}', '${escapeJsAttr(vf.video_path)}', '${escapeJsAttr(vf.coach_audio_path || "")}', '${timelineEncoded}')">▶️ Guarda</button>` : `<span style="font-size:0.7rem; color:var(--text-muted);">File archiviato</span>`}
+            <button type="button" class="btn btn-outline btn-sm vf-clip-btn vf-clip-btn-del" title="Elimina video" onclick="deleteAthleteExerciseVideo('${vf.id}', '${escapeJsAttr(vf.video_path || "")}', '${escapeJsAttr(vf.coach_audio_path || "")}')">🗑️</button>
           </div>
         </div>
         ${vf.athlete_note ? `<div style="font-size: 0.76rem; margin-top: 4px; color: var(--text);"><strong>La tua nota:</strong> ${escapeHtml(vf.athlete_note)}</div>` : ""}
