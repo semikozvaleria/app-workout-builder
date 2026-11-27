@@ -48,6 +48,8 @@ function resetUIOnSignOut() {
   document.getElementById("btnOpenNotifications").classList.add("hidden");
   document.getElementById("notifCountBadge").classList.add("hidden");
   document.getElementById("notificationsSection").classList.add("hidden");
+  const appFooterEl = document.getElementById("appFooter");
+  if (appFooterEl) appFooterEl.classList.add("hidden");
   const roleBadgeEl = document.getElementById("userRoleBadge");
   roleBadgeEl.dataset.fullName = "";
   roleBadgeEl.title = "";
@@ -332,6 +334,8 @@ async function checkSession() {
   document.getElementById("resetPasswordSection").classList.add("hidden");
   document.getElementById("btnLogout").classList.remove("hidden");
   document.getElementById("btnOpenNotifications").classList.remove("hidden");
+  const appFooterEl = document.getElementById("appFooter");
+  if (appFooterEl) appFooterEl.classList.remove("hidden");
 
   const deleteBox = document.getElementById("deleteAccountSettingsBox");
   if (deleteBox) deleteBox.classList.remove("hidden");
