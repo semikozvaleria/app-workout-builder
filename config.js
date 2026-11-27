@@ -40,3 +40,11 @@ function toLocalDateKey(value) {
   if (isNaN(d.getTime())) return "";
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+
+// Una settimana è di scarico se ha il flag deload (nuovo formato) oppure se
+// Serie/Reps contiene la parola "deload" (schede create prima del flag).
+function isDeloadPrescription(entry) {
+  if (!entry || typeof entry !== "object") return false;
+  if (entry.deload === true) return true;
+  return /deload/i.test(String(entry.sets_reps || entry.setsReps || ""));
+}

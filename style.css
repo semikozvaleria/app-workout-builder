@@ -933,3 +933,53 @@ body:not(.light-theme) .note-coach-box {
 .vf-legend { font-size: 0.68rem; color: var(--text-muted); margin-top: 3px; }
 .vf-legend i { display: inline-block; width: 3px; height: 9px; background: #f59e0b; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
 .vf-scrubber-locked { opacity: 0.45; pointer-events: none; }
+
+/* ============================================================
+   PROGRESSIONE SETTIMANALE (MESOCICLO): griglie allineate su mobile
+   ============================================================ */
+.prog-panel { margin-top: 8px; padding: 10px; border-radius: 10px; background: var(--subcard-bg); border: 1.5px solid rgba(56, 189, 248, 0.45); }
+.prog-panel-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+.prog-panel-title { font-size: 0.78rem; font-weight: 700; color: var(--primary); }
+.prog-weeks-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 5px; margin-bottom: 10px;
+}
+.prog-week-tab {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 44px; padding: 4px 3px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--card-bg); color: var(--text);
+  font-family: inherit; text-align: center; line-height: 1.15; min-width: 0;
+}
+.prog-week-tab .wk { font-size: 0.72rem; font-weight: 800; }
+.prog-week-tab .sr {
+  font-size: 0.66rem; opacity: 0.85; margin-top: 2px; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.prog-week-tab.deload { background: rgba(56, 189, 248, 0.14); border-color: rgba(56, 189, 248, 0.45); color: var(--primary); }
+.prog-week-tab.selected { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+.prog-fields { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 6px; align-items: end; }
+.prog-fields .field, .prog-note.field { margin: 0; min-width: 0; }
+.prog-fields label, .prog-note label {
+  display: block; font-size: 0.7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.prog-fields input, .prog-note input { width: 100%; min-width: 0; text-align: center; }
+.prog-note { margin-top: 6px !important; }
+.prog-note input { text-align: left; }
+.prog-presets {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;
+  margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border);
+}
+.prog-presets .btn { width: 100%; margin: 0; font-size: 0.7rem; padding: 6px 4px; text-align: center; justify-content: center; white-space: normal; line-height: 1.2; }
+@media (min-width: 560px) {
+  .prog-presets { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .prog-presets .btn-reset { grid-column: auto; }
+}
+.prog-summary-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 4px; margin-top: 6px;
+}
+.prog-chip {
+  font-size: 0.66rem; padding: 3px 4px; border-radius: 5px; text-align: center; line-height: 1.2;
+  background: var(--subcard-bg); border: 1px solid var(--border); color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.prog-chip.deload { background: rgba(56, 189, 248, 0.16); border-color: rgba(56, 189, 248, 0.4); color: var(--primary); }

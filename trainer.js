@@ -138,6 +138,10 @@ function buildTrainerCoachNoteHtml(entry, extraMarginTop = "") {
 
 function formatTrainerLogSummaryHtml(entry, dateStr, athleteName = "Atleta") {
   const safeName = escapeHtml(getTrainerFirstName(athleteName, "Atleta"));
+  // Mesociclo: indica a quale settimana si riferisce la registrazione
+  if (entry.showWeek && entry.week_number) {
+    dateStr = `${dateStr} · Sett. ${entry.week_number}`;
+  }
   const rirTxt = (entry.rir !== null && entry.rir !== undefined) ? ` • RIR/@: ${entry.rir}` : '';
   const athNoteLine = entry.athlete_notes ? `\n📝 ${escapeHtml(entry.athlete_notes)}` : '';
 
@@ -169,6 +173,7 @@ function consolidateTrainerLogsByDay(logs, unseenIdsSet = new Set()) {
         weight_kg: log.weight_kg,
         reps_done: log.reps_done,
         rir: log.rir,
+        week_number: log.week_number || null,
         hasUnseen: logIsUnseen,
         hasUnseenCoachReply: coachReplyIsUnseen,
         notesList: log.athlete_notes ? [log.athlete_notes.trim()] : [],
@@ -552,8 +557,8 @@ async function fetchWorkoutExercisesFast(workoutId) {
 
   const hasLocalMap = typeof EXERCISE_MAP !== "undefined" && EXERCISE_MAP.size > 0;
   const selectFields = hasLocalMap
-    ? 'id, workout_id, exercise_id, day_name, sets_reps, rest, rir, notes, order_index, circuit_role, circuit_label'
-    : 'id, workout_id, exercise_id, day_name, sets_reps, rest, rir, notes, order_index, circuit_role, circuit_label, exercises(name, muscle, img_start, img_end)';
+    ? 'id, workout_id, exercise_id, day_name, sets_reps, rest, rir, notes, order_index, circuit_role, circuit_label, weekly_progression'
+    : 'id, workout_id, exercise_id, day_name, sets_reps, rest, rir, notes, order_index, circuit_role, circuit_label, weekly_progression, exercises(name, muscle, img_start, img_end)';
 
   const { data: rows, error } = await supabaseClient
     .from('workout_exercises')
@@ -765,7 +770,7 @@ window.cloneWorkoutToBuilder = async function(workoutId, clientId, clientName) {
   currentWorkout = items.map((row, idx) => {
     const exFromMap = (typeof EXERCISE_MAP !== "undefined") ? EXERCISE_MAP.get(row.exercise_id) : null;
     const ex = row.exercises || exFromMap;
-    return {
+    const base = {
       uid: Date.now() + idx,
       id: row.exercise_id,
       day: row.day_name,
@@ -778,10 +783,19 @@ window.cloneWorkoutToBuilder = async function(workoutId, clientId, clientName) {
       rir: row.rir,
       notes: row.notes,
       circuitRole: row.circuit_role || null,
-      circuitLabel: row.circuit_label || ""
+      circuitLabel: row.circuit_label || "",
+      weeklyProgression: null
     };
+    // Mantiene la progressione settimanale quando si clona un mesociclo
+    base.weeklyProgression = typeof normalizeWeeklyProgression === "function"
+      ? normalizeWeeklyProgression(row.weekly_progression, base)
+      : null;
+    return base;
   });
 
+  if (typeof applyProgrammingModeFromItems === "function") {
+    applyProgrammingModeFromItems(workout.duration_weeks);
+  }
   renderList();
 };
 
@@ -893,6 +907,9 @@ window.viewClientProgress = async function(clientId, clientName, selectedWorkout
     grouped[item.day_name].push(item);
   });
 
+  const isMultiWeekWorkout = (parseInt(targetWorkout.duration_weeks, 10) || 1) > 1 &&
+    items.some(it => it.weekly_progression && typeof it.weekly_progression === "object" && Object.keys(it.weekly_progression).length > 0);
+
   html += `<div class="exercise-list">`;
 
   Object.keys(grouped)
@@ -907,6 +924,7 @@ window.viewClientProgress = async function(clientId, clientName, selectedWorkout
         const end = ex ? (ex.img_end || ex.img_start || "") : "";
         const rawExLogs = (logs || []).filter(l => l.workout_exercise_id === row.id);
         const dailyLogs = consolidateTrainerLogsByDay(rawExLogs, unseenIdsSet);
+        if (isMultiWeekWorkout) dailyLogs.forEach(d => { d.showWeek = true; });
         const latest = dailyLogs[0];
 
         const exVideos = (workoutVideos || []).filter(v => v.exercise_index === row.order_index);

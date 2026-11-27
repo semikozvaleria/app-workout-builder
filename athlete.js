@@ -37,7 +37,8 @@ function resolveExercisePrescriptionForWeek(row, weekNum) {
       setsReps: wData.sets_reps || row.sets_reps || "-",
       rest: wData.rest || row.rest || "-",
       rir: wData.rir || row.rir || "-",
-      notes: combinedNotes
+      notes: combinedNotes,
+      isDeload: isDeloadPrescription(wData)
     };
   }
   return {
@@ -472,7 +473,7 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs, exVideos = [], totalWee
 
   const activeWeek = totalWeeks > 1 ? selectedAthleteWeek : 1;
   const presc = resolveExercisePrescriptionForWeek(row, activeWeek);
-  const isDeload = String(presc.setsReps || "").toLowerCase().includes("deload");
+  const isDeload = Boolean(presc.isDeload);
 
   let roleTag = "";
   if (row.circuit_role === "start") {
@@ -519,20 +520,46 @@ function buildAthleteExerciseCardHtml(row, idx, rawLogs, exVideos = [], totalWee
   const setsCount = parsePrescribedSetsCount(presc.setsReps);
   const parsedSeries = parseSeriesBreakdown(latestLog);
 
+  // Mesociclo: se in questa settimana non c'è ancora nulla, mostra come
+  // riferimento l'ultima registrazione della settimana precedente più vicina
+  let refWeek = null;
+  let refLog = null;
+  if (totalWeeks > 1 && !latestLog && activeWeek > 1) {
+    const earlier = (rawLogs || []).filter(l => (l.week_number || 1) < activeWeek);
+    if (earlier.length > 0) {
+      refWeek = Math.max(...earlier.map(l => l.week_number || 1));
+      const refDaily = consolidateLogsByDay(earlier.filter(l => (l.week_number || 1) === refWeek));
+      refLog = refDaily.length > 0 ? refDaily[0] : null;
+    }
+  }
+  const refSeries = refLog ? parseSeriesBreakdown(refLog) : [];
+
   let seriesRowsHtml = "";
   for (let s = 1; s <= setsCount; s++) {
     const prevSet = parsedSeries.find(item => item.setNum === s) || {};
+    // Segnaposto grigio con il valore della settimana precedente (non compilato)
+    const refSet = refSeries.find(item => item.setNum === s) || {};
+    const phKg = refSet.kg ? `${refSet.kg}` : "Kg";
+    const phReps = refSet.reps ? `${refSet.reps}` : "Reps";
+    const phRir = refSet.rir ? `${refSet.rir}` : "RIR";
     seriesRowsHtml += `
       <div class="athlete-inputs-row" style="align-items: center;">
         <span style="font-size: 0.75rem; font-weight: 800; color: var(--primary); min-width: 26px; text-align: center;">S${s}</span>
-        <input type="number" step="0.5" placeholder="Kg" id="logKg_${row.id}_${s}" class="inp-kg" value="${escapeHtml(prevSet.kg || '')}" title="Serie ${s} - Carico (Kg)">
-        <input type="text" placeholder="Reps" id="logReps_${row.id}_${s}" class="inp-reps" value="${escapeHtml(prevSet.reps || '')}" title="Serie ${s} - Ripetizioni">
-        <input type="number" step="0.5" placeholder="RIR" id="logRir_${row.id}_${s}" class="inp-rir" value="${escapeHtml(prevSet.rir || '')}" title="Serie ${s} - RIR">
+        <input type="number" step="0.5" placeholder="${escapeHtml(phKg)}" id="logKg_${row.id}_${s}" class="inp-kg" value="${escapeHtml(prevSet.kg || '')}" title="Serie ${s} - Carico (Kg)">
+        <input type="text" placeholder="${escapeHtml(phReps)}" id="logReps_${row.id}_${s}" class="inp-reps" value="${escapeHtml(prevSet.reps || '')}" title="Serie ${s} - Ripetizioni">
+        <input type="number" step="0.5" placeholder="${escapeHtml(phRir)}" id="logRir_${row.id}_${s}" class="inp-rir" value="${escapeHtml(prevSet.rir || '')}" title="Serie ${s} - RIR">
       </div>
     `;
   }
 
   let latestBoxesHtml = `<div style="font-size: 0.74rem; color: var(--text-muted); margin-top: 2px;">Nessun carico registrato${totalWeeks > 1 ? ` per Settimana ${activeWeek}` : ''}</div>`;
+  if (refLog) {
+    const refDate = formatShortDate(refLog.logged_at);
+    latestBoxesHtml = `
+      <div style="font-size: 0.74rem; color: var(--text-muted); margin-top: 2px;">Nessun carico registrato per Settimana ${activeWeek}. Riferimento della Settimana ${refWeek} (in grigio nei campi):</div>
+      <div class="note-athlete-box" style="white-space: pre-wrap; opacity: 0.75; border-style: dashed;">${formatLogSummaryHtml(refLog, refDate)}</div>
+    `;
+  }
 
   if (latestLog) {
     const isToday = isAthleteTodayLog(latestLog);
@@ -624,17 +651,22 @@ function renderAthleteExercisesList(items, logsByExercise, videosByIndex = {}) {
     if (selectedAthleteWeek < 1 || selectedAthleteWeek > totalWeeks) {
       selectedAthleteWeek = 1;
     }
+    const currentWeekByDate = detectInitialAthleteWeek(currentAthleteWorkoutData.workout, totalWeeks);
     let tabsHtml = "";
     for (let w = 1; w <= totalWeeks; w++) {
       const isSel = w === selectedAthleteWeek;
+      const weekIsDeload = items.some(it => it.weekly_progression && isDeloadPrescription(it.weekly_progression[String(w)]));
+      const isCurrent = w === currentWeekByDate;
       tabsHtml += `
-        <button type="button" onclick="selectAthleteWorkoutWeek(${w})" style="padding: 5px 10px; border-radius: 7px; font-size: 0.76rem; font-weight: 700; cursor: pointer; white-space: nowrap; border: 1px solid ${isSel ? 'var(--primary)' : 'var(--border)'}; background: ${isSel ? 'var(--primary)' : 'var(--subcard-bg)'}; color: ${isSel ? 'var(--primary-text)' : 'var(--text)'};">
-          Sett. ${w}
+        <button type="button" class="prog-week-tab${weekIsDeload ? " deload" : ""}${isSel ? " selected" : ""}" onclick="selectAthleteWorkoutWeek(${w})">
+          <span class="wk">${weekIsDeload ? "🔋 " : ""}Sett. ${w}</span>
+          <span class="sr">${isCurrent ? "● in corso" : (weekIsDeload ? "scarico" : "&nbsp;")}</span>
         </button>
       `;
     }
     const weekBar = document.createElement("div");
-    weekBar.style.cssText = "display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 10px; border-bottom: 1px solid var(--border);";
+    weekBar.className = "prog-weeks-grid";
+    weekBar.style.cssText = "padding-bottom: 8px; margin-bottom: 10px; border-bottom: 1px solid var(--border);";
     weekBar.innerHTML = tabsHtml;
     container.appendChild(weekBar);
   }

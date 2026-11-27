@@ -512,22 +512,33 @@ window.cloneExternalWorkoutToBuilder = async function(extWorkoutId) {
   document.getElementById("generalNotes").value = w.general_notes || "";
 
   const items = Array.isArray(w.exercises_json) ? w.exercises_json : [];
-  currentWorkout = items.map((row, idx) => ({
-    uid: Date.now() + idx,
-    id: row.id,
-    day: row.day || "Giorno 1",
-    name: row.name || "Esercizio",
-    muscle: row.muscle || "",
-    imgStart: row.imgStart || "",
-    imgEnd: row.imgEnd || row.imgStart || "",
-    setsReps: row.setsReps || "-",
-    rest: row.rest || "-",
-    rir: row.rir || "-",
-    notes: row.notes || "-",
-    circuitRole: row.circuitRole || null,
-    circuitLabel: row.circuitLabel || ""
-  }));
+  currentWorkout = items.map((row, idx) => {
+    const base = {
+      uid: Date.now() + idx,
+      id: row.id,
+      day: row.day || "Giorno 1",
+      name: row.name || "Esercizio",
+      muscle: row.muscle || "",
+      imgStart: row.imgStart || "",
+      imgEnd: row.imgEnd || row.imgStart || "",
+      setsReps: row.setsReps || "-",
+      rest: row.rest || "-",
+      rir: row.rir || "-",
+      notes: row.notes || "-",
+      circuitRole: row.circuitRole || null,
+      circuitLabel: row.circuitLabel || "",
+      weeklyProgression: null
+    };
+    // Mantiene la progressione settimanale delle schede mesociclo salvate
+    base.weeklyProgression = typeof normalizeWeeklyProgression === "function"
+      ? normalizeWeeklyProgression(row.weeklyProgression, base)
+      : null;
+    return base;
+  });
 
+  if (typeof applyProgrammingModeFromItems === "function") {
+    applyProgrammingModeFromItems(w.duration_weeks);
+  }
   renderList();
 };
 
@@ -558,7 +569,8 @@ window.redownloadExternalWorkoutPdf = async function(extWorkoutId) {
       rir: item.rir,
       notes: item.notes,
       circuitRole: item.circuitRole,
-      circuitLabel: item.circuitLabel
+      circuitLabel: item.circuitLabel,
+      weeklyProgression: item.weeklyProgression || null
     });
   });
 
