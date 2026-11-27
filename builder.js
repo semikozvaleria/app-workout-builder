@@ -715,10 +715,12 @@ window.resumeDraft = async function(draftId) {
 window.deleteDraft = async function(draftId) {
   if (!confirm("Eliminare questa bozza?")) return;
 
-  await Promise.all([
-    supabaseClient.from('workout_exercises').delete().eq('workout_id', draftId),
-    supabaseClient.from('workouts').delete().eq('id', draftId)
-  ]);
+  await supabaseClient.from('workout_exercises').delete().eq('workout_id', draftId);
+  const { error: delErr } = await supabaseClient.from('workouts').delete().eq('id', draftId);
+  if (delErr) {
+    alert("Errore eliminazione bozza: " + delErr.message);
+    return;
+  }
 
   if (currentDraftId === draftId) currentDraftId = null;
   loadTrainerDrafts();
@@ -1495,13 +1497,10 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
     const endDate = new Date();
     endDate.setDate(startDate.getDate() + (durationWeeks * 7));
 
-    const [, insertWorkoutRes] = await Promise.all([
-      supabaseClient
-        .from('workouts')
-        .update({ status: 'archived' })
-        .eq('athlete_id', athleteId)
-        .eq('status', 'active'),
-      supabaseClient
+    // Ordine sequenziale: 1) crea la nuova scheda, 2) inserisce gli esercizi,
+    // 3) archivia le altre schede attive escludendo quella nuova.
+    // (In parallelo l'archiviazione poteva colpire anche la scheda appena creata.)
+    const insertWorkoutRes = await supabaseClient
         .from('workouts')
         .insert({
           trainer_id: currentProfile.id,
@@ -1509,13 +1508,12 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
           title: `Scheda ${durationWeeks} Settimane`,
           general_notes: generalNotes,
           duration_weeks: durationWeeks,
-          start_date: startDate.toISOString().split('T')[0],
-          end_date: endDate.toISOString().split('T')[0],
+          start_date: toLocalDateKey(startDate),
+          end_date: toLocalDateKey(endDate),
           status: 'active'
         })
         .select('id')
-        .single()
-    ]);
+        .single();
 
     const { data: newWorkout, error: wError } = insertWorkoutRes;
 
@@ -1544,17 +1542,28 @@ document.getElementById("btnSaveCloud").addEventListener("click", async () => {
       .insert(rowsToInsert);
 
     if (exError) {
-      alert("Scheda creata ma errore negli esercizi: " + exError.message);
+      // Annulla la scheda nuova: quella precedente resta attiva per l'atleta
+      await supabaseClient.from('workouts').delete().eq('id', newWorkout.id);
+      alert("Errore nel salvataggio degli esercizi: " + exError.message + "\nLa scheda precedente dell'atleta resta attiva. Riprova.");
       return;
+    }
+
+    const { error: archiveError } = await supabaseClient
+      .from('workouts')
+      .update({ status: 'archived' })
+      .eq('athlete_id', athleteId)
+      .eq('status', 'active')
+      .neq('id', newWorkout.id);
+
+    if (archiveError) {
+      console.warn("Archiviazione schede precedenti non riuscita:", archiveError.message);
     }
 
     if (currentDraftId) {
       const draftToDelete = currentDraftId;
       currentDraftId = null;
-      await Promise.all([
-        supabaseClient.from('workout_exercises').delete().eq('workout_id', draftToDelete),
-        supabaseClient.from('workouts').delete().eq('id', draftToDelete)
-      ]);
+      await supabaseClient.from('workout_exercises').delete().eq('workout_id', draftToDelete);
+      await supabaseClient.from('workouts').delete().eq('id', draftToDelete);
     }
 
     supabaseClient.functions.invoke("send-email", {
@@ -1910,8 +1919,8 @@ async function savePdfSnapshotToHistory({ athleteId, athleteName, durationWeeks,
         title: `PDF ${durationWeeks} Settimane`,
         general_notes: generalNotes,
         duration_weeks: parseInt(durationWeeks, 10) || 4,
-        start_date: startDate.toISOString().split('T')[0],
-        end_date: endDate.toISOString().split('T')[0],
+        start_date: toLocalDateKey(startDate),
+        end_date: toLocalDateKey(endDate),
         status: 'archived'
       })
       .select('id')

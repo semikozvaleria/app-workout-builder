@@ -139,7 +139,7 @@ function renderExternalAthletesList() {
 
     const anamBtnHtml = rec
       ? `<button type="button" class="btn btn-outline btn-sm" style="border-color: var(--primary); color: var(--primary);" onclick="openExternalAnamnesis('${rec.id}')">🩺 Anamnesi</button>`
-      : `<button type="button" class="btn btn-outline btn-sm" onclick="openNewAnamnesisForExternalName('${escapeHtml(item.displayName)}')">➕ Nuova Anamnesi</button>`;
+      : `<button type="button" class="btn btn-outline btn-sm" onclick="openNewAnamnesisForExternalName('${escapeJsAttr(item.displayName)}')">➕ Nuova Anamnesi</button>`;
 
     const card = document.createElement("div");
     card.className = "client-card";
@@ -155,8 +155,8 @@ function renderExternalAthletesList() {
       </div>
       <div class="client-actions">
         ${anamBtnHtml}
-        <button type="button" class="btn btn-outline btn-sm" onclick="viewExternalAthleteWorkouts('${escapeHtml(item.displayName)}')">📋 Schede (${workoutsCount})</button>
-        <button type="button" class="btn btn-primary btn-sm" onclick="openBuilderForExternal('${escapeHtml(item.displayName)}')">Crea Scheda</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="viewExternalAthleteWorkouts('${escapeJsAttr(item.displayName)}')">📋 Schede (${workoutsCount})</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="openBuilderForExternal('${escapeJsAttr(item.displayName)}')">Crea Scheda</button>
       </div>
     `;
     container.appendChild(card);
@@ -473,7 +473,7 @@ window.viewExternalAthleteWorkouts = async function(athleteName) {
           <button type="button" class="btn btn-outline btn-sm" onclick="redownloadExternalWorkoutPdf('${w.id}')">
             📄 PDF
           </button>
-          <button type="button" class="btn btn-outline btn-sm" style="border-color: var(--danger); color: var(--danger);" onclick="deleteExternalWorkout('${w.id}', '${escapeHtml(athleteName)}')">
+          <button type="button" class="btn btn-outline btn-sm" style="border-color: var(--danger); color: var(--danger);" onclick="deleteExternalWorkout('${w.id}', '${escapeJsAttr(athleteName)}')">
             🗑️
           </button>
         </div>

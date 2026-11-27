@@ -225,7 +225,7 @@ window.viewClientStats = async function(clientId, clientName) {
 
   // 1. CALCOLO COSTANZA E CALENDARIO ATTIVITÀ
   const trainedDatesSet = new Set(
-    allLogs.map(l => new Date(l.logged_at).toISOString().split("T")[0])
+    allLogs.map(l => toLocalDateKey(new Date(l.logged_at)))
   );
 
   const now = new Date();
@@ -243,7 +243,7 @@ window.viewClientStats = async function(clientId, clientName) {
     activeLogsDates = new Set(
       allLogs
         .filter(l => new Date(l.logged_at) >= startDate)
-        .map(l => new Date(l.logged_at).toISOString().split("T")[0])
+        .map(l => toLocalDateKey(new Date(l.logged_at)))
     );
     adherencePct = Math.min(100, Math.round((activeLogsDates.size / expectedSessions) * 100));
   }
@@ -252,7 +252,7 @@ window.viewClientStats = async function(clientId, clientName) {
   for (let i = 27; i >= 0; i--) {
     const d = new Date();
     d.setDate(now.getDate() - i);
-    const iso = d.toISOString().split("T")[0];
+    const iso = toLocalDateKey(d);
     last28Days.push({
       iso,
       dayNum: d.getDate(),
@@ -264,7 +264,7 @@ window.viewClientStats = async function(clientId, clientName) {
   // 2. RICOSTRUZIONE SEDUTE PER DATA (DEDUPLICATA PER GIORNO CALENDARIO)
   const logsByDate = {};
   allLogs.forEach(log => {
-    const dateIso = new Date(log.logged_at).toISOString().split("T")[0];
+    const dateIso = toLocalDateKey(new Date(log.logged_at));
     if (!logsByDate[dateIso]) logsByDate[dateIso] = [];
     logsByDate[dateIso].push(log);
   });
@@ -403,7 +403,7 @@ window.viewClientStats = async function(clientId, clientName) {
 
     // Date uniche ordinate in cui l'atleta si è allenato sulla scheda attiva (es. ["2026-11-20", "2026-11-21", "2026-11-23"])
     const sessionDatesSorted = Array.from(
-      new Set(activeLogs.map(l => new Date(l.logged_at).toISOString().split("T")[0]))
+      new Set(activeLogs.map(l => toLocalDateKey(new Date(l.logged_at))))
     ).sort();
 
     // Raggruppa gli esercizi della scheda attiva per exercise_id (evitando duplicati se un esercizio compare in più giorni)
@@ -432,7 +432,7 @@ window.viewClientStats = async function(clientId, clientName) {
         const points = sessionDatesSorted.map(dateIso => {
           // Cerca se in questa data l'atleta ha loggato questo esercizio (prende l'ultimo log della giornata)
           const matchingLogs = activeLogs.filter(l => {
-            const lDate = new Date(l.logged_at).toISOString().split("T")[0];
+            const lDate = toLocalDateKey(new Date(l.logged_at));
             return lDate === dateIso && exMeta.weIds.has(l.workout_exercise_id);
           });
           const latestLog = matchingLogs.length > 0 ? matchingLogs[matchingLogs.length - 1] : null;

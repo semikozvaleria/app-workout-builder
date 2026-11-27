@@ -43,7 +43,7 @@ function initAthleteCheckinTabs() {
   }
 
   if (dateInput && !dateInput.value) {
-    dateInput.value = new Date().toISOString().split("T")[0];
+    dateInput.value = toLocalDateKey(new Date());
   }
 
   btnWorkout.onclick = () => {
@@ -125,7 +125,7 @@ if (btnSubmitWeeklyCheckin) {
       return;
     }
 
-    const checkinDate = document.getElementById("checkinDate").value || new Date().toISOString().split("T")[0];
+    const checkinDate = document.getElementById("checkinDate").value || toLocalDateKey(new Date());
     const weightRaw = document.getElementById("checkinWeightKg").value;
     const weightKg = weightRaw !== "" ? parseFloat(weightRaw) : null;
     const adherence = parseInt(document.getElementById("checkinAdherence").value, 10);
@@ -277,7 +277,7 @@ async function openTrainerAthleteCheckins(athleteId, athleteName) {
           <label style="font-size: 0.76rem;">Feedback / Risposta Coach</label>
           <textarea id="coachCheckinReply_${item.id}" rows="2" style="min-height: 54px; font-size: 0.82rem;" placeholder="Scrivi il tuo feedback per l'atleta...">${escapeCheckinHtml(item.coach_feedback || "")}</textarea>
         </div>
-        <button type="button" class="btn btn-primary btn-sm" onclick="saveCoachCheckinFeedback('${item.id}', '${athleteId}', '${escapeCheckinHtml(athleteName || "")}')" style="width: auto;">💾 Salva Feedback</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="saveCoachCheckinFeedback('${item.id}', '${athleteId}', '${escapeJsAttr(athleteName || "")}')" style="width: auto;">💾 Salva Feedback</button>
       </div>
     `;
   }).join("");

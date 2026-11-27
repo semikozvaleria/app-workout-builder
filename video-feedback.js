@@ -1168,8 +1168,8 @@ function buildAthleteVideoSectionHtml(row, videoFeedbacksForExercise) {
         <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
           <span style="font-size: 0.74rem; color: var(--text-muted);">🎥 Clip del ${dateStr} ${statusBadge}</span>
           <div style="display: flex; gap: 5px;">
-            ${vf.video_path ? `<button type="button" class="btn btn-outline btn-sm" style="padding: 2px 8px; font-size: 0.72rem; width: auto;" onclick="playExerciseVideoFeedback('${vf.id}', '${escapeHtml(vf.video_path)}', '${escapeHtml(vf.coach_audio_path || "")}', '${timelineEncoded}')">▶️ Guarda</button>` : `<span style="font-size:0.7rem; color:var(--text-muted);">File archiviato</span>`}
-            <button type="button" class="btn btn-outline btn-sm" style="padding: 2px 7px; font-size: 0.72rem; width: auto; border-color: var(--danger); color: var(--danger);" onclick="deleteAthleteExerciseVideo('${vf.id}', '${escapeHtml(vf.video_path || "")}', '${escapeHtml(vf.coach_audio_path || "")}')">🗑️</button>
+            ${vf.video_path ? `<button type="button" class="btn btn-outline btn-sm" style="padding: 2px 8px; font-size: 0.72rem; width: auto;" onclick="playExerciseVideoFeedback('${vf.id}', '${escapeJsAttr(vf.video_path)}', '${escapeJsAttr(vf.coach_audio_path || "")}', '${timelineEncoded}')">▶️ Guarda</button>` : `<span style="font-size:0.7rem; color:var(--text-muted);">File archiviato</span>`}
+            <button type="button" class="btn btn-outline btn-sm" style="padding: 2px 7px; font-size: 0.72rem; width: auto; border-color: var(--danger); color: var(--danger);" onclick="deleteAthleteExerciseVideo('${vf.id}', '${escapeJsAttr(vf.video_path || "")}', '${escapeJsAttr(vf.coach_audio_path || "")}')">🗑️</button>
           </div>
         </div>
         ${vf.athlete_note ? `<div style="font-size: 0.76rem; margin-top: 4px; color: var(--text);"><strong>La tua nota:</strong> ${escapeHtml(vf.athlete_note)}</div>` : ""}
@@ -1198,7 +1198,7 @@ function buildAthleteVideoSectionHtml(row, videoFeedbacksForExercise) {
         </div>
         <div style="display: flex; gap: 6px; align-items: flex-end;">
           <input type="text" id="videoAthleteNote_${domKey}" placeholder="Chiedi un parere al coach (es. schiena in basso?)..." style="flex: 1; font-size: 0.76rem; padding: 6px 8px;">
-          <button type="button" id="btnUploadVideo_${domKey}" class="btn btn-primary btn-sm" style="width: auto; white-space: nowrap;" onclick="uploadAthleteExerciseVideo('${row.workout_id}', ${row.order_index}, '${escapeHtml(exName).replace(/'/g, "\\'")}', '${domKey}')">📤 Invia Video</button>
+          <button type="button" id="btnUploadVideo_${domKey}" class="btn btn-primary btn-sm" style="width: auto; white-space: nowrap;" onclick="uploadAthleteExerciseVideo('${row.workout_id}', ${row.order_index}, '${escapeJsAttr(exName)}', '${domKey}')">📤 Invia Video</button>
         </div>
         <div id="videoUploadStatus_${domKey}" style="font-size: 0.72rem; color: var(--primary);"></div>
         ${historyHtml}
@@ -1233,7 +1233,7 @@ function buildTrainerVideoFeedbackHtml(videoFeedbacksForExercise, clientId, clie
         <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
           <strong style="font-size: 0.78rem;">🎥 Video Esecuzione (${dateStr}) ${badge}</strong>
           ${vf.video_path
-            ? `<button type="button" class="btn btn-primary btn-sm" style="padding: 3px 9px; font-size: 0.74rem; width: auto;" onclick="playExerciseVideoFeedback('${vf.id}', '${escapeHtml(vf.video_path)}', '${escapeHtml(vf.coach_audio_path || "")}', '${timelineEncoded}')">▶️ Guarda Video</button>`
+            ? `<button type="button" class="btn btn-primary btn-sm" style="padding: 3px 9px; font-size: 0.74rem; width: auto;" onclick="playExerciseVideoFeedback('${vf.id}', '${escapeJsAttr(vf.video_path)}', '${escapeJsAttr(vf.coach_audio_path || "")}', '${timelineEncoded}')">▶️ Guarda Video</button>`
             : `<span style="font-size: 0.72rem; color: var(--text-muted);">Video rimosso (>45 gg)</span>`}
         </div>
         ${vf.athlete_note ? `<div style="font-size: 0.78rem; margin-top: 5px; color: var(--text);"><strong>Domanda Atleta:</strong> ${escapeHtml(vf.athlete_note)}</div>` : ""}
@@ -1242,7 +1242,7 @@ function buildTrainerVideoFeedbackHtml(videoFeedbacksForExercise, clientId, clie
         <!-- Sezione Registrazione Vocale Sincronizzata del Coach (max 2 min) -->
         <div style="margin-top: 8px; padding-top: 7px; border-top: 1px dashed var(--border);">
           <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
-            <button type="button" id="btnRecordCoachAudio_${vf.id}" class="btn btn-outline btn-sm" style="width: auto; font-size: 0.74rem;" onclick="toggleCoachAudioRecording('${vf.id}', '${escapeHtml(vf.video_path || "")}')">
+            <button type="button" id="btnRecordCoachAudio_${vf.id}" class="btn btn-outline btn-sm" style="width: auto; font-size: 0.74rem;" onclick="toggleCoachAudioRecording('${vf.id}', '${escapeJsAttr(vf.video_path || "")}')">
               ${hasAudio ? "Registra nuovo audio" : "Registra commento audio"}
             </button>
             ${hasAudio ? `<span style="font-size: 0.7rem; color: #10b981; font-weight: 700;">Audio salvato</span>` : `<span style="font-size: 0.7rem; color: var(--text-muted);">Max 2 min</span>`}
@@ -1255,7 +1255,7 @@ function buildTrainerVideoFeedbackHtml(videoFeedbacksForExercise, clientId, clie
           <label style="font-size: 0.72rem; color: var(--text-muted); display: block; margin-bottom: 3px;">Nota Tecnica Scritta (opzionale se registri audio):</label>
           <div style="display: flex; gap: 6px; align-items: flex-end;">
             <textarea id="coachVideoNoteInput_${vf.id}" rows="2" placeholder="Scrivi correzione tecnica o aggiungi dettagli all'audio..." style="flex: 1; min-height: 46px; font-size: 0.78rem; padding: 6px 8px; resize: vertical;">${escapeHtml(existingText)}</textarea>
-            <button type="button" id="btnSaveCoachVideo_${vf.id}" class="btn btn-success btn-sm" style="width: auto; align-self: stretch;" onclick="saveCoachVideoFeedback('${vf.id}', '${clientId}', '${escapeHtml(clientName).replace(/'/g, "\\'")}', '${workoutId}')">💾 Salva</button>
+            <button type="button" id="btnSaveCoachVideo_${vf.id}" class="btn btn-success btn-sm" style="width: auto; align-self: stretch;" onclick="saveCoachVideoFeedback('${vf.id}', '${clientId}', '${escapeJsAttr(clientName)}', '${workoutId}')">💾 Salva</button>
           </div>
         </div>
       </div>
