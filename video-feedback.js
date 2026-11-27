@@ -5,11 +5,13 @@
 const VIDEO_STORAGE_BUCKET = "exercise-videos";
 const MAX_VIDEO_DURATION_SEC = 30;
 const MAX_RAW_UPLOAD_MB = 250;          // file scelto dall'atleta (viene compresso se serve)
-const MAX_FINAL_UPLOAD_MB = 48;         // file effettivamente caricato (limite Supabase 50 MB)
+// Limite del bucket "exercise-videos" su Supabase: 25 MB (il piano gratuito
+// permette fino a 50 MB: se il bucket viene alzato, aggiornare questi valori)
+const MAX_FINAL_UPLOAD_MB = 24;         // file effettivamente caricato
 // Fino a qui si carica l'originale, senza ricodifica: la ricodifica nel
 // browser avviene in tempo reale e sui telefoni perde fotogrammi (video a
 // scatti) e nitidezza. Un video di 30 s in 1080p da iPhone pesa ~20-25 MB.
-const KEEP_ORIGINAL_MAX_MB = 48;
+const KEEP_ORIGINAL_MAX_MB = 24;
 const COMPRESS_SHORT_SIDE = 720;        // 720p reale: lato corto 720 px (es. 720x1280)
 const COMPRESS_BITRATE = 4000000;       // 4 Mbps
 const COMPRESS_FPS = 30;
@@ -25,7 +27,7 @@ function formatSecondsMmSs(totalSec) {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
-// Verifica durata (sempre, max 30s). Fino a 48 MB carica l'originale; oltre
+// Verifica durata (sempre, max 30s). Fino a 24 MB carica l'originale; oltre
 // (es. 4K / 60 fps) ricodifica in 720p reale (lato corto 720 px) a 4 Mbps / 30 fps.
 async function validateAndCompressVideo(file, onProgressText, options = {}) {
   const forceCompress = Boolean(options.force);
